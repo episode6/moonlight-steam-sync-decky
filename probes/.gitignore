@@ -1,0 +1,6 @@
+# Output of run_probes.py (device results are pasted into PROBES.md by hand).
+probe-results.json
+probe-results.json.tmp
+probe-v3-pgrep.log
+__pycache__/
+.pytest_cache/
