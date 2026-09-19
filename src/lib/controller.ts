@@ -11,8 +11,11 @@ import {
   errorText,
   isFailure,
   isSteamUserMismatch,
+  type AppEvent,
   type Backend,
+  type EntryEvent,
   type Failure,
+  type PinnedEvent,
   type Result,
   type RunKind,
   type RunOpts,
@@ -20,6 +23,7 @@ import {
   type SyncDonePayload,
   type SyncEventPayload,
 } from "./cli";
+import type { PinChoice } from "./join";
 import { restartDecision, unwrittenMessage, type RestartDecision } from "./restart";
 import {
   applyRunDone,
@@ -61,6 +65,27 @@ export interface Timing {
   sleep(ms: number): Promise<void>;
   now(): number;
 }
+
+/** What the Titles page renders from (spec 3.8, PR-6's amendment). */
+export interface TitlesData {
+  /** `list`'s apps: live, or from the per-host cache when the host is unreachable. */
+  apps: AppEvent[];
+  /** `status`'s entries (empty when `status` failed; `statusError` says why). */
+  entries: EntryEvent[];
+  /** `ignore.json`. */
+  ignored: string[];
+  host: string;
+  source: "live" | "cached";
+  /** The cache's timestamp for a cached listing ("cached from <when>"). */
+  cachedWhen: string | null;
+  /** The CLI's message when the live listing failed with exit 3. */
+  unreachable: string | null;
+  statusError: string | null;
+}
+
+export type TitlesLoad =
+  | { ok: true; data: TitlesData }
+  | { ok: false; message: string; neverSynced: boolean };
 
 export const LIBRARY_POLL_MS = 500;
 export const LIBRARY_TIMEOUT_MS = 60_000;
@@ -430,6 +455,87 @@ export class Controller {
   async forgetHost(name: string): Promise<Result<{ known: string[] }>> {
     const result = await this.backend.forget_host(name);
     await this.refreshHosts();
+    return result;
+  }
+
+  // -------------------------------------------------------------------------
+  // the Titles page (spec 3.8)
+
+  /**
+   * `list_apps()`, `status()` and `ignore.json` for the Titles page. When
+   * the live listing fails with exit 3 (host unreachable) the page reads
+   * `list_cached(active)` instead; exit 3 there means there is no cache for
+   * the host yet ("never synced").
+   */
+  async loadTitles(): Promise<TitlesLoad> {
+    const active = this.state.hosts?.active;
+    if (!active) return { ok: false, message: "No host yet; add one on the Host page", neverSynced: false };
+    const [listed, status, ignored] = await Promise.all([
+      this.withOwnedRetry(() => this.backend.list_apps()),
+      this.withOwnedRetry(() => this.backend.status()),
+      this.backend.get_ignored(),
+    ]);
+    let apps: AppEvent[];
+    let source: TitlesData["source"] = "live";
+    let cachedWhen: string | null = null;
+    let unreachable: string | null = null;
+    if (!isFailure(listed)) {
+      apps = listed.apps;
+    } else if (listed.error === "cli-error" && listed.exit === 3) {
+      unreachable = listed.message;
+      const cached = await this.withOwnedRetry(() => this.backend.list_cached(active));
+      if (isFailure(cached)) {
+        const neverSynced = cached.error === "cli-error" && cached.exit === 3;
+        return {
+          ok: false,
+          message: neverSynced ? `${active} is unreachable and was never synced` : errorText(cached),
+          neverSynced,
+        };
+      }
+      apps = cached.apps;
+      source = "cached";
+      cachedWhen =
+        cached.apps.find((app) => app.cached_when)?.cached_when ??
+        this.state.hosts?.cached_hosts.find((c) => c.name.toLowerCase() === active.toLowerCase())?.when ??
+        null;
+    } else {
+      return { ok: false, message: errorText(listed), neverSynced: false };
+    }
+    if (!isFailure(status)) this.store.set((s) => withStatus(s, status.entries));
+    const ignoredNames = isFailure(ignored) ? [] : ignored.ignored;
+    if (!isFailure(ignored)) this.store.set({ ignoredCount: ignoredNames.length });
+    return {
+      ok: true,
+      data: {
+        apps,
+        entries: isFailure(status) ? [] : status.entries,
+        ignored: ignoredNames,
+        host: active,
+        source,
+        cachedWhen,
+        unreachable,
+        statusError: isFailure(status) ? errorText(status) : null,
+      },
+    };
+  }
+
+  /** *Use this* in the Change match modal: `pin` with `--defer-art` (Decision 8). */
+  pinTitle(name: string, choice: PinChoice): Promise<Result<{ pinned: PinnedEvent; notes: string[] }>> {
+    return this.backend.pin(name, choice.steam, choice.sgdb, choice.none);
+  }
+
+  /** *Ignore* / *Unignore*: `ignore.json` only; the next sync applies it. */
+  async setIgnored(name: string, ignored: boolean): Promise<Result<{ ignored: string[] }>> {
+    const result = await this.backend.set_ignored(name, ignored);
+    if (!isFailure(result)) {
+      // The panel's Ignored counter: check_host's count is stale now (the
+      // backend dropped its memo), so fall back to ignore.json's size.
+      const reach = this.state.reach;
+      this.store.set({
+        ignoredCount: result.ignored.length,
+        reach: reach?.reachable ? { ...reach, ignored: undefined } : reach,
+      });
+    }
     return result;
   }
 

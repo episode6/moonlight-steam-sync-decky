@@ -32,3 +32,6 @@ export const controller = new Controller(
 
 /** Where the settings route lives. */
 export const SETTINGS_ROUTE = "/moonlight-sync";
+
+/** The Titles page (spec 3.8), a page of the settings route opened from the panel's header. */
+export const TITLES_ROUTE = `${SETTINGS_ROUTE}/titles`;

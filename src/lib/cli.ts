@@ -395,6 +395,19 @@ export interface Backend {
   set_sgdb_key(key: string): Promise<Result<KeyState>>;
   clear_sgdb_key(): Promise<Result<KeyState>>;
   test_sgdb_key(): Promise<Result>;
+  /** `--json search TERM`: candidates in the CLI's order (SGDB first when a key is set). */
+  search(term: string): Promise<Result<{ candidates: CandidateEvent[]; notes: string[] }>>;
+  /** `match NAME --steam | --sgdb | --none --defer-art`: exactly one of the three. */
+  pin(
+    name: string,
+    steam: number | null,
+    sgdb: number | null,
+    none: boolean,
+  ): Promise<Result<{ pinned: PinnedEvent; notes: string[] }>>;
+  /** `match NAME --unpin --defer-art`: the next run re-resolves the title. */
+  unpin(name: string): Promise<Result<{ pinned: PinnedEvent; notes: string[] }>>;
+  /** Add or remove one exact name in `ignore.json` (sorted, idempotent). */
+  set_ignored(name: string, ignored: boolean): Promise<Result<{ ignored: string[] }>>;
 }
 
 /** `@decky/api`'s `callable`, as far as this module needs it. */
@@ -430,6 +443,10 @@ const CALLABLES = [
   "set_sgdb_key",
   "clear_sgdb_key",
   "test_sgdb_key",
+  "search",
+  "pin",
+  "unpin",
+  "set_ignored",
 ] as const satisfies readonly (keyof Backend)[];
 
 /**

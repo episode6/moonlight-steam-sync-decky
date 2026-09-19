@@ -585,3 +585,136 @@ describe("runs and the restart flow (spec 3.9)", () => {
     expect(steam.launched).toEqual([2400000001]);
   });
 });
+
+describe("the Titles page (spec 3.8)", () => {
+  const apps = eventsOf(loadFixture("common/list.ndjson"), "app");
+  const cachedApps = eventsOf(loadFixture("common/list-cached.ndjson"), "app");
+  const listed = { ok: true, apps, host: "MY-GAMING-PC", count: 7, notes: [] };
+  const unreachable = {
+    ok: false,
+    error: "cli-error",
+    message: "list: moonlight: host MY-GAMING-PC unreachable",
+    exit: 3,
+  };
+
+  async function loaded(answers: Partial<Record<keyof Backend, unknown>> = {}) {
+    const controller = new Controller(
+      fakeBackend(calls, { list_apps: listed, ...answers }),
+      steam,
+      ui,
+      instantTiming(),
+    );
+    await controller.load();
+    calls.length = 0;
+    return controller;
+  }
+
+  it("reads the live list, status and ignore.json", async () => {
+    const controller = await loaded();
+    const load = await controller.loadTitles();
+    expect(names().sort()).toEqual(["get_ignored", "list_apps", "status"]);
+    expect(load.ok).toBe(true);
+    if (!load.ok) return;
+    expect(load.data.source).toBe("live");
+    expect(load.data.apps).toHaveLength(7);
+    expect(load.data.entries).toHaveLength(6);
+    expect(load.data.ignored).toEqual(["Desktop"]);
+    expect(load.data.host).toBe("MY-GAMING-PC");
+    expect(load.data.unreachable).toBeNull();
+    expect(load.data.cachedWhen).toBeNull();
+  });
+
+  it("falls back to the per-host cache when the host is unreachable", async () => {
+    const controller = await loaded({
+      list_apps: unreachable,
+      list_cached: { ok: true, apps: cachedApps, host: "MY-GAMING-PC", count: 7, notes: [] },
+    });
+    const load = await controller.loadTitles();
+    expect(calls.find(([n]) => n === "list_cached")?.[1]).toEqual(["MY-GAMING-PC"]);
+    expect(load.ok).toBe(true);
+    if (!load.ok) return;
+    expect(load.data.source).toBe("cached");
+    expect(load.data.cachedWhen).toBe("2026-09-18T14:02:00Z");
+    expect(load.data.unreachable).toBe("list: moonlight: host MY-GAMING-PC unreachable");
+  });
+
+  it("an unreachable host with no cache is never synced", async () => {
+    const controller = await loaded({
+      list_apps: unreachable,
+      list_cached: { ...unreachable, message: "list: no cached app list for host MY-GAMING-PC" },
+    });
+    expect(await controller.loadTitles()).toEqual({
+      ok: false,
+      message: "MY-GAMING-PC is unreachable and was never synced",
+      neverSynced: true,
+    });
+  });
+
+  it("any other list failure is shown as is", async () => {
+    const controller = await loaded({
+      list_apps: { ok: false, error: "timeout", message: "timed out after 90 s", timeout_s: 90 },
+    });
+    expect(await controller.loadTitles()).toEqual({
+      ok: false,
+      message: "Timed out after 90 s",
+      neverSynced: false,
+    });
+    expect(names()).not.toContain("list_cached");
+  });
+
+  it("a failed status still shows the list", async () => {
+    const controller = await loaded({
+      status: { ok: false, error: "bad-request", message: "status went wrong" },
+    });
+    const load = await controller.loadTitles();
+    expect(load.ok && load.data.entries).toEqual([]);
+    expect(load.ok && load.data.statusError).toBe("status went wrong");
+  });
+
+  it("no host yet: nothing is called", async () => {
+    const controller = await loaded({
+      hosts: { ok: true, active: null, source: null, cached_hosts: [], known: [] },
+    });
+    expect((await controller.loadTitles()).ok).toBe(false);
+    expect(calls).toEqual([]);
+  });
+
+  it("retries once after rewriting owned apps on a steamid3 mismatch", async () => {
+    let first = true;
+    const controller = await loaded({
+      list_apps: () => {
+        if (!first) return listed;
+        first = false;
+        return {
+          ok: false,
+          error: "cli-error",
+          message: "list: owned-apps file is for Steam user 1 but sync would write to user 2",
+          exit: 1,
+        };
+      },
+    });
+    expect((await controller.loadTitles()).ok).toBe(true);
+    expect(names().filter((n) => n === "list_apps")).toHaveLength(2);
+    expect(names()).toContain("write_owned_apps");
+  });
+
+  it("Use this pins exactly the chosen selector", async () => {
+    const controller = await loaded({ pin: { ok: true, pinned: {}, notes: [] } });
+    await controller.pinTitle("Hades II", { steam: 1145350, sgdb: null, none: false });
+    await controller.pinTitle("Tunic", { steam: null, sgdb: null, none: true });
+    expect(calls).toEqual([
+      ["pin", ["Hades II", 1145350, null, false]],
+      ["pin", ["Tunic", null, null, true]],
+    ]);
+  });
+
+  it("Ignore writes ignore.json and the Ignored counter follows it", async () => {
+    const controller = await loaded({ set_ignored: { ok: true, ignored: ["Desktop", "Tunic"] } });
+    const reach = () => controller.state.reach;
+    expect((reach() as { ignored?: number }).ignored).toBe(1);
+    expect((await controller.setIgnored("Tunic", true)).ok).toBe(true);
+    expect(calls).toEqual([["set_ignored", ["Tunic", true]]]);
+    expect(controller.state.ignoredCount).toBe(2);
+    expect((reach() as { ignored?: number }).ignored).toBeUndefined();
+  });
+});
