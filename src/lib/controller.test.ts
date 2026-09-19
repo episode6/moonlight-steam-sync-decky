@@ -1,0 +1,434 @@
+import { beforeEach, describe, expect, it } from "vitest";
+
+import { loadFixture } from "../test/fixtures";
+import type {
+  Backend,
+  CliEvent,
+  Pending,
+  RunKind,
+  SyncDonePayload,
+} from "./cli";
+import { Controller, type RestartPrompt, type SteamPort, type UiPort } from "./controller";
+import { eventsOf, lastOf } from "./events";
+
+const PENDING: Pending = {
+  restart_needed: "none",
+  layout_walk: false,
+  since: null,
+  last_summary: null,
+  last_plan: null,
+  last_kind: null,
+};
+
+type Calls = [string, unknown[]][];
+
+/** A scripted backend: every callable records its call and answers from `answers`. */
+function fakeBackend(calls: Calls, answers: Partial<Record<keyof Backend, unknown>> = {}): Backend {
+  const defaults: Partial<Record<keyof Backend, unknown>> = {
+    cli_version: {
+      ok: true,
+      installed: "0.3.0",
+      bundled: "0.3.0",
+      minimum: "0.3.0",
+      too_old: false,
+      installed_path: "~/.local/bin/moonlight-steam-sync",
+      bundled_path: "",
+      pinned: "0.3.0",
+      plugin_version: "0.1.0",
+      log_path: "",
+      install_error: null,
+      capabilities: { art_commit: true },
+    },
+    get_settings: {
+      ok: true,
+      settings: {
+        version: 1,
+        hosts: ["MY-GAMING-PC", "OFFICE-PC"],
+        copy_layouts: true,
+        restart_countdown_s: 5,
+        retry_missing: false,
+      },
+    },
+    hosts: {
+      ok: true,
+      active: "MY-GAMING-PC",
+      source: "state",
+      cached_hosts: [],
+      known: ["MY-GAMING-PC", "OFFICE-PC"],
+    },
+    pending: { ok: true, ...PENDING },
+    sync_state: {
+      ok: true,
+      running: false,
+      kind: null,
+      started: null,
+      opts: {},
+      awaiting_exit: false,
+      last_exit: null,
+      last_kind: null,
+      events: [],
+    },
+    get_ignored: { ok: true, ignored: ["Desktop"] },
+    write_owned_apps: { ok: true, count: 2 },
+    status: { ok: true, entries: eventsOf(loadFixture("common/status.ndjson"), "entry"), notes: [] },
+    check_host: {
+      ok: true,
+      host: "MY-GAMING-PC",
+      reachable: true,
+      count: 7,
+      ignored: 1,
+      checked_at: "2026-09-18T14:02:00Z",
+    },
+    start_sync: { ok: true, kind: "sync" },
+    start_art_refetch: { ok: true, kind: "art" },
+    start_remove_all: { ok: true, kind: "remove" },
+    stop_sync: { ok: true, running: true },
+    clear_pending: { ok: true, ...PENDING },
+    set_host: { ok: true, active: "OFFICE-PC" },
+  };
+  return new Proxy({} as Backend, {
+    get(_target, name: string) {
+      return async (...args: unknown[]) => {
+        calls.push([name, args]);
+        const answer = (answers as Record<string, unknown>)[name] ?? (defaults as Record<string, unknown>)[name];
+        return typeof answer === "function" ? (answer as (...a: unknown[]) => unknown)(...args) : answer ?? { ok: true };
+      };
+    },
+  });
+}
+
+class FakeSteam implements SteamPort {
+  apps: Record<string, string> | null = { "2379780": "Balatro", "1244090": "Sea of Stars" };
+  steamid3: number | null = 12345678;
+  shutdowns = 0;
+  launched: number[] = [];
+  ownedApps() {
+    return this.apps;
+  }
+  currentSteamId3() {
+    return this.steamid3;
+  }
+  runShortcut(appid: number) {
+    this.launched.push(appid);
+    return true;
+  }
+  shutdownSteam() {
+    this.shutdowns++;
+  }
+}
+
+class FakeUi implements UiPort {
+  prompts: RestartPrompt[] = [];
+  closed = 0;
+  toasts: string[] = [];
+  showRestart(prompt: RestartPrompt) {
+    this.prompts.push(prompt);
+    return { close: () => this.closed++ };
+  }
+  toast(title: string) {
+    this.toasts.push(title);
+  }
+}
+
+const instantTiming = () => {
+  let t = 0;
+  return { sleep: async (ms: number) => void (t += ms), now: () => t };
+};
+
+function relay(controller: Controller, kind: RunKind, events: CliEvent[]) {
+  for (const event of events) controller.onSyncEvent({ kind, event });
+}
+
+function done(kind: RunKind, events: CliEvent[], exit: number, pending: Partial<Pending> = {}): SyncDonePayload {
+  const error = lastOf(events, "error");
+  return {
+    kind,
+    exit,
+    pending: { ...PENDING, ...pending },
+    summary: lastOf(events, "summary"),
+    commit: lastOf(events, "commit"),
+    failure: error ? { error: "cli-error", message: error.message, exit: error.exit } : null,
+  };
+}
+
+let calls: Calls;
+let steam: FakeSteam;
+let ui: FakeUi;
+
+beforeEach(() => {
+  calls = [];
+  steam = new FakeSteam();
+  ui = new FakeUi();
+});
+
+const names = () => calls.map(([name]) => name);
+
+describe("load order (spec 3.8)", () => {
+  it("cli_version, then the parallel reads, then owned apps before status and check_host", async () => {
+    const controller = new Controller(fakeBackend(calls), steam, ui, instantTiming());
+    await controller.load();
+    const order = names();
+    expect(order[0]).toBe("cli_version");
+    expect(order.slice(1, 5).sort()).toEqual(["get_settings", "hosts", "pending", "sync_state"]);
+    expect(order.indexOf("write_owned_apps")).toBeLessThan(order.indexOf("status"));
+    expect(order.indexOf("write_owned_apps")).toBeLessThan(order.indexOf("check_host"));
+    expect(calls.find(([n]) => n === "write_owned_apps")?.[1]).toEqual([
+      12345678,
+      { "2379780": "Balatro", "1244090": "Sea of Stars" },
+    ]);
+    expect(calls.find(([n]) => n === "check_host")?.[1]).toEqual(["MY-GAMING-PC", false]);
+    const state = controller.state;
+    expect(state.library).toBe("ready");
+    expect(state.counters).toEqual({ stream: 2, shortcuts: 2, unmatched: 1, parked: 1 });
+    expect(state.clientAppid).toBe(2400000001);
+    expect(state.reach?.reachable).toBe(true);
+    expect(state.ignoredCount).toBe(1);
+  });
+
+  it("a missing CLI stops after the plugin-file reads", async () => {
+    const controller = new Controller(
+      fakeBackend(calls, {
+        cli_version: {
+          ok: true,
+          installed: null,
+          bundled: null,
+          minimum: "0.3.0",
+          too_old: false,
+          capabilities: { art_commit: false },
+        },
+      }),
+      steam,
+      ui,
+      instantTiming(),
+    );
+    await controller.load();
+    expect(controller.state.cli?.text).toBe("CLI not installed — see About");
+    expect(names()).not.toContain("hosts");
+    expect(names()).not.toContain("write_owned_apps");
+    expect(names()).not.toContain("status");
+    expect(controller.state.settings).not.toBeNull();
+  });
+
+  it("waits for the library and gives up after 60 s", async () => {
+    steam.apps = null;
+    const controller = new Controller(fakeBackend(calls), steam, ui, instantTiming());
+    await controller.load();
+    expect(controller.state.library).toBe("failed");
+    expect(names()).not.toContain("write_owned_apps");
+    expect(names()).not.toContain("status");
+    // Retry once the library is there
+    steam.apps = { "620": "Portal 2" };
+    await controller.retryLibrary();
+    expect(controller.state.library).toBe("ready");
+    expect(names()).toContain("status");
+  });
+
+  it("an empty account is 'library not loaded'", async () => {
+    const controller = new Controller(
+      fakeBackend(calls, {
+        write_owned_apps: { ok: false, error: "owned-apps-empty", message: "Steam library not loaded" },
+      }),
+      steam,
+      ui,
+      instantTiming(),
+    );
+    await controller.load();
+    expect(controller.state.library).toBe("failed");
+  });
+
+  it("re-attaches to a run in progress", async () => {
+    const events = loadFixture("full-sync/sync.ndjson").slice(0, 5);
+    const controller = new Controller(
+      fakeBackend(calls, {
+        sync_state: {
+          ok: true,
+          running: true,
+          kind: "sync",
+          started: "2026-09-18T14:00:00Z",
+          opts: {},
+          awaiting_exit: false,
+          last_exit: null,
+          last_kind: null,
+          events,
+        },
+      }),
+      steam,
+      ui,
+      instantTiming(),
+    );
+    await controller.load();
+    expect(controller.state.run?.running).toBe(true);
+    expect(controller.state.run?.titles).toHaveLength(2);
+  });
+});
+
+describe("runs and the restart flow (spec 3.9)", () => {
+  async function loaded(answers: Partial<Record<keyof Backend, unknown>> = {}) {
+    const controller = new Controller(fakeBackend(calls, answers), steam, ui, instantTiming());
+    await controller.load();
+    calls.length = 0;
+    return controller;
+  }
+
+  it("Sync now writes owned apps first", async () => {
+    const controller = await loaded();
+    expect(await controller.sync()).toBeNull();
+    expect(names().slice(0, 2)).toEqual(["write_owned_apps", "start_sync"]);
+    expect(calls[1][1]).toEqual([{}]);
+    expect(controller.state.run?.running).toBe(true);
+  });
+
+  it("trigger 1: the prompt appears on awaiting-steam-exit, not on sync_done", async () => {
+    const controller = await loaded();
+    await controller.sync();
+    const events = loadFixture("full-sync/sync.ndjson");
+    const wait = events.findIndex((e) => e.event === "awaiting-steam-exit");
+    relay(controller, "sync", events.slice(0, wait));
+    expect(ui.prompts).toHaveLength(0);
+    relay(controller, "sync", [events[wait]]);
+    expect(ui.prompts).toHaveLength(1);
+    expect(ui.prompts[0].decision.title).toBe("Sync finished: 2 added, 1 replaced, 1 parked");
+    expect(ui.prompts[0].countdownSeconds).toBe(5);
+    expect(ui.toasts).toHaveLength(1);
+    expect(controller.state.pending?.restart_needed).toBe("write");
+    ui.prompts[0].onRestartNow();
+    expect(steam.shutdowns).toBe(1);
+  });
+
+  it("Later stops the run and leaves the persistent row, which re-arms with an immediate restart", async () => {
+    const controller = await loaded();
+    await controller.sync();
+    const events = loadFixture("refused/sync.ndjson");
+    relay(controller, "sync", events);
+    ui.prompts[0].onLater();
+    await Promise.resolve();
+    expect(names()).toContain("stop_sync");
+    const stopped = [...events, { event: "error", exit: 130, message: "sync: interrupted" } as CliEvent];
+    await controller.onSyncDone(done("sync", stopped, 130, { restart_needed: "write", last_kind: "sync" }));
+    expect(controller.state.pending?.restart_needed).toBe("write");
+    expect(controller.state.message).toBeNull();
+    calls.length = 0;
+    await controller.restartRow();
+    expect(names().slice(0, 2)).toEqual(["write_owned_apps", "start_sync"]);
+    expect(calls[1][1]).toEqual([{ immediate_restart: true }]);
+    // the re-run's wait restarts Steam at once, with no prompt
+    const promptsBefore = ui.prompts.length;
+    relay(controller, "sync", events);
+    expect(steam.shutdowns).toBe(1);
+    expect(ui.prompts).toHaveLength(promptsBefore);
+  });
+
+  it("the persistent row re-runs the kind that was pending", async () => {
+    const controller = await loaded({
+      pending: { ok: true, ...PENDING, restart_needed: "write", last_kind: "remove" },
+    });
+    await controller.restartRow();
+    expect(names()).toContain("start_remove_all");
+  });
+
+  it("the CLI's 60 s timeout closes the prompt and says so", async () => {
+    const controller = await loaded();
+    await controller.sync();
+    const events = loadFixture("refused/sync.ndjson");
+    relay(controller, "sync", events);
+    const timedOut = [
+      ...events,
+      { event: "error", exit: 2, message: "sync: steam did not exit; shortcuts.vdf not written" } as CliEvent,
+    ];
+    await controller.onSyncDone(done("sync", timedOut, 2, { restart_needed: "write" }));
+    expect(ui.closed).toBe(1);
+    expect(controller.state.message).toBe("Steam did not restart; sync again to apply");
+  });
+
+  it("trigger 2: art only prompts at sync_done; Restart now clears the flag first", async () => {
+    const controller = await loaded();
+    await controller.sync();
+    const events = loadFixture("art-only/sync.ndjson");
+    relay(controller, "sync", events);
+    expect(ui.prompts).toHaveLength(0);
+    await controller.onSyncDone(done("sync", events, 0, { restart_needed: "art" }));
+    expect(ui.prompts).toHaveLength(1);
+    expect(ui.prompts[0].decision.title).toBe("New artwork needs a Steam restart to show");
+    calls.length = 0;
+    ui.prompts[0].onRestartNow();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(calls[0]).toEqual(["clear_pending", ["restart_needed"]]);
+    expect(steam.shutdowns).toBe(1);
+  });
+
+  it("the art row does the same two calls", async () => {
+    const controller = await loaded({ pending: { ok: true, ...PENDING, restart_needed: "art" } });
+    await controller.restartRow();
+    expect(calls[0]).toEqual(["clear_pending", ["restart_needed"]]);
+    expect(steam.shutdowns).toBe(1);
+  });
+
+  it("trigger 3: stopped with images prompts; without images it just says so", async () => {
+    const controller = await loaded();
+    await controller.sync();
+    const events = loadFixture("stopped/sync.ndjson");
+    relay(controller, "sync", events);
+    await controller.onSyncDone(done("sync", events, 130, { restart_needed: "art" }));
+    expect(ui.prompts[0].decision.title).toBe("Stopped; 1 image was saved");
+
+    await controller.sync();
+    const none = events.map((e) => (e.event === "summary" ? { ...e, filled: 0 } : e));
+    relay(controller, "sync", none);
+    await controller.onSyncDone(done("sync", none, 130));
+    expect(ui.prompts).toHaveLength(1);
+    expect(controller.state.message).toBe("Stopped; sync again to resume");
+  });
+
+  it("an unreachable host is a message, and nothing changes", async () => {
+    const controller = await loaded();
+    await controller.sync();
+    const events = loadFixture("unreachable/sync.ndjson");
+    relay(controller, "sync", events);
+    await controller.onSyncDone(done("sync", events, 3));
+    expect(ui.prompts).toHaveLength(0);
+    expect(controller.state.message).toBe("Host unreachable: sync: moonlight: host MY-GAMING-PC unreachable");
+  });
+
+  it("a steamid3 mismatch rewrites owned-apps.json and retries once", async () => {
+    const controller = await loaded();
+    await controller.sync();
+    const mismatch: CliEvent[] = [
+      { event: "start", schema: 1, version: "0.3.0", command: "sync" },
+      {
+        event: "error",
+        exit: 1,
+        message: "sync: owned-apps file is for Steam user 1 but sync would write to user 12345678",
+      },
+    ];
+    relay(controller, "sync", mismatch);
+    calls.length = 0;
+    await controller.onSyncDone(done("sync", mismatch, 1));
+    expect(names().slice(0, 2)).toEqual(["write_owned_apps", "start_sync"]);
+    relay(controller, "sync", mismatch);
+    calls.length = 0;
+    await controller.onSyncDone(done("sync", mismatch, 1));
+    expect(names()).not.toContain("start_sync"); // only once
+  });
+
+  it("a failed start is shown and no run begins", async () => {
+    const controller = await loaded({
+      start_sync: { ok: false, error: "busy", message: "A sync is already running", kind: "sync" },
+    });
+    expect(await controller.sync()).not.toBeNull();
+    expect(controller.state.message).toBe("A sync is already running");
+    expect(controller.state.run).toBeNull();
+  });
+
+  it("switching hosts sets the host, then syncs", async () => {
+    const controller = await loaded();
+    await controller.switchHost("OFFICE-PC");
+    expect(names()).toEqual(["set_host", "hosts", "write_owned_apps", "start_sync"]);
+    expect(calls[0][1]).toEqual(["OFFICE-PC"]);
+  });
+
+  it("Open Moonlight runs the client entry", async () => {
+    const controller = await loaded();
+    expect(controller.openMoonlight()).toBe(true);
+    expect(steam.launched).toEqual([2400000001]);
+  });
+});
