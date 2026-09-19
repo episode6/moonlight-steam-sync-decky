@@ -1082,12 +1082,8 @@ def test_pending_and_clear_pending(backend) -> None:
     assert run(backend.clear_pending("everything"))["error"] == "bad-request"
 
 
-def test_pr6_and_pr7_stubs(backend) -> None:
+def test_pr7_stubs(backend) -> None:
     not_yet = {"ok": False, "error": "bad-request", "message": "not yet"}
-    assert run(backend.search("Hades II")) == not_yet
-    assert run(backend.pin("Hades II", 1145350, None, False)) == not_yet
-    assert run(backend.unpin("Hades II")) == not_yet
-    assert run(backend.set_ignored("Desktop", True)) == not_yet
     assert run(backend.layouts()) == not_yet
     assert run(backend.record_layout(1, 2, "copied", None)) == not_yet
 
@@ -1118,3 +1114,310 @@ def test_callables_return_failures_instead_of_raising(backend, monkeypatch) -> N
     assert result == {"ok": False, "error": "bad-request", "message": "internal error: unexpected"}
     assert run(backend.check_host(None))["error"] == "bad-request"
     assert run(backend.list_cached(""))["error"] == "bad-request"
+
+
+# ----------------------------------------------------------------------
+# the Titles page: search, pin, unpin, set_ignored (PR-6)
+#
+# The fake replays common/search.ndjson, common/match.ndjson and
+# common/match-unpin.ndjson by default; FAKE_CLI_FIXTURE_MATCH /
+# FAKE_CLI_FIXTURE_SEARCH pick the other common/ files (match-none,
+# match-sgdb, match-unknown, match-silent, search-empty, search-no-key).
+
+
+def of(name: str, event: str) -> list[dict]:
+    return [e for e in load_fixture(name) if e["event"] == event]
+
+
+# ----------------------------------------------------------------------
+# search
+
+
+def test_search_argv_and_candidates(backend) -> None:
+    owned(backend)
+    backend.harness.clear()
+    result = run(backend.search("Hades II"))
+    assert result == {
+        "ok": True,
+        "candidates": of("common/search.ndjson", "candidate"),
+        "notes": [],
+    }
+    own = settings_path(backend, "owned-apps.json")
+    assert backend.harness.argv() == [["--json", "search", "Hades II", "--owned-apps", own]]
+    # the CLI's order is kept (SGDB first); the modal groups them
+    assert [c["source"] for c in result["candidates"]] == ["sgdb", "sgdb", "steam", "steam"]
+
+
+def test_search_without_the_owned_apps_file(backend) -> None:
+    backend.harness.clear()
+    assert run(backend.search("  Hades II "))["ok"] is True
+    assert backend.harness.argv() == [["--json", "search", "Hades II"]]
+
+
+def test_search_puts_a_dash_term_behind_double_dash(backend) -> None:
+    owned(backend)
+    backend.harness.clear()
+    run(backend.search("-Ghostrunner"))
+    own = settings_path(backend, "owned-apps.json")
+    assert backend.harness.argv() == [
+        ["--json", "search", "--owned-apps", own, "--", "-Ghostrunner"]
+    ]
+
+
+@pytest.mark.parametrize("term", ["", "   ", None, 42, "two\nlines"])
+def test_search_refuses_a_bad_term_without_a_child(backend, term) -> None:
+    backend.harness.clear()
+    result = run(backend.search(term))
+    assert result["ok"] is False
+    assert result["error"] == "bad-request"
+    assert backend.harness.argv() == []
+
+
+def test_search_with_no_candidates(backend) -> None:
+    backend.env["FAKE_CLI_FIXTURE_SEARCH"] = "search-empty"
+    assert run(backend.search("zzzz")) == {"ok": True, "candidates": [], "notes": []}
+
+
+def test_search_without_a_key_returns_the_note(backend) -> None:
+    backend.env["FAKE_CLI_FIXTURE_SEARCH"] = "search-no-key"
+    result = run(backend.search("Hades II"))
+    assert result["notes"] == ["no SteamGridDB API key configured; searching the Steam store only"]
+    assert [c["source"] for c in result["candidates"]] == ["steam", "steam"]
+    assert [c["owned"] for c in result["candidates"]] == [True, False]
+
+
+def test_search_times_out_at_the_long_limit(backend) -> None:
+    calls: list[float] = []
+    real = backend._collect
+
+    async def spy(subcommand, args, *, timeout, needs_owned=False):
+        calls.append(timeout)
+        return await real(subcommand, args, timeout=timeout, needs_owned=needs_owned)
+
+    backend._collect = spy
+    run(backend.search("Hades II"))
+    assert calls == [backend.TIMEOUT_LONG]
+
+
+# ----------------------------------------------------------------------
+# pin / unpin
+
+
+def test_pin_steam(backend) -> None:
+    backend.harness.clear()
+    result = run(backend.pin("Hades II", 1145350, None, False))
+    assert result == {
+        "ok": True,
+        "pinned": of("common/match.ndjson", "pinned")[0],
+        "notes": ["art for Hades II will be re-fetched on the next sync"],
+    }
+    assert backend.harness.argv() == [
+        ["--json", "match", "Hades II", "--steam", "1145350", "--defer-art"]
+    ]
+
+
+def test_pin_sgdb(backend) -> None:
+    backend.env["FAKE_CLI_FIXTURE_MATCH"] = "match-sgdb"
+    backend.harness.clear()
+    result = run(backend.pin("Sea of Stars (GOG)", None, 5322710, False))
+    assert result["ok"] is True
+    assert result["pinned"]["steam_appid"] == 1244090
+    assert result["pinned"]["sgdb_id"] == 5322710
+    assert backend.harness.argv() == [
+        ["--json", "match", "Sea of Stars (GOG)", "--sgdb", "5322710", "--defer-art"]
+    ]
+
+
+def test_pin_none(backend) -> None:
+    backend.env["FAKE_CLI_FIXTURE_MATCH"] = "match-none"
+    backend.harness.clear()
+    result = run(backend.pin("Tunic", None, None, True))
+    assert result["ok"] is True
+    assert result["pinned"] == {
+        "event": "pinned",
+        "name": "Tunic",
+        "steam_appid": None,
+        "sgdb_id": None,
+        "override_line": '"Tunic" = {}',
+    }
+    assert backend.harness.argv() == [["--json", "match", "Tunic", "--none", "--defer-art"]]
+
+
+def test_pin_keyword_defaults_match_main_py(backend) -> None:
+    """main.py calls ``pin(name, steam, sgdb, none)`` with these defaults."""
+    backend.harness.clear()
+    assert run(backend.pin("Hades II", steam=1145350))["ok"] is True
+    assert backend.harness.argv()[0][-3:] == ["--steam", "1145350", "--defer-art"]
+
+
+def test_pin_puts_a_dash_name_behind_double_dash(backend) -> None:
+    backend.harness.clear()
+    run(backend.pin("-Ghostrunner", 1139900, None, False))
+    assert backend.harness.argv() == [
+        ["--json", "match", "--steam", "1139900", "--defer-art", "--", "-Ghostrunner"]
+    ]
+
+
+@pytest.mark.parametrize(
+    ("args", "message"),
+    [
+        (("Hades II", None, None, False), "exactly one"),
+        (("Hades II", 1145350, 5406129, False), "exactly one"),
+        (("Hades II", 1145350, None, True), "exactly one"),
+        (("Hades II", None, 5406129, True), "exactly one"),
+        (("Hades II", True, None, False), "steam"),
+        (("Hades II", -5, None, False), "steam"),
+        (("Hades II", "1145350", None, False), "steam"),
+        (("Hades II", None, 0, False), "sgdb"),
+        (("Hades II", None, None, "yes"), "none"),
+        (("", 1145350, None, False), "title name"),
+        ((None, 1145350, None, False), "title name"),
+    ],
+)
+def test_pin_refuses_bad_requests_without_a_child(backend, args, message) -> None:
+    backend.harness.clear()
+    result = run(backend.pin(*args))
+    assert result["ok"] is False
+    assert result["error"] == "bad-request"
+    assert message in result["message"]
+    assert backend.harness.argv() == []
+
+
+def test_unpin(backend) -> None:
+    backend.harness.clear()
+    result = run(backend.unpin("Hades II"))
+    assert result == {
+        "ok": True,
+        "pinned": of("common/match-unpin.ndjson", "pinned")[0],
+        "notes": [],
+    }
+    assert backend.harness.argv() == [["--json", "match", "Hades II", "--unpin", "--defer-art"]]
+    assert run(backend.unpin("  "))["error"] == "bad-request"
+
+
+def test_pin_of_an_unknown_title_is_the_clis_error(backend) -> None:
+    backend.env["FAKE_CLI_FIXTURE_MATCH"] = "match-unknown"
+    result = run(backend.pin("Nope", 1, None, False))
+    assert result["ok"] is False
+    assert result["error"] == "cli-error"
+    assert result["exit"] == 1
+    assert result["message"].startswith('match: unknown title "Nope"')
+
+
+def test_pin_without_a_pinned_event_is_a_failure(backend) -> None:
+    backend.env["FAKE_CLI_FIXTURE_MATCH"] = "match-silent"
+    result = run(backend.pin("Hades II", 1145350, None, False))
+    assert result["ok"] is False
+    assert result["error"] == "cli-error"
+    assert "no pinned event" in result["message"]
+
+
+def test_pin_times_out_at_the_short_limit(backend) -> None:
+    calls: list[float] = []
+    real = backend._collect
+
+    async def spy(subcommand, args, *, timeout, needs_owned=False):
+        calls.append(timeout)
+        return await real(subcommand, args, timeout=timeout, needs_owned=needs_owned)
+
+    backend._collect = spy
+    run(backend.pin("Hades II", 1145350, None, False))
+    run(backend.unpin("Hades II"))
+    assert calls == [backend.TIMEOUT_SHORT, backend.TIMEOUT_SHORT]
+
+
+def test_cli_too_old_short_circuits_search_and_pin(make_backend) -> None:
+    backend = make_backend(env={"FAKE_CLI_VERSION": "0.2.0"})
+    backend.harness.clear()
+    assert run(backend.search("Hades II"))["error"] == "cli-too-old"
+    assert run(backend.pin("Hades II", 1145350, None, False))["error"] == "cli-too-old"
+    assert run(backend.unpin("Hades II"))["error"] == "cli-too-old"
+    assert backend.harness.argv() == []
+
+
+def test_cli_protocol_when_match_is_rejected(backend) -> None:
+    backend.env["FAKE_CLI_VERSION"] = "0.2.0"  # passed the startup check, rejects now
+    result = run(backend.pin("Hades II", 1145350, None, False))
+    assert result["error"] == "cli-protocol"
+    assert result["exit"] == 2
+
+
+# ----------------------------------------------------------------------
+# set_ignored
+
+
+def read_ignore(backend) -> list[str]:
+    return json.loads(Path(settings_path(backend, "ignore.json")).read_text())
+
+
+def test_set_ignored_keeps_the_list_sorted_and_is_idempotent(backend) -> None:
+    backend.harness.clear()
+    assert run(backend.set_ignored("Steam Big Picture", True)) == {
+        "ok": True,
+        "ignored": ["Steam Big Picture"],
+    }
+    assert run(backend.set_ignored("Desktop", True))["ignored"] == ["Desktop", "Steam Big Picture"]
+    assert run(backend.set_ignored("Desktop", True))["ignored"] == ["Desktop", "Steam Big Picture"]
+    assert read_ignore(backend) == ["Desktop", "Steam Big Picture"]
+    assert run(backend.get_ignored())["ignored"] == ["Desktop", "Steam Big Picture"]
+    assert run(backend.set_ignored("Desktop", False))["ignored"] == ["Steam Big Picture"]
+    assert run(backend.set_ignored("Desktop", False))["ignored"] == ["Steam Big Picture"]
+    assert read_ignore(backend) == ["Steam Big Picture"]
+    assert backend.harness.argv() == []  # a plugin file only; the CLI is not run
+
+
+def test_set_ignored_names_are_exact(backend) -> None:
+    run(backend.set_ignored("desktop", True))
+    run(backend.set_ignored("Desktop", True))
+    assert read_ignore(backend) == ["Desktop", "desktop"]
+    run(backend.set_ignored("DESKTOP", False))
+    assert read_ignore(backend) == ["Desktop", "desktop"]
+
+
+def test_set_ignored_normalises_a_hand_edited_file(backend) -> None:
+    Path(settings_path(backend, "ignore.json")).write_text('["Zed", "Alpha", "Zed"]')
+    assert run(backend.set_ignored("Alpha", True))["ignored"] == ["Alpha", "Zed"]
+    assert read_ignore(backend) == ["Alpha", "Zed"]
+
+
+def test_set_ignored_writes_atomically(backend) -> None:
+    run(backend.set_ignored("Desktop", True))
+    leftovers = [p.name for p in Path(backend.settings_dir).iterdir() if p.name.endswith(".tmp")]
+    assert leftovers == []
+
+
+@pytest.mark.parametrize(
+    "args",
+    [("", True), ("   ", True), (None, True), (7, True), ("Desktop", None), ("Desktop", "yes")],
+)
+def test_set_ignored_refuses_bad_requests(backend, args) -> None:
+    result = run(backend.set_ignored(*args))
+    assert result["ok"] is False
+    assert result["error"] == "bad-request"
+    assert read_ignore(backend) == []
+
+
+def test_set_ignored_works_without_the_cli(make_backend) -> None:
+    backend = make_backend(env={"FAKE_CLI_VERSION": "0.2.0"})
+    assert run(backend.set_ignored("Desktop", True)) == {"ok": True, "ignored": ["Desktop"]}
+
+
+def test_set_ignored_drops_the_host_memo(backend) -> None:
+    owned(backend)
+    run(backend.check_host("MY-GAMING-PC"))
+    backend.harness.clear()
+    run(backend.check_host("MY-GAMING-PC"))
+    assert backend.harness.argv() == []  # memoised
+    run(backend.set_ignored("Tunic", True))
+    run(backend.check_host("MY-GAMING-PC"))
+    assert len(backend.harness.argv()) == 1  # listed again: the ignored count changed
+
+
+def test_the_ignore_file_is_what_sync_and_list_pass(backend) -> None:
+    owned(backend)
+    run(backend.set_ignored("Desktop", True))
+    backend.harness.clear()
+    run(backend.list_apps())
+    argv = backend.harness.argv()[0]
+    ignore_path = argv[argv.index("--ignore-file") + 1]
+    assert json.loads(Path(ignore_path).read_text()) == ["Desktop"]
