@@ -1,0 +1,58 @@
+# CI for the PR-0 device probe kit under probes/ (the throwaway
+# steam-input-probe Decky plugin and the run_probes.py runner). This is a
+# stacked-PR repo, so pull_request carries no branch filter; the path filter
+# keeps unrelated PRs from running it.
+name: probe
+
+on:
+  pull_request:
+    paths:
+      - "probes/**"
+      - ".github/workflows/probe.yml"
+  push:
+    branches: [main]
+    paths:
+      - "probes/**"
+      - ".github/workflows/probe.yml"
+
+jobs:
+  probe-plugin-build:
+    name: Probe plugin build (probes/steam-input-probe)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: probes/steam-input-probe
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        # the pnpm version comes from packageManager in probes/steam-input-probe/package.json
+        with:
+          package_json_file: probes/steam-input-probe/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: probes/steam-input-probe/pnpm-lock.yaml
+      - name: Install (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+      - name: Type-check
+        run: pnpm exec tsc --noEmit
+      - name: Build
+        run: pnpm run build
+      - name: Compile the backend
+        run: python3 -m py_compile main.py
+
+  probe-runner-tests:
+    name: Probe runner tests (Python 3.13.5)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13.5"
+      - name: Install pytest
+        run: pip install pytest
+      - name: Run the runner's tests
+        run: python3 -m pytest probes/tests
+      - name: --help works without websockets
+        run: python3 probes/run_probes.py --help
