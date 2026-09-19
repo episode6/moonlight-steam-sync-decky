@@ -1,0 +1,119 @@
+"""The CLI's ``--json`` event stream (spec 3.4.6) and the restart table (spec 3.9).
+
+:func:`restart_decision` is the same table as ``src/lib/restart.ts``'s
+``restartDecision``; both are tested against the NDJSON files under
+``tests/fixtures`` so they cannot drift apart.
+"""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+
+Event = dict[str, Any]
+
+
+def parse_line(line: str) -> Event | None:
+    """One stdout line -> an event object, or ``None`` when it is not one.
+
+    A line that is not JSON, or is JSON without a string ``"event"``, is
+    not an event; the runner logs it and never relays it.
+    """
+    text = line.strip()
+    if not text:
+        return None
+    try:
+        obj = json.loads(text)
+    except ValueError:
+        return None
+    if not isinstance(obj, dict) or not isinstance(obj.get("event"), str):
+        return None
+    return obj
+
+
+def last_of(events: list[Event], name: str) -> Event | None:
+    for event in reversed(events):
+        if event.get("event") == name:
+            return event
+    return None
+
+
+def saw(events: list[Event], name: str) -> bool:
+    return any(event.get("event") == name for event in events)
+
+
+def _filled(events: list[Event]) -> int:
+    summary = last_of(events, "summary")
+    if summary is None:
+        return 0
+    filled = summary.get("filled", 0)
+    return filled if isinstance(filled, int) and not isinstance(filled, bool) else 0
+
+
+def restart_decision(events: list[Event], exit_code: int | None) -> str:
+    """``"write"`` | ``"art"`` | ``"none"`` for a run's events (spec 3.9).
+
+    - Trigger 1: the run emitted ``awaiting-steam-exit`` -> ``"write"``
+      (a file write is coming, or was refused/stopped and still is).
+    - Triggers 2 and 3: no wait, and ``summary.filled > 0`` (a finished
+      art-only run, or a stopped run that saved images) -> ``"art"``.
+    - Otherwise ``"none"`` (nothing to do, unreachable, nothing saved).
+
+    ``exit_code`` is accepted for symmetry with the frontend's
+    ``restartDecision(events, exit)``; the table does not depend on it.
+    """
+    del exit_code
+    if saw(events, "awaiting-steam-exit"):
+        return "write"
+    if _filled(events) > 0:
+        return "art"
+    return "none"
+
+
+def committed(events: list[Event]) -> bool:
+    """True when the run emitted ``commit`` with ``written: true``."""
+    commit = last_of(events, "commit")
+    return bool(commit and commit.get("written") is True)
+
+
+def next_pending(
+    previous: dict[str, Any],
+    *,
+    kind: str,
+    events: list[Event],
+    exit_code: int | None,
+    now: str,
+) -> dict[str, Any]:
+    """The ``pending.json`` a finished run leaves behind (spec 3.9).
+
+    - ``commit.written`` -> ``restart_needed: "none"`` and ``layout_walk``
+      true (false for a ``remove`` run: the entries are gone).
+    - awaited but not written (Later, stopped, timed out) -> stays ``"write"``.
+    - art only / stopped with images -> ``"art"``.
+    - nothing -> ``restart_needed`` unchanged.
+
+    A run that got as far as a ``summary`` also records it (and its ``plan``)
+    as ``last_summary`` / ``last_plan`` / ``last_kind``, which feed the
+    panel's *Last sync* row; ``since`` is when that happened.
+    """
+    pending = dict(previous)
+    summary = last_of(events, "summary")
+    plan = last_of(events, "plan")
+    if summary is not None:
+        pending.update(last_summary=summary, last_plan=plan, last_kind=kind, since=now)
+    if committed(events):
+        pending.update(
+            restart_needed="none",
+            layout_walk=kind != "remove",
+            since=now,
+            last_kind=kind,
+        )
+        return pending
+    decision = restart_decision(events, exit_code)
+    if decision == "write":
+        pending.update(restart_needed="write", last_kind=kind)
+        if plan is not None:
+            pending["last_plan"] = plan
+    elif decision == "art":
+        pending.update(restart_needed="art", last_kind=kind, since=now)
+    return pending

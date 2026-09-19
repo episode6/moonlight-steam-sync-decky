@@ -1,0 +1,3 @@
+# host show / set: the active host and the per-host list caches.
+{"event":"start","schema":1,"version":"0.3.0","command":"host"}
+{"event":"host","name":"MY-GAMING-PC","source":"state","cached_hosts":[{"name":"MY-GAMING-PC","when":"2026-09-18T14:02:00Z","count":7},{"name":"OFFICE-PC","when":"2026-09-10T20:15:00Z","count":4}]}

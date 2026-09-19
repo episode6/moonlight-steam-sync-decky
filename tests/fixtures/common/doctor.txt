@@ -1,0 +1,12 @@
+python:        3.13.5 (/usr/bin/python3)
+config file:   ~/.config/moonlight-steam-sync/config.toml (found)
+steam dir:     ~/.local/share/Steam
+steam user:    12345678 (single user)
+shortcuts:     ~/.local/share/Steam/userdata/12345678/config/shortcuts.vdf (7 entries, 6 owned)
+steam running: yes
+moonlight:     /usr/bin/moonlight (native)
+sgdb api key:  present
+configured host: MY-GAMING-PC
+session:       gamescope (XDG_CURRENT_DESKTOP=gamescope, GAMESCOPE_WAYLAND_DISPLAY=gamescope-0)
+active host:   MY-GAMING-PC (state file)
+cached hosts:  MY-GAMING-PC (7 apps, 2026-09-18T14:02:00Z), OFFICE-PC (4 apps, 2026-09-10T20:15:00Z)

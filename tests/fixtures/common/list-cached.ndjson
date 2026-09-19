@@ -1,0 +1,10 @@
+# list --cached: the same seven apps from the per-host cache (spec 3.12).
+{"event":"start","schema":1,"version":"0.3.0","command":"list"}
+{"event":"app","name":"Balatro","label":"added","kind":"stream","match":{"steam_appid":2379780,"sgdb_id":5431,"matched_name":"Balatro","how":"sgdb:exact-verified"},"fuzzy":false,"duplicate_of":null,"same_game_as":[{"name":"Balatro (Epic)","host":"OFFICE-PC"}],"cached":true,"cached_when":"2026-09-18T14:02:00Z"}
+{"event":"app","name":"Desktop","label":"ignored","kind":"ignored","match":null,"fuzzy":false,"duplicate_of":null,"same_game_as":[],"cached":true,"cached_when":"2026-09-18T14:02:00Z"}
+{"event":"app","name":"Hades II","label":"added","kind":"shortcut","match":{"steam_appid":1145360,"sgdb_id":36072,"matched_name":"Hades","how":"steamstore:fuzzy"},"fuzzy":true,"duplicate_of":null,"same_game_as":[],"cached":true,"cached_when":"2026-09-18T14:02:00Z"}
+{"event":"app","name":"Sea of Stars","label":"added","kind":"stream","match":{"steam_appid":1244090,"sgdb_id":5322710,"matched_name":"Sea of Stars","how":"pinned"},"fuzzy":false,"duplicate_of":null,"same_game_as":[],"cached":true,"cached_when":"2026-09-18T14:02:00Z"}
+{"event":"app","name":"Sea of Stars (GOG)","label":"new","kind":"duplicate","match":{"steam_appid":1244090,"sgdb_id":5322710,"matched_name":"Sea of Stars","how":"sgdb:exact"},"fuzzy":false,"duplicate_of":"Sea of Stars","same_game_as":[],"cached":true,"cached_when":"2026-09-18T14:02:00Z"}
+{"event":"app","name":"Spiritfarer","label":"parked","kind":"parked","match":{"steam_appid":972660,"sgdb_id":4513,"matched_name":"Spiritfarer: Farewell Edition","how":"sgdb:exact"},"fuzzy":false,"duplicate_of":null,"same_game_as":[],"cached":true,"cached_when":"2026-09-18T14:02:00Z"}
+{"event":"app","name":"Tunic","label":"added","kind":"shortcut","match":{"steam_appid":null,"sgdb_id":null,"matched_name":null,"how":"none"},"fuzzy":false,"duplicate_of":null,"same_game_as":[],"cached":true,"cached_when":"2026-09-18T14:02:00Z"}
+{"event":"end","count":7,"host":"MY-GAMING-PC"}
