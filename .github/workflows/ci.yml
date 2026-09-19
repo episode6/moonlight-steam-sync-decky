@@ -1,0 +1,106 @@
+# CI for the Moonlight Sync plugin (spec 3.6.2). No Docker and no Decky CLI:
+# the zip is built by scripts/package.py, which reproduces the Decky CLI's
+# layout. The plugin PRs are stacked on feature branches, so pull_request
+# carries no branch filter.
+#
+# probes/ (the PR-0 device-probe kit) is left to its own workflow
+# (probe.yml) except for the `probes` job below, which only runs its tests:
+# the root pnpm project, tsconfig, eslint, vitest, ruff and pytest all
+# ignore probes/ explicitly.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    name: Frontend (typecheck, lint, vitest, build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run typecheck
+      - run: pnpm run lint
+      - run: pnpm run test
+      - run: pnpm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  backend:
+    name: Backend (ruff, pytest on Python 3.13.5)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          # The exact Python a stock SteamOS ships, which decky-loader runs
+          # the plugin backend with.
+          python-version: "3.13.5"
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check .
+      - run: python -m pytest tests/ -v
+
+  probes:
+    name: Probe kit tests (probes/tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        if: hashFiles('probes/tests/**') != ''
+        with:
+          python-version: "3.13.5"
+      - name: pytest probes/tests
+        if: hashFiles('probes/tests/**') != ''
+        run: |
+          pip install pytest
+          python -m pytest probes/tests -v
+      - name: No probe kit on this tree
+        if: hashFiles('probes/tests/**') == ''
+        run: echo "probes/tests does not exist here; nothing to run"
+
+  package:
+    name: Package Moonlight-Sync.zip
+    needs: [frontend, backend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13.5"
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Fetch the pinned CLI (skipped with a warning until it is released)
+        # Only "the release does not exist" is lenient. When it exists,
+        # entrypoint.sh runs strict: a bad download or checksum fails the job.
+        run: |
+          pin=$(python3 -c 'import json; print(json.load(open("package.json"))["moonlightSteamSync"])')
+          url="https://github.com/episode6/moonlight-steam-sync/releases/download/v$pin/moonlight-steam-sync.pyz.sha256"
+          if curl -fsSLI -o /dev/null "$url"; then
+            backend/entrypoint.sh
+          else
+            echo "::warning title=CLI v$pin not released::moonlight-steam-sync v$pin has no GitHub release yet; packaging without bin/moonlight-steam-sync.pyz"
+          fi
+      - run: python3 scripts/package.py --list
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Moonlight-Sync
+          path: out/Moonlight-Sync.zip
+          if-no-files-found: error
