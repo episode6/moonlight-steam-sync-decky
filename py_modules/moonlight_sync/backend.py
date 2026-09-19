@@ -535,7 +535,17 @@ class Backend:
         return ["--ignore-file", self.store.path("ignore.json")]
 
     def _classify(self, result: RunResult, timeout: float | None) -> Result | None:
-        """``None`` for a clean run, else the failure result for it."""
+        """``None`` for a clean run, else the failure result for it.
+
+        The failure is scrubbed of the SteamGridDB key as a whole (hard
+        rule 4): its ``events`` list reaches the frontend too, not just
+        ``message``/``stderr``, so every collecting callable and every
+        long run's failure is covered here once.
+        """
+        found = self._classify_raw(result, timeout)
+        return None if found is None else self._scrub(found, self._effective_key())
+
+    def _classify_raw(self, result: RunResult, timeout: float | None) -> Result | None:
         if result.timed_out:
             return failure("timeout", f"timed out after {timeout:g} s", timeout_s=timeout)
         if not any(e.get("event") == "start" for e in result.events):
@@ -1098,12 +1108,13 @@ class Backend:
         assert result is not None
         pinned = ev.last_of(result.events, "pinned")
         if pinned is None:
-            return failure(
+            unconfirmed = failure(
                 "cli-error",
                 "the CLI did not confirm the pin (no pinned event)",
                 exit=result.exit,
                 events=result.events,
             )
+            return self._scrub(unconfirmed, self._effective_key())
         self._log(f"match: {selector[0]} for {name!r}")
         confirmed = {"ok": True, "pinned": pinned, "notes": self._notes(result)}
         return self._scrub(confirmed, self._effective_key())

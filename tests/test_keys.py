@@ -238,3 +238,31 @@ def test_search_and_pin_results_never_carry_the_key(make_backend, tmp_path) -> N
         blob = json.dumps(result, ensure_ascii=False)
         assert KEY not in blob
         assert "…cdef" in blob
+
+
+def test_search_and_pin_failures_never_carry_the_key(make_backend, tmp_path) -> None:
+    """Hard rule 4 on the failure path: a note echoing the key before an
+    ``error`` (or a match with no ``pinned`` event) is scrubbed too, in
+    ``events`` as well as ``message``."""
+    fixture = tmp_path / "fx"
+    fixture.mkdir()
+    start = '{"event":"start","schema":1,"version":"0.3.0","command":"%s"}\n'
+    note = json.dumps({"event": "note", "message": f"using key {KEY}"}) + "\n"
+    (fixture / "search.ndjson").write_text(
+        start % "search"
+        + note
+        + json.dumps({"event": "error", "exit": 1, "message": f"search: bad key {KEY}"})
+        + "\n"
+    )
+    (fixture / "match.ndjson").write_text(start % "match" + note)
+    backend = make_backend(env={"FAKE_CLI_FIXTURES": str(fixture), "SGDB_API_KEY": KEY})
+    searched = run(backend.search("Hades II"))
+    pinned = run(backend.pin("Hades II", 1145350))
+    for result in (searched, pinned):
+        assert result["ok"] is False
+        assert result["error"] == "cli-error"
+        assert result["events"], "the events before the failure are handed on"
+        blob = json.dumps(result, ensure_ascii=False)
+        assert KEY not in blob
+        assert "…cdef" in blob
+    assert searched["message"] == "search: bad key …cdef"

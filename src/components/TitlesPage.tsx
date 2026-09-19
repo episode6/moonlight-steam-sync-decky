@@ -80,7 +80,8 @@ function Row({
         borderBottom: "1px solid rgba(255,255,255,0.08)",
       }}
     >
-      <Thumb url={row.thumbnail} />
+      {/* Keyed on the URL so a re-pointed row gets a fresh load-failure state. */}
+      <Thumb key={row.thumbnail ?? "none"} url={row.thumbnail} />
       <div style={{ flexGrow: 1, minWidth: 0 }}>
         <div style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {row.name}
