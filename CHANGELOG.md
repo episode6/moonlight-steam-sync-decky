@@ -16,8 +16,21 @@ project uses [semantic versioning](https://semver.org/).
   `sync_event` / `sync_done`, one sync at a time, timeouts, SIGINT on stop
   and on unload (a child whose output pipes stay open, or whose output
   cannot be read, is still killed and reaped), and the plugin's own `settings.json`, `ignore.json`,
-  `owned-apps.json` and `pending.json`. `search`, `pin`, `unpin`,
-  `set_ignored`, `layouts` and `record_layout` answer "not yet".
+  `owned-apps.json` and `pending.json`. `layouts` and `record_layout`
+  answer "not yet".
+- The Titles page (Settings → Titles, also opened from the panel's
+  header): every title the active host publishes, joined from `list` and
+  `status`, with Steam's capsule, the match line, a badge (stream button,
+  shortcut, unmatched, ignored, parked, duplicate) and chips (fuzzy, pinned,
+  same game on another host, art refreshes on next sync); the All / Stream
+  buttons / Shortcuts / Unmatched / Ignored filters, Show parked, pages of
+  50, and the last cached listing when the host is unreachable.
+- Change match: searches Steam's store and SteamGridDB, shows one list
+  (Steam first) with what each result would make of the title ("becomes
+  stream button" for an owned game), marks the current match, offers No
+  match, and pins with `match --defer-art` so the next sync applies it and
+  re-fetches the art. Ignore / Unignore edit the plugin's `ignore.json`.
+- The backend's `search`, `pin`, `unpin` and `set_ignored`.
 - The bundled CLI: installed to `~/.local/bin/moonlight-steam-sync` on load
   when missing or older (atomically, never downgrading); "CLI not
   installed" / "CLI too old" states with every CLI action disabled.
