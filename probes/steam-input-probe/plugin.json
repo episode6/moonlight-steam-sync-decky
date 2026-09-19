@@ -1,0 +1,11 @@
+{
+  "name": "steam-input-probe",
+  "author": "episode6, Inc.",
+  "flags": [],
+  "api_version": 1,
+  "publish": {
+    "tags": ["probe"],
+    "description": "Throwaway probe kit for the Moonlight Sync plugin (spec PR-0, probes V1-V5). Not for the store.",
+    "image": ""
+  }
+}

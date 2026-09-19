@@ -1,0 +1,9 @@
+# Dependencies and build output of the throwaway probe plugin.
+node_modules
+.pnpm-store
+dist
+out
+__pycache__/
+*.log
+*.swp
+.DS_Store
