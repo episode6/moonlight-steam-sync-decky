@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
+import os
+import signal
+import time
 from pathlib import Path
 from typing import Any
 
@@ -779,6 +783,74 @@ def test_timeout(make_backend) -> None:
     assert result["ok"] is False
     assert result["error"] == "timeout"
     assert result["message"] == "timed out after 1 s"
+
+
+def reap(pidfile: Path) -> None:
+    if pidfile.exists():
+        for pid in pidfile.read_text().split():
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(int(pid), signal.SIGKILL)
+
+
+def grandchild(backend, tmp_path: Path) -> Path:
+    """A ``sleep`` grandchild that inherits the fake's pipes and outlives it."""
+    pidfile = tmp_path / "grandchild.pid"
+    backend.KILL_GRACE = 0.3
+    backend.env.update(FAKE_CLI_GRANDCHILD_S="30", FAKE_CLI_GRANDCHILD_PIDFILE=str(pidfile))
+    return pidfile
+
+
+def test_pipes_held_by_a_grandchild_do_not_hang_a_call(backend, tmp_path) -> None:
+    owned(backend)
+    pidfile = grandchild(backend, tmp_path)
+    try:
+        started = time.monotonic()
+        result = run(backend.status())
+        elapsed = time.monotonic() - started
+    finally:
+        reap(pidfile)
+    assert result["ok"] is True
+    assert elapsed < 5
+    assert backend._procs == set()
+    log = (tmp_path / "logs" / "moonlight-sync.log").read_text()
+    assert "output pipes are still open after it exited" in log
+
+
+def test_timeout_with_a_grandchild_holding_the_pipes(backend, tmp_path) -> None:
+    owned(backend)
+    pidfile = grandchild(backend, tmp_path)
+    backend.env["FAKE_CLI_SLEEP_MS"] = "5000"
+    backend.TIMEOUT_SHORT = 0.5
+    try:
+        started = time.monotonic()
+        result = run(backend.status())
+        elapsed = time.monotonic() - started
+    finally:
+        reap(pidfile)
+    assert result["error"] == "timeout"
+    assert elapsed < 5
+    assert backend._procs == set()
+
+
+def test_a_stdout_line_over_the_limit_kills_and_reaps_the_child(backend, tmp_path) -> None:
+    owned(backend)
+    backend.env["FAKE_CLI_NOISE_BYTES"] = str(5 * 1024 * 1024)
+    result = run(backend.status())
+    assert result["ok"] is False
+    assert result["error"] == "io"
+    assert "unreadable CLI output" in result["message"]
+    assert backend._procs == set()
+
+
+@pytest.mark.scenario("full-sync")
+def test_a_run_whose_output_is_unreadable_still_ends_with_sync_done(backend, tmp_path) -> None:
+    owned(backend)
+    backend.env["FAKE_CLI_NOISE_BYTES"] = str(5 * 1024 * 1024)
+    run(start_and_wait(backend, backend.start_sync()))
+    done = backend.emitted.of("sync_done")[0]
+    assert done["failure"]["error"] == "io"
+    assert done["exit"] != 0
+    assert run(backend.sync_state())["running"] is False
 
 
 def test_doctor_parses_labels(backend) -> None:

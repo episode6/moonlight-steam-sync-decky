@@ -318,6 +318,53 @@ describe("runs and the restart flow (spec 3.9)", () => {
     expect(ui.prompts).toHaveLength(promptsBefore);
   });
 
+  /** A start_sync whose answer is held back until `answer()` is called. */
+  function heldStart() {
+    let answer: () => void = () => undefined;
+    const start_sync = () =>
+      new Promise((resolve) => {
+        answer = () => resolve({ ok: true, kind: "sync" });
+      });
+    return { start_sync, answer: () => answer() };
+  }
+
+  async function settle() {
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+  }
+
+  it("a re-armed run restarts at once even when its wait beats the start_sync answer", async () => {
+    const held = heldStart();
+    const controller = await loaded({
+      pending: { ok: true, ...PENDING, restart_needed: "write", last_kind: "sync" },
+      start_sync: held.start_sync,
+    });
+    const started = controller.restartRow();
+    await settle();
+    expect(names()).toContain("start_sync");
+    relay(controller, "sync", loadFixture("refused/sync.ndjson"));
+    expect(steam.shutdowns).toBe(1);
+    expect(ui.prompts).toHaveLength(0);
+    held.answer();
+    await started;
+    expect(controller.state.run?.immediate).toBe(true);
+    expect(controller.state.run?.running).toBe(true);
+    expect(ui.prompts).toHaveLength(0);
+  });
+
+  it("a prompt shown before the start_sync answer arrives stays open", async () => {
+    const held = heldStart();
+    const controller = await loaded({ start_sync: held.start_sync });
+    const started = controller.sync();
+    await settle();
+    relay(controller, "sync", loadFixture("refused/sync.ndjson"));
+    expect(ui.prompts).toHaveLength(1);
+    held.answer();
+    await started;
+    expect(ui.closed).toBe(0);
+    expect(controller.state.run?.immediate).toBe(false);
+    expect(steam.shutdowns).toBe(0);
+  });
+
   it("the persistent row re-runs the kind that was pending", async () => {
     const controller = await loaded({
       pending: { ok: true, ...PENDING, restart_needed: "write", last_kind: "remove" },

@@ -16,7 +16,8 @@ Conventions (spec 3.7, amended):
   ``cwd=<home>`` and ``env`` = the backend's plus
   ``MOONLIGHT_STEAM_SYNC_FROM_PLUGIN=1`` and ``HOME=<home>``.
 - Collecting runs wait for the child, time out (30 s / 90 s: SIGINT, then
-  SIGKILL 3 s later) and return the events. Long runs (``start_sync``,
+  SIGKILL 3 s later) and return the events; pipes a grandchild keeps open
+  are closed 3 s after the child exits. Long runs (``start_sync``,
   ``start_art_refetch``, ``start_remove_all``) share one busy guard and relay
   every event as ``sync_event`` and the end as ``sync_done``.
 - The plugin never writes under the Steam directory, never writes
@@ -53,6 +54,7 @@ Emit = Callable[..., Any]
 LOG_NAME = "moonlight-sync.log"
 LOG_MAX_BYTES = 5 * 1024 * 1024
 LOG_KEEP_BYTES = 1024 * 1024
+STDOUT_LINE_LIMIT = 4 * 1024 * 1024
 
 NOT_YET: Result = {"ok": False, "error": "bad-request", "message": "not yet"}
 
@@ -64,6 +66,14 @@ def iso_now() -> str:
 
 def failure(code: str, message: str, **extra: Any) -> Result:
     return {"ok": False, "error": code, "message": message, **extra}
+
+
+class CliOutputError(OSError):
+    """The child's output could not be read; it was killed and reaped."""
+
+    def __init__(self, message: str, exit_code: int) -> None:
+        super().__init__(message)
+        self.exit = exit_code
 
 
 @dataclass
@@ -333,6 +343,46 @@ class Backend:
             with contextlib.suppress(ProcessLookupError):
                 proc.kill()
 
+    @staticmethod
+    async def _until_exit(proc: asyncio.subprocess.Process) -> None:
+        """Resolve once the child has exited, whoever holds its pipes.
+
+        ``proc.wait()`` only resolves after every pipe has closed, which a
+        grandchild that inherited them can delay forever; ``returncode`` is
+        set the moment the child itself exits.
+        """
+        while proc.returncode is None:
+            await asyncio.sleep(0.05)
+
+    async def _settle(
+        self, readers: asyncio.Future, exited: asyncio.Future, limit: float | None
+    ) -> bool:
+        """Wait up to ``limit`` for the output readers to reach EOF.
+
+        Once the child has exited the readers get at most ``KILL_GRACE``
+        more, so pipes held open by a grandchild cannot stall the caller.
+        """
+        await asyncio.wait({readers, exited}, timeout=limit, return_when=asyncio.FIRST_COMPLETED)
+        if not readers.done() and exited.done():
+            await asyncio.wait({readers}, timeout=self.KILL_GRACE)
+        return readers.done()
+
+    @staticmethod
+    def _close_pipes(proc: asyncio.subprocess.Process) -> None:
+        """Close our ends of the child's stdout/stderr pipes.
+
+        asyncio has no public accessor for the pipe transports; closing them
+        lets the subprocess transport finish (and ``proc.wait()`` resolve)
+        even when a grandchild still holds the write ends.
+        """
+        transport = getattr(proc, "_transport", None)
+        if transport is None:
+            return
+        for fd in (1, 2):
+            pipe = transport.get_pipe_transport(fd)
+            if pipe is not None:
+                pipe.close()
+
     async def _spawn(
         self,
         argv: list[str],
@@ -342,7 +392,15 @@ class Backend:
         on_proc: Callable[[asyncio.subprocess.Process], None] | None = None,
         json_mode: bool = True,
     ) -> RunResult:
-        """The one place a child is started. Raises ``OSError`` if it cannot be."""
+        """The one place a child is started.
+
+        Raises ``OSError`` if it cannot be started, and :class:`CliOutputError`
+        (an ``OSError``) if its output cannot be read (a line over the 4 MiB
+        limit); the child is killed and reaped either way. A timeout sends
+        SIGINT, then SIGKILL ``KILL_GRACE`` later. Output pipes still open
+        ``KILL_GRACE`` after the child exited (held by a grandchild) are
+        closed rather than waited for.
+        """
         self._log("run: " + shlex.join(argv))
         proc = await asyncio.create_subprocess_exec(
             *argv,
@@ -351,7 +409,7 @@ class Backend:
             stderr=asyncio.subprocess.PIPE,
             env=self._child_env(),
             cwd=self._cwd(),
-            limit=4 * 1024 * 1024,
+            limit=STDOUT_LINE_LIMIT,
         )
         self._procs.add(proc)
         if on_proc is not None:
@@ -359,6 +417,7 @@ class Backend:
         events: list[dict[str, Any]] = []
         stdout_parts: list[str] = []
         stderr_parts: list[str] = []
+        read_errors: list[Exception] = []
 
         async def read_stdout() -> None:
             assert proc.stdout is not None
@@ -392,22 +451,48 @@ class Backend:
                 stderr_parts.append(text)
                 self._log_raw(text)
 
-        readers = asyncio.ensure_future(asyncio.gather(read_stdout(), read_stderr()))
+        async def reading(reader: Callable[[], Awaitable[None]]) -> None:
+            try:
+                await reader()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # e.g. ValueError: a line over the limit
+                read_errors.append(exc)
+                self._log(f"reading the CLI's output failed ({exc}); killing it")
+                self._kill(proc)
+
+        readers = asyncio.ensure_future(asyncio.gather(reading(read_stdout), reading(read_stderr)))
+        exited = asyncio.ensure_future(self._until_exit(proc))
         timed_out = False
         try:
-            done, _ = await asyncio.wait({readers}, timeout=timeout)
-            if not done:
+            finished = await self._settle(readers, exited, timeout)
+            if not finished and proc.returncode is None:
                 timed_out = True
                 self._log(f"timed out after {timeout:g} s; interrupting")
                 self._interrupt(proc)
-                done, _ = await asyncio.wait({readers}, timeout=self.KILL_GRACE)
-                if not done:
+                finished = await self._settle(readers, exited, self.KILL_GRACE)
+                if not finished and proc.returncode is None:
                     self._kill(proc)
-            await readers
+                    finished = await self._settle(readers, exited, self.KILL_GRACE)
+            if not finished or read_errors:
+                if not finished:
+                    self._log("the CLI's output pipes are still open after it exited; closing them")
+                readers.cancel()
+                self._close_pipes(proc)
+                await asyncio.wait({readers})
+            if proc.returncode is None:
+                self._kill(proc)
             code = await proc.wait()
         finally:
+            for task in (readers, exited):
+                if not task.done():
+                    task.cancel()
+            if proc.returncode is None:
+                self._kill(proc)
             self._procs.discard(proc)
         self._log(f"exit {code}: {shlex.join(argv[len(self.cli) :]) or argv[-1]}")
+        if read_errors:
+            raise CliOutputError(f"unreadable CLI output: {read_errors[0]}", code)
         return RunResult(
             exit=code,
             events=events,
@@ -1098,6 +1183,10 @@ class Backend:
             )
             exit_code = result.exit
             run.failure = self._classify(result, None)
+        except CliOutputError as exc:
+            self._log(f"{run.kind}: {exc}")
+            exit_code = exc.exit
+            run.failure = failure("io", f"could not run the CLI: {exc}")
         except OSError as exc:
             self._log(f"{run.kind}: could not start: {exc}")
             exit_code = 127

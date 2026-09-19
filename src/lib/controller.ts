@@ -82,6 +82,8 @@ export class Controller {
   private prompt: PromptHandle | null = null;
   private lastRunOpts: RunOpts = {};
   private mismatchRetried = false;
+  /** The run a `start_*` call is starting, until the call answers. */
+  private starting: { kind: RunKind; immediate: boolean } | null = null;
 
   constructor(
     private readonly backend: Backend,
@@ -236,15 +238,23 @@ export class Controller {
       this.store.set({ message: errorText(written) });
       return written;
     }
-    const result = await this.backend[RUN_CALLS[kind]](opts);
+    const immediate = !!opts.immediate_restart;
+    // Before the call: its first events (even awaiting-steam-exit) may reach
+    // onSyncEvent before its answer does, and must see this run's intent.
+    this.closePrompt();
+    this.starting = { kind, immediate };
+    let result: Result;
+    try {
+      result = await this.backend[RUN_CALLS[kind]](opts);
+    } finally {
+      this.starting = null;
+    }
     if (isFailure(result)) {
       this.store.set({ message: errorText(result) });
       return result;
     }
     this.lastRunOpts = opts;
-    this.closePrompt();
     // An event may have beaten the call's answer here; keep what it started.
-    const immediate = !!opts.immediate_restart;
     const current = this.state.run;
     const run =
       current?.running && current.kind === kind && current.events.length
@@ -270,7 +280,10 @@ export class Controller {
 
   onSyncEvent(payload: SyncEventPayload): void {
     let run = this.state.run;
-    if (!run || !run.running) run = newRun(payload.kind);
+    if (!run || !run.running) {
+      const starting = this.starting?.kind === payload.kind ? this.starting : null;
+      run = newRun(payload.kind, starting?.immediate ?? false);
+    }
     run = applyRunEvent(run, payload.event);
     this.store.set({ run });
     if (payload.event.event === "awaiting-steam-exit") this.onAwaiting();

@@ -43,6 +43,12 @@ backend's ``cli=`` seam. Everything is driven by environment variables:
 ``FAKE_CLI_NOISE``
     A non-JSON line printed to stdout right after the first event (the
     backend must log it and never relay it).
+``FAKE_CLI_NOISE_BYTES``
+    Print one stdout line of that many ``x`` characters right after the
+    first event (a line over the backend's 4 MiB limit).
+``FAKE_CLI_GRANDCHILD_S`` / ``FAKE_CLI_GRANDCHILD_PIDFILE``
+    Start a ``sleep`` grandchild for that many seconds that inherits stdout
+    and stderr (and outlives the fake), writing its pid to the pid file.
 """
 
 from __future__ import annotations
@@ -51,6 +57,7 @@ import json
 import os
 import re
 import signal
+import subprocess
 import sys
 import time
 
@@ -261,6 +268,8 @@ def _replay(subcommand: str, path: str) -> int:
         _err(f"{subcommand}: {event.get('event')}")
         if index == 0 and noise:
             _out(noise)
+        if index == 0 and os.environ.get("FAKE_CLI_NOISE_BYTES"):
+            _out("x" * int(os.environ["FAKE_CLI_NOISE_BYTES"]))
         if event.get("event") == "awaiting-steam-exit":
             code = _wait_for_steam(subcommand, events)
             if code is not None:
@@ -279,9 +288,21 @@ def _replay(subcommand: str, path: str) -> int:
     return code
 
 
+def _spawn_grandchild() -> None:
+    seconds = os.environ.get("FAKE_CLI_GRANDCHILD_S")
+    if not seconds:
+        return
+    child = subprocess.Popen(["sleep", seconds], stdin=subprocess.DEVNULL)
+    pidfile = os.environ.get("FAKE_CLI_GRANDCHILD_PIDFILE")
+    if pidfile:
+        with open(pidfile, "a", encoding="utf-8") as handle:
+            handle.write(f"{child.pid}\n")
+
+
 def main(argv: list[str]) -> int:
     signal.signal(signal.SIGINT, _on_sigint)
     _log_argv(argv)
+    _spawn_grandchild()
     extra = os.environ.get("FAKE_CLI_STDERR")
     if extra:
         _err(extra)

@@ -14,7 +14,8 @@ project uses [semantic versioning](https://semver.org/).
 - The backend (`main.py` over `py_modules/moonlight_sync/`): every callable
   of the plugin's contract, the CLI runner that relays `--json` events as
   `sync_event` / `sync_done`, one sync at a time, timeouts, SIGINT on stop
-  and on unload, and the plugin's own `settings.json`, `ignore.json`,
+  and on unload (a child whose output pipes stay open, or whose output
+  cannot be read, is still killed and reaped), and the plugin's own `settings.json`, `ignore.json`,
   `owned-apps.json` and `pending.json`. `search`, `pin`, `unpin`,
   `set_ignored`, `layouts` and `record_layout` answer "not yet".
 - The bundled CLI: installed to `~/.local/bin/moonlight-steam-sync` on load

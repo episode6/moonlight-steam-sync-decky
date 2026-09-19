@@ -148,7 +148,10 @@ There is no Steam Deck during development; everything else is tested.
   `FAKE_CLI_STEAM_GONE_FILE` / `FAKE_CLI_WAIT_S` (the await-exit wait),
   `FAKE_CLI_SIGINT_DURING_WAIT=immediate|deferred`, `FAKE_CLI_SLEEP_MS`,
   `FAKE_CLI_EXIT`, `FAKE_CLI_STDERR`, `FAKE_CLI_NOISE` (a non-JSON stdout
-  line), `FAKE_CLI_FIXTURE_<SUB>[_<ACTION>]` (another fixture basename, e.g.
+  line), `FAKE_CLI_NOISE_BYTES` (one stdout line of that many bytes),
+  `FAKE_CLI_GRANDCHILD_S` / `FAKE_CLI_GRANDCHILD_PIDFILE` (a `sleep`
+  grandchild that keeps the pipes open after the fake exits),
+  `FAKE_CLI_FIXTURE_<SUB>[_<ACTION>]` (another fixture basename, e.g.
   `FAKE_CLI_FIXTURE_HOST_SHOW=host-none`). A missing fixture exits 99.
 - `tests/fixtures/<scenario>/<command>.ndjson` are hand-written from §3.4.6
   (`full-sync`, `art-only`, `nothing-to-do`, `unreachable`, `stopped`,
