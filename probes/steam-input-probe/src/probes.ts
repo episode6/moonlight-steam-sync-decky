@@ -16,6 +16,7 @@ const PREFIX = "[steam-input-probe]";
 const SHORTCUT_APPID_MIN = 0x80000000;
 export const NEPTUNE_TYPE_STRING = "controller_steamcontroller_neptune";
 const NEPTUNE_ENUM = 4; // EControllerType.SteamControllerNeptune in @decky/ui 4.12
+const FALLBACK_INDEX = 15; // the Deck controller index deckyemu measured; used only when the type lookup fails
 
 const backendLog = callable<[line: string], { ok: boolean; path?: string; error?: string }>("log");
 const backendStartWatch = callable<
@@ -137,6 +138,14 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+/** An optional controller index typed by the operator; null when blank, an error text when malformed. */
+export function parseIndexOverride(text: string): number | null | string {
+  const t = text.trim();
+  if (!t) return null;
+  if (!/^\d+$/.test(t)) return `controller index override "${text}" is not a non-negative integer`;
+  return Number(t);
+}
+
 export function parseAppids(text: string): { appids: number[]; bad: string[] } {
   const appids: number[] = [];
   const bad: string[] = [];
@@ -165,7 +174,26 @@ export interface ControllerRow {
  * The type-string lookup tries controllerStore, then SteamClient.Input, then
  * falls back to the enum value 4, and says which one answered.
  */
-export async function findControllers(): Promise<{ controllers: ControllerRow[]; deckIndex: number | null; source: string }> {
+/** An array, or any iterable (an older MobX observable array is not an Array). */
+function asList(v: unknown): any[] | null {
+  if (Array.isArray(v)) return v;
+  if (v && typeof v === "object" && typeof (v as any)[Symbol.iterator] === "function") {
+    try {
+      return Array.from(v as Iterable<unknown>);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+export interface ControllerScan {
+  controllers: ControllerRow[];
+  deckIndex: number | null;
+  source: string;
+}
+
+export async function findControllers(): Promise<ControllerScan> {
   const w = g();
   const cs = w.controllerStore;
   const attempts: string[] = [];
@@ -177,23 +205,22 @@ export async function findControllers(): Promise<{ controllers: ControllerRow[];
     if (typeof cs.GetControllers === "function") {
       try {
         const r = cs.GetControllers();
-        if (Array.isArray(r)) {
-          list = r;
-          attempts.push("controllerStore.GetControllers() -> array");
-        } else attempts.push(`controllerStore.GetControllers() -> ${typeof r}: ${j(r, 2)}`);
+        list = asList(r);
+        if (list) attempts.push(`controllerStore.GetControllers() -> ${Array.isArray(r) ? "array" : "iterable"} of ${list.length}`);
+        else attempts.push(`controllerStore.GetControllers() -> ${typeof r}: ${j(r, 2)}`);
       } catch (e) {
         attempts.push(`controllerStore.GetControllers() threw ${errText(e)}`);
       }
     } else attempts.push(`controllerStore.GetControllers is ${typeof cs.GetControllers}`);
     if (list === null) {
       for (const k of ["m_rgControllers", "controllers", "m_controllers"]) {
-        const v = cs[k];
-        if (Array.isArray(v)) {
+        const v = asList(cs[k]);
+        if (v) {
           list = v;
-          attempts.push(`controllerStore.${k} -> array`);
+          attempts.push(`controllerStore.${k} -> list of ${v.length}`);
           break;
         }
-        attempts.push(`controllerStore.${k} is ${typeof v}`);
+        attempts.push(`controllerStore.${k} is ${typeof cs[k]}`);
       }
     }
   }
@@ -237,6 +264,37 @@ export async function findControllers(): Promise<{ controllers: ControllerRow[];
   return { controllers, deckIndex, source };
 }
 
+/**
+ * The controller indices to probe. The confirmed Deck index when the type
+ * lookup found it (or the operator's override); otherwise every listed
+ * controller index, or the measured fallback 15 when nothing was listed, each
+ * labelled "index not confirmed by type" so the probe still answers without
+ * another build.
+ */
+export function indexPlan(scan: ControllerScan, override: number | null): { indices: number[]; confirmed: boolean; source: string } {
+  if (override !== null) return { indices: [override], confirmed: true, source: "override (typed in the panel)" };
+  if (scan.deckIndex !== null) return { indices: [scan.deckIndex], confirmed: true, source: scan.source };
+  const listed: number[] = [];
+  for (const c of scan.controllers) {
+    if (typeof c.index === "number" && !listed.includes(c.index)) listed.push(c.index);
+  }
+  if (listed.length) return { indices: listed, confirmed: false, source: "index not confirmed by type (every listed controller index)" };
+  return { indices: [FALLBACK_INDEX], confirmed: false, source: `index not confirmed by type (no controller listed; measured fallback ${FALLBACK_INDEX})` };
+}
+
+async function planIndices(overrideText: string): Promise<{ indices: number[]; confirmed: boolean; source: string } | null> {
+  const override = parseIndexOverride(overrideText);
+  if (typeof override === "string") {
+    await plog(`refused: ${override}`);
+    return null;
+  }
+  const scan = await findControllers();
+  const plan = indexPlan(scan, override);
+  if (!plan.confirmed) await plog(`WARNING deck controller index not found by type; probing indices ${j(plan.indices)} (${plan.source})`);
+  else if (override !== null) await plog(`using controller index override ${override}`);
+  return plan;
+}
+
 async function getConfig(input: any, appid: number, idx: number): Promise<unknown> {
   if (typeof input.GetConfigForAppAndController !== "function") {
     await plog(`GetConfigForAppAndController is ${typeof input.GetConfigForAppAndController}; Input shape: ${j(shape(input, /config/i))}`);
@@ -252,28 +310,28 @@ async function getConfig(input: any, appid: number, idx: number): Promise<unknow
 
 // ---- V1 ---------------------------------------------------------------------
 
-export async function probeV1(appidText: string): Promise<void> {
-  await plog(`V1 start appids="${appidText}"`);
+export async function probeV1(appidText: string, indexOverrideText = ""): Promise<void> {
+  await plog(`V1 start appids="${appidText}" indexOverride="${indexOverrideText}"`);
   const { appids, bad } = parseAppids(appidText);
   if (bad.length) await plog(`V1 ignoring non-numeric appids: ${j(bad)}`);
-  const { deckIndex } = await findControllers();
+  const plan = await planIndices(indexOverrideText);
+  if (!plan) return;
   const input = steamInput();
   if (!input) {
     await plog("V1 abort: no SteamClient.Input");
     return;
   }
   await plog(`SteamClient.Input methods matching /config/i: ${j(shape(input, /config/i))}`);
-  if (deckIndex === null) {
-    await plog("V1 abort: deck controller index not found (see the controller lines above)");
-    return;
-  }
+  const tag = plan.confirmed ? "" : " [index not confirmed by type]";
   for (const appid of appids) {
     const overview = safeOverview(appid);
-    const cfg = await getConfig(input, appid, deckIndex);
-    await plog(`V1 GetConfigForAppAndController(${appid}, ${deckIndex}) [${overview}] -> ${j(cfg)}`);
+    for (const idx of plan.indices) {
+      const cfg = await getConfig(input, appid, idx);
+      await plog(`V1 GetConfigForAppAndController(${appid}, ${idx})${tag} [${overview}] -> ${j(cfg)}`);
+    }
   }
   for (const appid of appids) {
-    await logCandidates(input, appid, deckIndex);
+    await logCandidates(input, appid, plan.indices[0], tag);
   }
   await plog("V1 done");
 }
@@ -296,24 +354,29 @@ function safeOverview(appid: number): string {
  * (cb). The probe logs fn.length, uses the typed form, and logs every raw
  * message, so whichever is right is visible in the log.
  */
-async function logCandidates(input: any, appid: number, idx: number): Promise<void> {
+async function logCandidates(input: any, appid: number, idx: number, tag = ""): Promise<void> {
   const reg = input.RegisterForControllerConfigInfoMessages;
   const query = input.QueryControllerConfigsForApp;
   if (typeof reg !== "function" || typeof query !== "function") {
     await plog(`V1 candidates: RegisterForControllerConfigInfoMessages is ${typeof reg}, QueryControllerConfigsForApp is ${typeof query}; ${j(shape(input, /Register|Query/i))}`);
     return;
   }
-  await plog(`V1 candidates for ${appid}: register fn.length=${reg.length} query fn.length=${query.length}`);
+  await plog(`V1 candidates for ${appid} (index ${idx}${tag}): register fn.length=${reg.length} query fn.length=${query.length}`);
   const received: unknown[] = [];
+  let mismatched = 0;
   let handle: any = null;
   try {
     handle = reg.call(input, (msgs: unknown) => {
       received.push(msgs);
-      plog(`V1 candidates message for ${appid}: ${j(msgs, 3)}`);
+      plog(`V1 candidates message while querying ${appid}: ${j(msgs, 3)}`);
       if (Array.isArray(msgs)) {
         for (const m of msgs) {
           const mm = m as Record<string, unknown>;
-          plog(`V1 candidate appid=${appid} URL=${j(mm.URL)} Title=${j(mm.Title)} publishedFileID=${j(mm.publishedFileID)} bOfficial=${j(mm.bOfficial)} eExportType=${j(mm.eExportType)} bSelected=${j(mm.bSelected)} bPersonalQueryDone=${j(mm.bPersonalQueryDone)}`);
+          // The subscription is global: a message's own appID says which query it answers
+          // (a late message for the previous appid lands here too).
+          const forThis = mm.appID === undefined ? "unknown (no appID field)" : String(mm.appID) === String(appid) ? "yes" : "NO (other appid)";
+          if (forThis.startsWith("NO")) mismatched++;
+          plog(`V1 candidate queried=${appid} msg.appID=${j(mm.appID)} forThisAppid=${forThis} nControllerType=${j(mm.nControllerType)} strName=${j(mm.strName)} URL=${j(mm.URL)} Title=${j(mm.Title)} publishedFileID=${j(mm.publishedFileID)} bOfficial=${j(mm.bOfficial)} eExportType=${j(mm.eExportType)} bSelected=${j(mm.bSelected)} bPersonalQueryDone=${j(mm.bPersonalQueryDone)}`);
         }
       }
     });
@@ -332,7 +395,7 @@ async function logCandidates(input: any, appid: number, idx: number): Promise<vo
   try {
     if (handle && typeof handle.unregister === "function") handle.unregister();
     else if (typeof handle === "function") handle();
-    await plog(`V1 unregistered for ${appid}; ${received.length} message batch(es) received`);
+    await plog(`V1 unregistered for ${appid}; ${received.length} message batch(es) received, ${mismatched} candidate(s) carried another appID`);
   } catch (e) {
     await plog(`V1 unregister threw ${errText(e)}`);
   }
@@ -340,8 +403,8 @@ async function logCandidates(input: any, appid: number, idx: number): Promise<vo
 
 // ---- V2 ---------------------------------------------------------------------
 
-export async function probeV2(appidText: string, url: string): Promise<void> {
-  await plog(`V2 start shortcut="${appidText}" url="${url}"`);
+export async function probeV2(appidText: string, url: string, indexOverrideText = ""): Promise<void> {
+  await plog(`V2 start shortcut="${appidText}" url="${url}" indexOverride="${indexOverrideText}"`);
   const appid = Number(appidText.trim());
   if (!Number.isInteger(appid) || appid < SHORTCUT_APPID_MIN) {
     await plog(`V2 refused: appid ${appidText} is not a shortcut appid (must be >= ${SHORTCUT_APPID_MIN}); never run on a real game`);
@@ -351,12 +414,16 @@ export async function probeV2(appidText: string, url: string): Promise<void> {
     await plog(`V2 refused: url must look like workshop://<publishedfileid>, got "${url}"`);
     return;
   }
-  const { deckIndex } = await findControllers();
+  const plan = await planIndices(indexOverrideText);
+  if (!plan) return;
   const input = steamInput();
-  if (!input || deckIndex === null) {
-    await plog("V2 abort: no SteamClient.Input or no deck controller index");
+  if (!input) {
+    await plog("V2 abort: no SteamClient.Input");
     return;
   }
+  // The first planned index: the confirmed one, or the first listed / 15 (logged as unconfirmed above).
+  const deckIndex = plan.indices[0];
+  await plog(`V2 using controller index ${deckIndex}${plan.confirmed ? "" : " [index not confirmed by type]"} (${plan.source})`);
   await plog(`V2 shortcut ${appid} is [${safeOverview(appid)}]`);
   const before = await getConfig(input, appid, deckIndex);
   await plog(`V2 before: ${j(before)}`);

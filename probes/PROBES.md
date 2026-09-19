@@ -14,7 +14,9 @@ The results go into the spec (`~/specs/moonlight-steam-sync/decky-plugin.md`,
 PR-7 are built. Paste them into the table at the end of this file first.
 
 There are two ways to run the probes. **The scripted runner over SSH is the
-primary one**; the button plugin is the fallback when SSH is not an option.
+primary one**; the button plugin is the fallback when the runner is not an
+option (no SSH session you want to keep open, or the DevTools port refuses a
+second client).
 
 ## 1. Primary: `run_probes.py` over SSH
 
@@ -99,6 +101,9 @@ run_probes.py v4
 
 # V1: selected layout per game and the Deck controller index (read-only).
 run_probes.py v1 --appids <a>,<b>,<c>,<d>
+#   If the output says the Deck index was "not found by type", V1 has already probed
+#   every listed controller index (or 15) and marked those rows "index not confirmed
+#   by type"; re-run with --controller-index N once the right one is clear (v2 takes it too).
 
 # V5, first without --run (read-only), then launching the differently-named shortcut.
 run_probes.py v5 --shortcut <different-name-shortcut-appid>
@@ -133,17 +138,28 @@ and paste it over the empty one in §5:
 run_probes.py --markdown
 ```
 
+The rendered table is already redacted for the repo: it never prints the
+Steam ID (the V4 row is a verdict, "numeric, N digits; matches a
+`userdata/<id>` folder: yes/no", checked on the Deck when `v4` runs), library
+titles, or an absolute home path (`$HOME` and `/home/<name>` become `~` in
+the V3 process-identity row). Still read it once before committing: the
+case labels carry the names of the games and shortcuts you chose. The raw
+values stay in `probe-results.json` and `probe-v3-pgrep.log`, which are
+gitignored.
+
 Exit codes: 0 the probe ran (its JSON may still carry an `error` key with a
 `shape` of what was found instead — that is a result, paste it), 1 transport
-failure, 2 refused or usage error, 3 the DevTools port is closed.
+failure (no `SharedJSContext` target, a websocket or handshake error, the
+`websockets` package missing), 2 refused or usage error, 3 the DevTools port
+is closed.
 
 Copy `probe-results.json`, `probe-v3-pgrep.log` and the rendered table back
 to the PC (`scp deck@<deck-ip>:~/moonlight-steam-sync-decky/probes/probe-*.{json,log} .`).
 
 ## 2. Fallback: the `steam-input-probe` button plugin
 
-The same five probes as Quick Access Menu buttons, for a Deck without SSH.
-Every button logs to the Decky console (`console.log` with a
+The same five probes as Quick Access Menu buttons, for when the runner is
+not an option. Every button logs to the Decky console (`console.log` with a
 `[steam-input-probe]` prefix) **and** to `~/homebrew/logs/steam-input-probe.log`,
 each line prefixed with an ISO timestamp in milliseconds. The file is the
 record; read it from Desktop Mode afterwards.
@@ -162,13 +178,30 @@ npx --yes pnpm@9 run build          # -> dist/index.js
 ### 2.2 Install on the Deck
 
 The plugin directory must be named `steam-input-probe` and needs
-`plugin.json`, `package.json`, `main.py` and `dist/`. `~/homebrew/plugins`
-is root-owned, so the copy needs `sudo`:
+`plugin.json`, `package.json`, `main.py` and `dist/`. First get those four
+onto the Deck as `~/steam-input-probe`, by whichever route you have:
 
 ```sh
-# on the PC
+# (i) with SSH (from probes/steam-input-probe on the PC; the target directory must exist
+#     before scp can copy several sources into it)
+ssh deck@<deck-ip> mkdir -p ~/steam-input-probe
 scp -r plugin.json package.json main.py dist deck@<deck-ip>:~/steam-input-probe/
-# on the Deck (Konsole in Desktop Mode, or over SSH)
+
+# (ii) without SSH, over the LAN: serve the directory from the PC ...
+python3 -m http.server 8000            # in probes/steam-input-probe, on the PC
+#     ... and fetch it in Konsole on the Deck (Desktop Mode)
+mkdir -p ~/steam-input-probe/dist && cd ~/steam-input-probe
+for f in plugin.json package.json main.py dist/index.js; do curl -fsSO --output-dir "$(dirname "$f")" "http://<pc-ip>:8000/$f"; done
+
+# (iii) without a network: copy probes/steam-input-probe (minus node_modules) to a USB
+#       stick, plug it into the Deck, and in Desktop Mode copy it to ~/steam-input-probe
+#       with Dolphin or `cp -r /run/media/deck/<stick>/steam-input-probe ~/`.
+```
+
+`~/homebrew/plugins` is root-owned, so the install itself needs `sudo`
+(Konsole in Desktop Mode, or over SSH):
+
+```sh
 sudo mkdir -p ~/homebrew/plugins/steam-input-probe
 sudo cp -r ~/steam-input-probe/. ~/homebrew/plugins/steam-input-probe/
 sudo systemctl restart plugin_loader
@@ -191,18 +224,26 @@ sudo systemctl restart plugin_loader
 
 ### 2.4 The panel
 
-Three text fields (appids for V1; a shortcut appid for V2 and V5; a
-`workshop://` URL for V2) and one button per probe:
+Four text fields (appids for V1; a shortcut appid for V2 and V5; a
+`workshop://` URL for V2; an optional controller index override for V1 and
+V2, blank = found by type) and one button per probe:
 
 - **V1 layouts** — controllers with index and type string, the Deck
   controller index found by type, `GetConfigForAppAndController` per appid,
   then the candidates streamed by `RegisterForControllerConfigInfoMessages`
-  + `QueryControllerConfigsForApp` (unregistered after 4 s).
+  + `QueryControllerConfigsForApp` (unregistered after 4 s). Each candidate
+  line carries the message's own `appID` and whether it matches the queried
+  appid: the subscription is global, so a late message for the previous
+  appid shows up under the next query. When the Deck index is not found by
+  type the probe does not abort: it queries every listed controller index
+  (or 15 when none is listed) and tags those lines `[index not confirmed by
+  type]`, so the answers are in the log without another build.
 - **V2 set workshop URL** — config before, `SetSelectedConfigForApp(appid,
   idx, url, false)`, read back after 1 s. Refuses an appid below `0x80000000`
-  and a URL that is not `workshop://<id>`. The plugin does not restore the
-  previous selection; pick it again in the layout picker (or use
-  `run_probes.py v2 --restore`).
+  and a URL that is not `workshop://<id>`. Uses the confirmed Deck index, the
+  override, or (tagged unconfirmed) the first listed index / 15. The plugin
+  does not restore the previous selection; pick it again in the layout
+  picker (or use `run_probes.py v2 --restore`).
 - **V4 dump allApps** — total count, `app_type` histogram, the first 20
   entries, every shortcut in the library, `App.m_CurrentUser.strSteamID` and
   the derived steamid3.
@@ -213,7 +254,10 @@ Three text fields (appids for V1; a shortcut appid for V2 and V5; a
   watch (100 ms) and only after its acknowledgement the frontend calls
   `SteamClient.User.StartShutdown(false)`. Steam exits, gamescope restarts it,
   the watch keeps running inside plugin_loader and writes its summary to the
-  log. **V3 summary** logs the watcher's state again afterwards.
+  log. A sample where `pgrep` itself fails (exit status other than 0/1, e.g.
+  a library-loading error under plugin_loader's environment) is logged as
+  `pids=error`, counted as `pgrep_errors`, and never counted as a gap. **V3
+  summary** logs the watcher's state again afterwards.
 
 Every Steam global is guarded and every call is wrapped; a failure is logged
 with the surrounding shape (`Object.keys`, prototype method names, `typeof`
@@ -253,8 +297,16 @@ Set up the games and shortcuts as in §1.2 first.
    2 PersonalCloud, 3 Community, 4 Template).
 4. If the Deck index is `NOT FOUND`, the `controller list attempts` and
    `type-string attempts` lines say which lookup failed and what the
-   `controllerStore` shape is. deckyemu measured index 15; the value is not
-   0.
+   `controllerStore` shape is. The probe still runs: every listed controller
+   index (or 15 when nothing was listed) is queried and those lines are
+   tagged `[index not confirmed by type]`. Record the URL of whichever index
+   answers with the layout you set up, then type that index into the
+   override field (or pass `--controller-index N` to the runner) for V2.
+   deckyemu measured index 15; the value is not 0.
+5. Each `V1 candidate` line says `msg.appID=… forThisAppid=yes|NO|unknown`.
+   Only count the `yes` ones for the queried game; a `NO` is a late message
+   from the previous query (the subscription is global), and `unknown` means
+   the message has no `appID` field at all (note that in the table).
 
 **V2**
 1. *Shortcut appid* = the same-named shortcut; *workshop:// URL* = game (a)'s
@@ -284,6 +336,10 @@ Set up the games and shortcuts as in §1.2 first.
    from the CLI's `pgrep -x steam`, which is exactly what this probe checks.
 4. If the plugin panel never comes back, the watch still ran: plugin_loader is
    a systemd service, not part of the session.
+5. `pgrep_errors=N` in the summary (with `pids=error` change lines) means
+   pgrep itself failed N times; those samples are excluded from the gaps. If
+   every sample is an error, the watch measured nothing: the `pgrep-error=[…]`
+   text says why (the runner path does not have this problem).
 
 **V4**
 1. Press *V4 dump allApps*.
@@ -343,7 +399,13 @@ Steam ID or home path with a placeholder before committing.
 - `RegisterForControllerConfigInfoMessages`: spec §2.2 writes it as
   `(appId, cb)`, the `@decky/ui` 4.12 typing as `(cb)`. Both the runner and
   the plugin use the typed form and log `fn.length`; if the candidates stay
-  empty, that is the first thing to check.
+  empty, that is the first thing to check. The subscription is global and
+  each message carries its own `appID`, which is how the runner's table and
+  the plugin's log attribute candidates to a query (never by timing alone).
+- The V3 watch in the plugin runs `pgrep` with plugin_loader's
+  `LD_LIBRARY_PATH` restored from `LD_LIBRARY_PATH_ORIG` (PyInstaller sets
+  both), because the loader's bundled libraries can stop system binaries
+  from starting. Either way a failing `pgrep` is an error sample, not a gap.
 - The type-string lookup for the Deck controller tries
   `controllerStore.GetControllerTypeString`, then
   `SteamClient.Input.GetControllerTypeString`, and falls back to

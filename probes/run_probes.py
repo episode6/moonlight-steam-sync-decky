@@ -13,7 +13,14 @@ an undocumented API is diagnosable from the output alone.
 
 Subcommands (see ``--help``): v1, v2, v3, v4, v5, all. Each prints one JSON
 object and appends it to ``probe-results.json`` next to this file;
-``--markdown`` renders the PROBES.md results table from that file.
+``--markdown`` renders the PROBES.md results table from that file. The table
+is committed, so it is redacted: no Steam ID (the V4 row is a verdict checked
+against ``~/.local/share/Steam/userdata`` when v4 runs), no library titles,
+home paths as ``~``. The raw values stay in probe-results.json.
+
+When the Deck controller index is not found by type, v1 probes every listed
+controller index (or 15) and marks the rows "index not confirmed by type"
+instead of aborting; ``--controller-index N`` overrides the lookup for v1/v2.
 
 Safety: v2 (SetSelectedConfigForApp) needs ``--url`` and refuses any appid
 below 0x80000000, so it can only touch a shortcut, never a real game;
@@ -95,6 +102,7 @@ JS_PRELUDE = r"""
 const G = globalThis;
 const NEPTUNE = "controller_steamcontroller_neptune";
 const NEPTUNE_ENUM = 4; // EControllerType.SteamControllerNeptune in @decky/ui 4.12
+const FALLBACK_INDEX = 15; // the Deck controller index deckyemu measured; used only when the type lookup fails
 const errText = (e) => (e && e.message) ? (e.name + ": " + e.message) : String(e);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const ret = (x) => (x === undefined ? "<undefined>" : safe(x));
@@ -163,6 +171,14 @@ function overviewLabel(appid) {
     return String(o.display_name) + " app_type=" + String(o.app_type);
   } catch (e) { return "overview threw " + errText(e); }
 }
+// An array, or any iterable (an older MobX observable array is not an Array).
+function asList(v) {
+  if (Array.isArray(v)) return v;
+  if (v && typeof v === "object" && typeof v[Symbol.iterator] === "function") {
+    try { return Array.from(v); } catch (e) { return null; }
+  }
+  return null;
+}
 function findControllers() {
   const cs = G.controllerStore;
   const attempts = [];
@@ -176,15 +192,15 @@ function findControllers() {
     if (typeof cs.GetControllers === "function") {
       try {
         const r = cs.GetControllers();
-        if (Array.isArray(r)) { list = r; attempts.push("controllerStore.GetControllers() -> array"); }
-        else attempts.push("controllerStore.GetControllers() -> " + typeof r);
+        list = asList(r);
+        attempts.push("controllerStore.GetControllers() -> " + (list ? (Array.isArray(r) ? "array" : "iterable") + " of " + list.length : typeof r));
       } catch (e) { attempts.push("controllerStore.GetControllers() threw " + errText(e)); }
     } else attempts.push("controllerStore.GetControllers is " + typeof cs.GetControllers);
     if (list === null) {
       for (const k of ["m_rgControllers", "controllers", "m_controllers"]) {
-        const v = cs[k];
-        if (Array.isArray(v)) { list = v; attempts.push("controllerStore." + k + " -> array"); break; }
-        attempts.push("controllerStore." + k + " is " + typeof v);
+        const v = asList(cs[k]);
+        if (v) { list = v; attempts.push("controllerStore." + k + " -> list of " + v.length); break; }
+        attempts.push("controllerStore." + k + " is " + typeof cs[k]);
       }
     }
   }
@@ -217,6 +233,23 @@ function findControllers() {
   }
   return out;
 }
+// The controller indices to probe when the Deck's index was not confirmed by
+// type: every listed controller index, else the measured fallback 15. The
+// result rows carry indexConfirmed:false so they can be told apart.
+function indexPlan(controllers, override) {
+  if (typeof override === "number") {
+    return { indices: [override], confirmed: true, source: "override (--controller-index)" };
+  }
+  if (controllers.deckIndex !== null) {
+    return { indices: [controllers.deckIndex], confirmed: true, source: controllers.source };
+  }
+  const listed = [];
+  for (const c of controllers.controllers) {
+    if (typeof c.index === "number" && listed.indexOf(c.index) < 0) listed.push(c.index);
+  }
+  if (listed.length) return { indices: listed, confirmed: false, source: "index not confirmed by type (every listed controller index)" };
+  return { indices: [FALLBACK_INDEX], confirmed: false, source: "index not confirmed by type (no controller listed; measured fallback " + FALLBACK_INDEX + ")" };
+}
 async function getConfig(input, appid, idx) {
   if (typeof input.GetConfigForAppAndController !== "function") {
     return { error: "GetConfigForAppAndController is " + typeof input.GetConfigForAppAndController, shape: shape(input, /config/i) };
@@ -242,7 +275,10 @@ async function candidates(input, appid, idx, waitMs) {
       out.messages.push(safe(msgs, 3));
       if (Array.isArray(msgs)) {
         for (const m of msgs) {
-          out.flat.push({ URL: m && m.URL, Title: m && m.Title, publishedFileID: m && m.publishedFileID,
+          // appID says which query the message answers: the subscription is global and
+          // a late message for the previous appid lands in this batch.
+          out.flat.push({ appID: m && m.appID, nControllerType: m && m.nControllerType, strName: m && m.strName,
+            URL: m && m.URL, Title: m && m.Title, publishedFileID: m && m.publishedFileID,
             bOfficial: m && m.bOfficial, eExportType: m && m.eExportType, bSelected: m && m.bSelected,
             bPersonalQueryDone: m && m.bPersonalQueryDone });
         }
@@ -271,13 +307,19 @@ const result = { probe: "v1", appids: PARAMS.appids, controllers: findController
 const si = steamInput();
 if (!si.input) { result.error = si.error; result.shape = si.shape; return result; }
 result.inputShape = shape(si.input, /config/i);
-const idx = result.controllers.deckIndex;
-if (idx === null) { result.error = "deck controller index not found by type"; return result; }
+const plan = indexPlan(result.controllers, PARAMS.controller_index);
+result.indexPlan = plan;
+if (!plan.confirmed) result.warning = "deck controller index not found by type; probing " + JSON.stringify(plan.indices) + " (" + plan.source + ")";
 for (const appid of PARAMS.appids) {
-  result.configs[appid] = { label: overviewLabel(appid), config: await getConfig(si.input, appid, idx) };
+  const byIndex = {};
+  for (const idx of plan.indices) byIndex[idx] = await getConfig(si.input, appid, idx);
+  result.configs[appid] = { label: overviewLabel(appid), index: plan.indices[0], indexConfirmed: plan.confirmed,
+    indexSource: plan.source, config: byIndex[plan.indices[0]], byIndex };
 }
 for (const appid of PARAMS.appids) {
-  result.candidates[appid] = await candidates(si.input, appid, idx, PARAMS.candidate_wait_ms);
+  result.candidates[appid] = await candidates(si.input, appid, plan.indices[0], PARAMS.candidate_wait_ms);
+  result.candidates[appid].index = plan.indices[0];
+  result.candidates[appid].indexConfirmed = plan.confirmed;
 }
 return result;
 """,
@@ -288,8 +330,12 @@ const result = { probe: "v2", shortcut: appid, url, restore: PARAMS.restore, con
 if (appid < PARAMS.shortcut_min) { result.error = "refused in page: appid below 0x80000000"; return result; }
 const si = steamInput();
 if (!si.input) { result.error = si.error; result.shape = si.shape; return result; }
-const idx = result.controllers.deckIndex;
-if (idx === null) { result.error = "deck controller index not found by type"; return result; }
+const plan = indexPlan(result.controllers, PARAMS.controller_index);
+const idx = plan.indices[0];
+result.index = idx;
+result.indexConfirmed = plan.confirmed;
+result.indexSource = plan.source;
+if (!plan.confirmed) result.warning = "deck controller index not found by type; using index " + idx + " (" + plan.source + ")";
 result.label = overviewLabel(appid);
 result.before = await getConfig(si.input, appid, idx);
 if (typeof si.input.SetSelectedConfigForApp !== "function") {
@@ -423,6 +469,8 @@ def build_expression(name: str, params: dict[str, Any] | None = None) -> str:
 
 
 def _websockets_connect() -> Callable[..., Any]:
+    """The lazily imported ``connect``; ProbeError with the venv hint when the
+    package is missing."""
     try:
         import websockets  # noqa: F401 - lazy, so --help and tests need no venv
     except ImportError as exc:
@@ -432,6 +480,16 @@ def _websockets_connect() -> Callable[..., Any]:
     except ImportError:  # pragma: no cover - older websockets
         connect = websockets.connect  # type: ignore[attr-defined]
     return connect
+
+
+def _websockets_exception_class() -> type[Exception]:
+    """The package's base exception (handshake failures such as InvalidStatus
+    and InvalidMessage are neither OSError nor ConnectionClosed)."""
+    try:
+        from websockets.exceptions import WebSocketException
+    except ImportError:  # pragma: no cover - only reachable after connect imported
+        return ()  # type: ignore[return-value]
+    return WebSocketException
 
 
 class DevTools:
@@ -478,6 +536,7 @@ class DevTools:
 
     async def _evaluate_ws(self, ws_url: str, expression: str, timeout_s: float) -> Any:
         connect = _websockets_connect()
+        ws_exception = _websockets_exception_class()
         message = {
             "id": 1,
             "method": "Runtime.evaluate",
@@ -495,10 +554,12 @@ class DevTools:
             raise ProbeError(f"Runtime.evaluate produced no reply within {timeout_s} s") from exc
         except OSError as exc:
             raise ProbeError(f"websocket {ws_url}: {exc}") from exc
-        except Exception as exc:  # noqa: BLE001 - websockets' own exception classes
-            if exc.__class__.__name__ in ("ConnectionClosed", "ConnectionClosedError", "ConnectionClosedOK"):
-                raise ProbeError(f"websocket closed before the reply: {exc}") from exc
-            raise
+        except ws_exception as exc:
+            # ConnectionClosed*, InvalidStatus (CEF answered the upgrade with 500/404),
+            # InvalidMessage (EOF mid-handshake): all plausible while Steam restarts.
+            raise ProbeError(f"websocket {ws_url}: {type(exc).__name__}: {exc}") from exc
+        except ValueError as exc:
+            raise ProbeError(f"websocket {ws_url}: bad reply: {exc}") from exc
         if "error" in reply:
             raise ProbeError(f"Runtime.evaluate error: {reply['error']}")
         result = reply.get("result", {})
@@ -553,13 +614,28 @@ def parse_pids(text: str) -> list[int]:
     return sorted(int(p) for p in text.split() if p.isdigit())
 
 
-def compute_gaps(samples: list[tuple[int, list[int]]]) -> list[dict[str, Any]]:
+PGREP_OK_RCS = (0, 1)  # 0 matched, 1 no match; anything else (2, 3, -1) is a pgrep failure, not "Steam gone"
+
+
+def sample_pids(rc: int, out: str) -> list[int] | None:
+    """The pids of one sample, or None for an error sample (pgrep itself
+    failed: rc 2/3, or -1 when it could not be run), which says nothing about
+    whether Steam is running."""
+    if rc not in PGREP_OK_RCS:
+        return None
+    return parse_pids(out)
+
+
+def compute_gaps(samples: list[tuple[int, list[int] | None]]) -> list[dict[str, Any]]:
     """Every run of empty samples: from the first empty sample to the first
     non-empty one after it. ``back_at_ms``/``gap_ms`` are None when the run
-    is still empty at the end of the recording."""
+    is still empty at the end of the recording. Error samples (pids None,
+    pgrep failed) are skipped: they neither open nor close a gap."""
     gaps: list[dict[str, Any]] = []
     open_gap: dict[str, Any] | None = None
     for t_ms, pids in samples:
+        if pids is None:
+            continue
         if not pids:
             if open_gap is None:
                 open_gap = {"empty_at_ms": t_ms, "back_at_ms": None, "gap_ms": None, "empty_samples": 0}
@@ -574,16 +650,22 @@ def compute_gaps(samples: list[tuple[int, list[int]]]) -> list[dict[str, Any]]:
     return gaps
 
 
-def parse_watch_log(text: str) -> list[tuple[int, list[int]]]:
+def parse_watch_log(text: str) -> list[tuple[int, list[int] | None]]:
     """Samples from a recorded watch log (this runner's or the probe
-    plugin's): every line carrying ``sample t=<ms> rc=<n> pids=<a,b|->``."""
-    samples: list[tuple[int, list[int]]] = []
+    plugin's): every line carrying ``sample t=<ms> rc=<n> pids=<a,b|-|error>``.
+    A sample whose rc is not 0 or 1 is an error sample (pids None)."""
+    samples: list[tuple[int, list[int] | None]] = []
     for line in text.splitlines():
         m = SAMPLE_RE.search(line)
         if not m:
             continue
         pids_text = m.group("pids")
-        pids = [] if pids_text == "-" else sorted(int(p) for p in pids_text.split(",") if p.isdigit())
+        rc = int(m.group("rc"))
+        pids: list[int] | None
+        if rc not in PGREP_OK_RCS or pids_text == "error":
+            pids = None
+        else:
+            pids = [] if pids_text == "-" else sorted(int(p) for p in pids_text.split(",") if p.isdigit())
         samples.append((int(m.group("t")), pids))
     return samples
 
@@ -601,13 +683,16 @@ def watch_steam(
 ) -> dict[str, Any]:
     """Sample ``pgrep -x steam`` every ``interval_ms`` for ``duration_s``.
     Every sample is logged; a state change also logs ``pgrep -a -x steam``
-    and each pid's /proc cmdline. Returns samples, changes and gaps."""
-    samples: list[tuple[int, list[int]]] = []
+    and each pid's /proc cmdline. A pgrep failure (rc not 0/1) is an error
+    sample: logged as ``pids=error``, counted, and excluded from the gaps.
+    Returns samples, changes, gaps and the error count."""
+    samples: list[tuple[int, list[int] | None]] = []
     changes: list[dict[str, Any]] = []
     start = clock()
-    last_pids: list[int] | None = None
+    last_state: list[int] | str | None = None  # pids, "error", or None before the first sample
     max_poll_ms = 0
     prev_t = 0
+    errors = 0
     emit = log or (lambda line: None)
     emit(f"steam-watch start duration_s={duration_s} interval_ms={interval_ms} uid={os.getuid()}")
     while True:
@@ -615,28 +700,41 @@ def watch_steam(
         if t_ms >= duration_s * 1000 or (stop is not None and stop.is_set()):
             break
         rc, out = pgrep("-x", "steam")
-        pids = parse_pids(out)
+        pids = sample_pids(rc, out)
         samples.append((t_ms, pids))
         if len(samples) > 1:
             max_poll_ms = max(max_poll_ms, t_ms - prev_t)
         prev_t = t_ms
-        if pids != last_pids:
-            rc_a, out_a = pgrep("-a", "-x", "steam")
-            cmdlines = "; ".join(f"{p}: {cmdline(p)}" for p in pids) or "-"
-            was = "none" if last_pids is None else fmt_pids(last_pids)
-            emit(
-                f"steam-watch change sample t={t_ms} rc={rc} pids={fmt_pids(pids)} (was pids={was}) "
-                f"pgrep-a(rc={rc_a})=[{out_a.replace(chr(10), '; ') or '-'}] cmdline=[{cmdlines}]"
-            )
-            changes.append({"t_ms": t_ms, "wall": now_iso(), "rc": rc, "pids": pids, "pgrep_a": out_a, "cmdline": cmdlines})
-            last_pids = pids
+        state: list[int] | str = "error" if pids is None else pids
+        shown = "error" if pids is None else fmt_pids(pids)
+        if pids is None:
+            errors += 1
+        if state != last_state:
+            was = "none" if last_state is None else ("error" if last_state == "error" else fmt_pids(last_state))
+            if pids is None:
+                emit(f"steam-watch change sample t={t_ms} rc={rc} pids=error (was pids={was}) pgrep-error=[{out.replace(chr(10), '; ') or '-'}]")
+                changes.append({"t_ms": t_ms, "wall": now_iso(), "rc": rc, "pids": [], "error": out, "pgrep_a": "", "cmdline": "-"})
+            else:
+                rc_a, out_a = pgrep("-a", "-x", "steam")
+                cmdlines = "; ".join(f"{p}: {cmdline(p)}" for p in pids) or "-"
+                emit(
+                    f"steam-watch change sample t={t_ms} rc={rc} pids={shown} (was pids={was}) "
+                    f"pgrep-a(rc={rc_a})=[{out_a.replace(chr(10), '; ') or '-'}] cmdline=[{cmdlines}]"
+                )
+                changes.append({"t_ms": t_ms, "wall": now_iso(), "rc": rc, "pids": pids, "pgrep_a": out_a, "cmdline": cmdlines})
+            last_state = state
         else:
-            emit(f"steam-watch sample t={t_ms} rc={rc} pids={fmt_pids(pids)}")
+            emit(f"steam-watch sample t={t_ms} rc={rc} pids={shown}")
         elapsed_ms = (clock() - start) * 1000 - t_ms
         sleep(max(0.0, (interval_ms - elapsed_ms) / 1000))
     gaps = compute_gaps(samples)
     total_ms = int((clock() - start) * 1000)
-    emit(f"steam-watch summary duration_ms={total_ms} samples={len(samples)} changes={len(changes)} gaps={len(gaps)} max_poll_ms={max_poll_ms}")
+    emit(
+        f"steam-watch summary duration_ms={total_ms} samples={len(samples)} changes={len(changes)} "
+        f"gaps={len(gaps)} pgrep_errors={errors} max_poll_ms={max_poll_ms}"
+    )
+    if errors:
+        emit(f"steam-watch warning: {errors} sample(s) where pgrep itself failed (rc not 0/1); they are excluded from the gaps")
     for i, gap in enumerate(gaps, 1):
         if gap["back_at_ms"] is None:
             emit(f"steam-watch gap #{i}: empty at t={gap['empty_at_ms']} still empty at the end (gap open) empty_samples={gap['empty_samples']}")
@@ -644,7 +742,15 @@ def watch_steam(
             emit(f"steam-watch gap #{i}: empty at t={gap['empty_at_ms']} non-empty at t={gap['back_at_ms']} gap_ms={gap['gap_ms']} empty_samples={gap['empty_samples']}")
     if not gaps:
         emit("steam-watch gap: none (pgrep -x steam never came back empty)")
-    return {"samples": len(samples), "duration_ms": total_ms, "max_poll_ms": max_poll_ms, "changes": changes, "gaps": gaps, "raw_samples": samples}
+    return {
+        "samples": len(samples),
+        "pgrep_errors": errors,
+        "duration_ms": total_ms,
+        "max_poll_ms": max_poll_ms,
+        "changes": changes,
+        "gaps": gaps,
+        "raw_samples": samples,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -676,9 +782,72 @@ def _txt(cell: Any) -> str:
     return cell if isinstance(cell, str) else json.dumps(cell)
 
 
+HOME_RE = re.compile(r"/home/[^/\s\"'|;:]+")
+
+
+def redact_paths(text: str, home: str | None = None) -> str:
+    """``$HOME`` and any ``/home/<name>`` become ``~``, so a cmdline or
+    ``pgrep -a`` line can go into the committed table (spec §5: no absolute
+    home paths in the repo). The raw text stays in probe-results.json."""
+    home = home if home is not None else os.path.expanduser("~")
+    if home and home != "~" and home.startswith("/"):
+        text = text.replace(home.rstrip("/"), "~")
+    return HOME_RE.sub("~", text)
+
+
 def _md(cell: Any) -> str:
     """One table cell: pipes and newlines escaped (done once, in render_markdown)."""
     return _txt(cell).replace("|", "\\|").replace("\n", " ")
+
+
+def steamid3_verdict(r: dict[str, Any]) -> str:
+    """The V4 steamid3 row as a verdict, never the value: the table is pasted
+    into PROBES.md and committed, and a Steam ID is user-specific."""
+    sid = r.get("steamid3")
+    if not isinstance(sid, str) or not sid.isdigit():
+        return f"not derived (strSteamID is {r.get('strSteamIDType', 'absent')})"
+    check = r.get("userdata_check") or {}
+    match = check.get("match")
+    verdict = "yes" if match is True else "no" if match is False else "unchecked"
+    if match is False and check.get("folders") is not None:
+        verdict += f" ({check['folders']} numeric folder(s) under userdata)"
+    return f"numeric, {len(sid)} digits; matches a ~/.local/share/Steam/userdata/<id> folder: {verdict}"
+
+
+def check_userdata_folder(steamid3: str, steam_root: Path | None = None) -> dict[str, Any]:
+    """Whether ``<steam_root>/userdata/<steamid3>`` exists (the CLI's own
+    steamid3 check, §3.4.1). Runs on the Deck; the result carries only the
+    verdict and the folder count, never the id."""
+    root = steam_root if steam_root is not None else Path.home() / ".local" / "share" / "Steam"
+    userdata = root / "userdata"
+    if not userdata.is_dir():
+        return {"match": None, "folders": None, "note": "no userdata directory under the Steam root"}
+    try:
+        folders = [p.name for p in userdata.iterdir() if p.is_dir() and p.name.isdigit()]
+    except OSError as exc:
+        return {"match": None, "folders": None, "note": f"userdata unreadable: {exc}"}
+    return {"match": steamid3 in folders, "folders": len(folders)}
+
+
+def _candidate_counts(flat: list[Any], appid: Any) -> str:
+    """Candidates are attributed by the message's own appID (the
+    subscription is global): matched / without appID / for other appids."""
+    want = str(appid)
+    matched = unknown = other = 0
+    for m in flat:
+        got = m.get("appID") if isinstance(m, dict) else None
+        if got is None:
+            unknown += 1
+        elif str(got) == want:
+            matched += 1
+        else:
+            other += 1
+    text = f"{matched} candidate(s) for this appid"
+    if unknown:
+        text += f", {unknown} without appID"
+    if other:
+        text += f", {other} for other appids"
+    return text
 
 
 def _rows_for(entry: dict[str, Any]) -> list[tuple[str, str, str, str, str]]:
@@ -691,11 +860,19 @@ def _rows_for(entry: dict[str, Any]) -> list[tuple[str, str, str, str, str]]:
         ctl = r.get("controllers") or {}
         rows.append(("V1", "Deck controller index by type", "found (deckyemu measured 15)", _txt(ctl.get("deckIndex")), _txt(ctl.get("source", note_err))))
         for appid, item in (r.get("configs") or {}).items():
-            cfg = item.get("config") or {}
-            url = cfg.get("URL") if isinstance(cfg, dict) else None
             cands = (r.get("candidates") or {}).get(str(appid)) or (r.get("candidates") or {}).get(appid) or {}
-            n = len(cands.get("flat") or [])
-            rows.append(("V1", f"{appid} ({item.get('label', '')})", "workshop:// | template:// | localconfig:// or autosave:// | default://", _txt(url if url is not None else cfg), f"{n} candidate(s); {cfg.get('error', '') if isinstance(cfg, dict) else ''}".strip("; ")))
+            counts = _candidate_counts(cands.get("flat") or [], appid)
+            confirmed = item.get("indexConfirmed", True)
+            by_index = item.get("byIndex") if isinstance(item.get("byIndex"), dict) else None
+            per_index = list(by_index.items()) if by_index and not confirmed else [(item.get("index"), item.get("config"))]
+            for idx, cfg in per_index:
+                cfg = cfg or {}
+                url = cfg.get("URL") if isinstance(cfg, dict) else None
+                case = f"{appid} ({item.get('label', '')})"
+                if not confirmed:
+                    case += f" at index {idx} (index not confirmed by type)"
+                cfg_err = cfg.get("error", "") if isinstance(cfg, dict) else ""
+                rows.append(("V1", case, "workshop:// | template:// | localconfig:// or autosave:// | default://", _txt(url if url is not None else cfg), "; ".join(x for x in (counts, cfg_err) if x)))
         if not r.get("configs"):
             rows.append(("V1", "configs", "one URL per appid", "-", note_err))
     elif probe == "v2":
@@ -709,15 +886,22 @@ def _rows_for(entry: dict[str, Any]) -> list[tuple[str, str, str, str, str]]:
         rows.append(("V2", f"{r.get('shortcut')} ({r.get('label', '')}) <- {r.get('url')}", "after.URL == url (sticks on a same-named shortcut; unknown otherwise)", f"stuck={r.get('stuck')} before={_txt(before.get('URL') if isinstance(before, dict) else before)} after={_txt(after.get('URL') if isinstance(after, dict) else after)}", "; ".join(notes)))
     elif probe == "v3":
         gaps = r.get("gaps") or []
+        errors = r.get("pgrep_errors") or 0
+        err_note = f"; {errors} pgrep error sample(s) excluded" if errors else ""
         if not gaps:
-            rows.append(("V3", "gap empty -> non-empty", "> 500 ms (seconds)", "no gap recorded", _txt(r.get("note", note_err))))
+            rows.append(("V3", "gap empty -> non-empty", "> 500 ms (seconds)", "no gap recorded", _txt(r.get("note", note_err)) + err_note))
         for i, gap in enumerate(gaps, 1):
             observed = "still empty at the end" if gap.get("gap_ms") is None else f"{gap['gap_ms']} ms"
-            rows.append(("V3", f"gap {i} (empty at t={gap.get('empty_at_ms')} ms)", "> 500 ms (seconds)", observed, f"steam_back={r.get('steam_back')} back_after_ms={r.get('back_after_ms')}"))
-        rows.append(("V3", "process identity on change", "real client, not a wrapper script", "; ".join(str(c.get("cmdline")) for c in (r.get("changes") or [])[:4]) or "-", f"{len(r.get('changes') or [])} change(s)"))
+            rows.append(("V3", f"gap {i} (empty at t={gap.get('empty_at_ms')} ms)", "> 500 ms (seconds)", observed, f"steam_back={r.get('steam_back')} back_after_ms={r.get('back_after_ms')}{err_note}"))
+        # cmdline / pgrep -a carry absolute home paths: redacted here, raw in probe-results.json
+        identity = "; ".join(redact_paths(str(c.get("cmdline"))) for c in (r.get("changes") or [])[:4]) or "-"
+        rows.append(("V3", "process identity on change", "real client, not a wrapper script", identity, f"{len(r.get('changes') or [])} change(s)"))
     elif probe == "v4":
-        rows.append(("V4", "allAppsCollection.allApps", "total > 0; first 20 carry appid, display_name, app_type", f"total={r.get('total')} first={_txt((r.get('first20') or [])[:3])}", _txt(r.get("appTypeHistogram", note_err))))
-        rows.append(("V4", "steamid3 from App.m_CurrentUser.strSteamID", "numeric, equals the userdata/<id> folder", f"steamid3={r.get('steamid3')} raw={r.get('strSteamID')}", _txt(r.get("steamidError", ""))))
+        first20 = r.get("first20") or []
+        keys_ok = bool(first20) and all(isinstance(a, dict) and all(k in a for k in ("appid", "display_name", "app_type")) for a in first20)
+        # no titles and no id in the table: it is pasted into the repo
+        rows.append(("V4", "allAppsCollection.allApps", "total > 0; first 20 carry appid, display_name, app_type", f"total={r.get('total')} first20={len(first20)} entries; keys present: {'yes' if keys_ok else 'no'}", _txt(r.get("appTypeHistogram", note_err))))
+        rows.append(("V4", "steamid3 from App.m_CurrentUser.strSteamID", "numeric, equals the userdata/<id> folder", steamid3_verdict(r), _txt(r.get("steamidError", ""))))
     elif probe == "v5":
         ov = r.get("overview") or {}
         rows.append(("V5", f"{r.get('shortcut')} ({ov.get('display_name', '')})", "gameid is a string and GetAppOverviewByAppID exists", f"gameid={_txt(ov.get('gameid'))} type={ov.get('gameidType')} app_type={ov.get('app_type')}", f"ran={r.get('ran', False)} {note_err} {r.get('runError', '')}".strip()))
@@ -757,6 +941,7 @@ class Runner:
         sleep: Callable[[float], None] = time.sleep,
         cmdline: Callable[[int], str] = read_cmdline,
         stdin: TextIO | None = None,
+        steam_root: Path | None = None,
     ) -> None:
         self.devtools = devtools
         self.out = out
@@ -768,6 +953,7 @@ class Runner:
         self.sleep = sleep
         self.cmdline = cmdline
         self.stdin = stdin if stdin is not None else sys.stdin
+        self.steam_root = steam_root  # None = ~/.local/share/Steam (tests point it at a tmp dir)
 
     # -- helpers --
 
@@ -782,23 +968,31 @@ class Runner:
 
     # -- probes --
 
-    def v1(self, appids: list[int], candidate_wait_ms: int = 4000) -> dict[str, Any]:
-        result = self.devtools.evaluate("v1", {"appids": appids, "candidate_wait_ms": candidate_wait_ms})
-        return self.record("v1", {"appids": appids}, result)
+    def v1(self, appids: list[int], candidate_wait_ms: int = 4000, controller_index: int | None = None) -> dict[str, Any]:
+        params: dict[str, Any] = {"appids": appids, "candidate_wait_ms": candidate_wait_ms}
+        if controller_index is not None:
+            params["controller_index"] = controller_index
+        result = self.devtools.evaluate("v1", params)
+        return self.record("v1", {"appids": appids, "controller_index": controller_index}, result)
 
-    def v2(self, shortcut: int, url: str | None, restore: bool) -> dict[str, Any]:
+    def v2(self, shortcut: int, url: str | None, restore: bool, controller_index: int | None = None) -> dict[str, Any]:
         if not url:
             raise Refused("v2 changes the shortcut's selected layout; pass --url 'workshop://<publishedfileid>' to run it")
         if shortcut < SHORTCUT_APPID_MIN:
             raise Refused(f"v2 refuses appid {shortcut}: below 0x80000000 ({SHORTCUT_APPID_MIN}); it must be a shortcut, never a real game")
         if not re.fullmatch(r"workshop://\d+", url):
             raise Refused(f"v2 --url must look like workshop://<publishedfileid>, got {url!r}")
-        params = {"shortcut": shortcut, "url": url, "restore": restore, "shortcut_min": SHORTCUT_APPID_MIN, "readback_wait_ms": 1000}
+        params: dict[str, Any] = {"shortcut": shortcut, "url": url, "restore": restore, "shortcut_min": SHORTCUT_APPID_MIN, "readback_wait_ms": 1000}
+        if controller_index is not None:
+            params["controller_index"] = controller_index
         result = self.devtools.evaluate("v2", params)
-        return self.record("v2", {"shortcut": shortcut, "url": url, "restore": restore}, result)
+        return self.record("v2", {"shortcut": shortcut, "url": url, "restore": restore, "controller_index": controller_index}, result)
 
     def v4(self) -> dict[str, Any]:
         result = self.devtools.evaluate("v4", {})
+        if isinstance(result, dict) and isinstance(result.get("steamid3"), str) and result["steamid3"].isdigit():
+            # checked here, on the Deck, so --markdown can print a verdict instead of the id
+            result["userdata_check"] = check_userdata_folder(result["steamid3"], self.steam_root)
         return self.record("v4", {}, result)
 
     def v5(self, shortcut: int, run: bool) -> dict[str, Any]:
@@ -861,42 +1055,54 @@ class Runner:
             shutdown = {"sent_at_ms": shutdown_at_ms, "reply": None, "note": f"no reply (expected if Steam shut down at once): {exc}"}
         log(f"steam-watch shutdown sent t={shutdown_at_ms} reply={json.dumps(shutdown.get('reply'))} note={shutdown.get('note', '')}")
         thread.join()
-        fh.close()
 
-        back_after_ms: int | None = None
-        steam_back = False
-        deadline = self.clock() + reconnect_timeout_s
-        last_error = ""
-        while self.clock() < deadline:
-            try:
-                self.devtools.shared_js_context()
-                ping = self.devtools.evaluate("ping", {}, timeout_s=10)
-                if isinstance(ping, dict) and ping.get("pong"):
-                    steam_back = True
-                    back_after_ms = int((self.clock() - started) * 1000)
-                    break
-                last_error = f"ping returned {ping!r}"
-            except (PortClosed, ProbeError) as exc:
-                last_error = str(exc)
-            self.sleep(reconnect_poll_s)
-
-        result = {
+        # The shutdown is irreversible and the watch is done: from here on the
+        # record is written whatever happens (a handshake error while Steam
+        # restarts, Ctrl-C during the wait), so the gaps are never lost.
+        result: dict[str, Any] = {
             "probe": "v3",
             "duration_s": duration_s,
             "interval_ms": interval_ms,
             "shutdown": shutdown,
             "samples": watch.get("samples"),
+            "pgrep_errors": watch.get("pgrep_errors", 0),
             "max_poll_ms": watch.get("max_poll_ms"),
             "changes": watch.get("changes", []),
             "gaps": watch.get("gaps", []),
-            "steam_back": steam_back,
-            "back_after_ms": back_after_ms,
-            "reconnect_last_error": last_error if not steam_back else "",
+            "steam_back": False,
+            "back_after_ms": None,
+            "reconnect_last_error": "reconnect not attempted",
             "log": str(self.v3_log_path),
         }
         if not result["gaps"]:
             result["note"] = "pgrep -x steam never came back empty during the watch; see the log"
-        return self.record("v3", {"duration_s": duration_s, "interval_ms": interval_ms}, result)
+        try:
+            deadline = self.clock() + reconnect_timeout_s
+            last_error = ""
+            while self.clock() < deadline:
+                try:
+                    self.devtools.shared_js_context()
+                    ping = self.devtools.evaluate("ping", {}, timeout_s=10)
+                    if isinstance(ping, dict) and ping.get("pong"):
+                        result["steam_back"] = True
+                        result["back_after_ms"] = int((self.clock() - started) * 1000)
+                        break
+                    last_error = f"ping returned {ping!r}"
+                except (PortClosed, ProbeError) as exc:
+                    last_error = str(exc)
+                except Exception as exc:  # noqa: BLE001 - anything else while Steam is half up is "not back yet"
+                    last_error = f"{type(exc).__name__}: {exc}"
+                    log(f"steam-watch reconnect attempt raised {last_error}")
+                self.sleep(reconnect_poll_s)
+            result["reconnect_last_error"] = "" if result["steam_back"] else last_error
+            log(f"steam-watch reconnect steam_back={result['steam_back']} back_after_ms={result['back_after_ms']} last_error={result['reconnect_last_error']}")
+        except BaseException as exc:
+            result["reconnect_last_error"] = f"interrupted: {type(exc).__name__}: {exc}"
+            raise
+        finally:
+            fh.close()
+            entry = self.record("v3", {"duration_s": duration_s, "interval_ms": interval_ms}, result)
+        return entry
 
 
 # ---------------------------------------------------------------------------
@@ -923,6 +1129,12 @@ def positive_int(text: str) -> int:
     return int(text)
 
 
+def non_negative_int(text: str) -> int:
+    if not text.strip().isdigit():
+        raise argparse.ArgumentTypeError(f"not a non-negative integer: {text!r}")
+    return int(text)
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="run_probes.py",
@@ -935,7 +1147,7 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=(
             "subcommands:\n"
             "  v1 --appids 1245620,2379780      GetConfigForAppAndController per appid, the Deck controller\n"
-            "                                   index found by type, and the layout candidates per appid\n"
+            "     [--controller-index N]        index found by type, and the layout candidates per appid\n"
             "  v2 --shortcut APPID --url URL    SetSelectedConfigForApp(shortcut, idx, 'workshop://...', false),\n"
             "     [--restore]                   read back after 1 s; --restore puts the previous URL back.\n"
             "                                   Refuses without --url and refuses any appid below 0x80000000\n"
@@ -946,7 +1158,8 @@ def build_parser() -> argparse.ArgumentParser:
             "  all --appids ... --shortcut ...  v1, v4, v5 (no --run); v2 only with --url; v3 last, only with --yes\n"
             "\n"
             "Every subcommand prints one JSON object and appends it to probe-results.json;\n"
-            "--markdown renders the PROBES.md results table from that file.\n"
+            "--markdown renders the PROBES.md results table from that file. The table is redacted\n"
+            "(no Steam ID, home paths as ~); the raw values stay in probe-results.json.\n"
             "\n"
             "exit codes: 0 ran, 1 transport failure, 2 refused / usage, 3 DevTools port closed\n"
             "(is Decky installed and is Steam in Game Mode?)\n"
@@ -961,14 +1174,20 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--markdown", action="store_true", help="render the PROBES.md results table from the results file and exit")
     sub = p.add_subparsers(dest="probe", metavar="{v1,v2,v3,v4,v5,all}")
 
+    index_help = (
+        "use this controller index instead of the one found by type (when the type lookup fails, "
+        "v1 probes every listed index, or 15, and marks the rows 'index not confirmed by type')"
+    )
     s1 = sub.add_parser("v1", help="layout config per appid + Deck controller index by type")
     s1.add_argument("--appids", type=parse_appids, required=True, help="comma-separated Steam appids")
     s1.add_argument("--candidate-wait-ms", type=positive_int, default=4000, help="how long to collect layout candidates per appid (default %(default)s)")
+    s1.add_argument("--controller-index", type=non_negative_int, default=None, help=index_help)
 
     s2 = sub.add_parser("v2", help="set a workshop:// layout on a SHORTCUT and read it back")
     s2.add_argument("--shortcut", type=positive_int, required=True, help="the shortcut's appid (must be >= 0x80000000)")
     s2.add_argument("--url", help="workshop://<publishedfileid> to select; required to run")
     s2.add_argument("--restore", action="store_true", help="put the previous URL back afterwards")
+    s2.add_argument("--controller-index", type=non_negative_int, default=None, help=index_help)
 
     s3 = sub.add_parser("v3", help="watch pgrep -x steam across StartShutdown(false)")
     s3.add_argument("--yes", action="store_true", help="skip the confirmation prompt")
@@ -987,6 +1206,7 @@ def build_parser() -> argparse.ArgumentParser:
     sa.add_argument("--shortcut", type=positive_int, help="for v5 and v2 (both skipped without it)")
     sa.add_argument("--url", help="for v2 (skipped without it)")
     sa.add_argument("--restore", action="store_true", help="v2 --restore")
+    sa.add_argument("--controller-index", type=non_negative_int, default=None, help="v1/v2 --controller-index")
     sa.add_argument("--yes", action="store_true", help="also run v3, last")
     sa.add_argument("--duration", type=float, default=90.0, help="v3 watch length (default %(default)s)")
     sa.add_argument("--interval-ms", type=positive_int, default=100, help="v3 sampling interval (default %(default)s)")
@@ -1006,6 +1226,7 @@ def main(
     sleep: Callable[[float], None] = time.sleep,
     cmdline: Callable[[int], str] = read_cmdline,
     v3_log_path: Path | None = None,
+    steam_root: Path | None = None,
 ) -> int:
     out = out or sys.stdout
     err = err or sys.stderr
@@ -1035,6 +1256,7 @@ def main(
         sleep=sleep,
         cmdline=cmdline,
         stdin=stdin,
+        steam_root=steam_root,
     )
     try:
         # Refusals come before any network access, so a refused run touches nothing.
@@ -1049,9 +1271,9 @@ def main(
         devtools.targets()  # port check: exit 3 with the message when closed
 
         if args.probe == "v1":
-            runner.emit(runner.v1(args.appids, args.candidate_wait_ms))
+            runner.emit(runner.v1(args.appids, args.candidate_wait_ms, args.controller_index))
         elif args.probe == "v2":
-            runner.emit(runner.v2(args.shortcut, args.url, args.restore))
+            runner.emit(runner.v2(args.shortcut, args.url, args.restore, args.controller_index))
         elif args.probe == "v3":
             runner.emit(runner.v3(yes=True, duration_s=args.duration, interval_ms=args.interval_ms, reconnect_timeout_s=args.reconnect_timeout))
         elif args.probe == "v4":
@@ -1062,7 +1284,7 @@ def main(
             ran: dict[str, Any] = {}
             skipped: dict[str, str] = {}
             if args.appids:
-                ran["v1"] = runner.v1(args.appids)
+                ran["v1"] = runner.v1(args.appids, controller_index=args.controller_index)
             else:
                 skipped["v1"] = "no --appids"
             ran["v4"] = runner.v4()
@@ -1074,7 +1296,7 @@ def main(
                 if args.shortcut < SHORTCUT_APPID_MIN:
                     skipped["v2"] = f"refused: appid {args.shortcut} is below 0x80000000"
                 else:
-                    ran["v2"] = runner.v2(args.shortcut, args.url, args.restore)
+                    ran["v2"] = runner.v2(args.shortcut, args.url, args.restore, args.controller_index)
             else:
                 skipped["v2"] = "no --url" if args.shortcut else "no --shortcut"
             if args.yes:

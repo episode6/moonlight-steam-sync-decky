@@ -10,6 +10,7 @@ function Content() {
   const [appids, setAppids] = useState("");
   const [shortcut, setShortcut] = useState("");
   const [url, setUrl] = useState("");
+  const [indexOverride, setIndexOverride] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [status, setStatus] = useState("idle");
 
@@ -41,15 +42,22 @@ function Content() {
         <PanelSectionRow>
           <TextField label="workshop:// URL (V2)" value={url} onChange={(e) => setUrl(e.target.value)} />
         </PanelSectionRow>
+        <PanelSectionRow>
+          <TextField
+            label="Controller index override (V1, V2; blank = found by type)"
+            value={indexOverride}
+            onChange={(e) => setIndexOverride(e.target.value)}
+          />
+        </PanelSectionRow>
       </PanelSection>
       <PanelSection title="Probes">
         <PanelSectionRow>
-          <ButtonItem layout="below" disabled={!!busy} onClick={run("V1", () => probeV1(appids))}>
+          <ButtonItem layout="below" disabled={!!busy} onClick={run("V1", () => probeV1(appids, indexOverride))}>
             V1 layouts: config per appid + Deck controller index
           </ButtonItem>
         </PanelSectionRow>
         <PanelSectionRow>
-          <ButtonItem layout="below" disabled={!!busy} onClick={run("V2", () => probeV2(shortcut, url))}>
+          <ButtonItem layout="below" disabled={!!busy} onClick={run("V2", () => probeV2(shortcut, url, indexOverride))}>
             V2 set workshop URL on the shortcut, read back
           </ButtonItem>
         </PanelSectionRow>
