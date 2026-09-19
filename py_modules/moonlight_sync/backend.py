@@ -1074,11 +1074,12 @@ class Backend:
         if fail is not None:
             return fail
         assert result is not None
-        return {
+        found = {
             "ok": True,
             "candidates": self._of(result, "candidate"),
             "notes": self._notes(result),
         }
+        return self._scrub(found, self._effective_key())
 
     async def _match(self, name: str, selector: list[str]) -> Result:
         """``--json match NAME <selector> --defer-art`` -> the ``pinned`` event.
@@ -1104,7 +1105,8 @@ class Backend:
                 events=result.events,
             )
         self._log(f"match: {selector[0]} for {name!r}")
-        return {"ok": True, "pinned": pinned, "notes": self._notes(result)}
+        confirmed = {"ok": True, "pinned": pinned, "notes": self._notes(result)}
+        return self._scrub(confirmed, self._effective_key())
 
     @staticmethod
     def _appid(value: Any) -> int | None:

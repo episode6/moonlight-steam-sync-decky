@@ -121,7 +121,7 @@ export function ChangeMatchModal({ row, onPinned, closeModal }: Props) {
   const rows = [...candidateRows(candidates ?? [], row.match), noMatchRow(row.match)];
 
   return (
-    <ModalRoot closeModal={closeModal} onCancel={closeModal}>
+    <ModalRoot closeModal={closeModal}>
       <DialogHeader>Change match for “{row.name}”</DialogHeader>
       <DialogBody>
         <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 8 }}>
