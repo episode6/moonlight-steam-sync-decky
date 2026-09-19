@@ -1,0 +1,199 @@
+# Agent guidance for moonlight-steam-sync-decky
+
+The harness-neutral guide for this repo; `CLAUDE.md` is a symlink to it.
+The design is `~/specs/moonlight-steam-sync/decky-plugin.md` (sections 3.6
+to 3.13 are the plugin); this file is the day-to-day summary.
+
+## What this is
+
+**Moonlight Sync**, a Decky Loader plugin that drives the
+[moonlight-steam-sync](https://github.com/episode6/moonlight-steam-sync) CLI
+from Game Mode: a Python backend that shells out to
+`~/.local/bin/moonlight-steam-sync --json …` and relays its NDJSON events,
+and a TypeScript frontend (Quick Access panel, settings route, restart
+prompt). The CLI is the product; the plugin is a thin UI over it.
+
+## Hard rules
+
+Breaking any of these is a blocker, not a judgement call.
+
+1. **The CLI is the only writer.** The plugin never writes under the Steam
+   directory (`shortcuts.vdf`, `userdata/`, `grid/`, controller configs) and
+   never calls `AddShortcut`, `RemoveShortcut`, `SetShortcutName`,
+   `SetAppLaunchOptions`, `SetAppHiddenState` or `SetCustomArtworkForApp`.
+   It never writes the CLI's `config.toml` either.
+2. **No `_root`.** `plugin.json` `flags` stays `[]`: the backend must run as
+   the deck user so `HOME` and the CLI's paths resolve.
+3. **No MoonDeck code.** MoonDeck is GPLv3, this repo is MIT. Do not open,
+   fetch or copy its source; route patches and launch flows are written from
+   `@decky/ui` primitives and the spec.
+4. **The SteamGridDB key never reaches the frontend** beyond its last four
+   characters: not in results, events, error messages or log lines.
+   `keys.py` is the only place the key is read.
+5. **Nothing user-specific in the repo.** Hosts are `MY-GAMING-PC` and
+   `OFFICE-PC`; no real hostnames, Steam IDs, usernames or absolute home
+   paths (write `~` or `$HOME`).
+6. **No host-side component.** Nothing runs on the gaming PC.
+7. **Build against the spec's CLI contract** (§3.4 flags, §3.4.6 events),
+   never against CLI 0.2.0 behaviour. The minimum CLI is `0.3.0`
+   (`install.MIN_CLI_VERSION`, the one place it lives).
+8. **One pin.** The bundled CLI release is `package.json`'s
+   `"moonlightSteamSync"`; every script reads it from there.
+9. **`src/lib/` is pure**: no `@decky/*`, `react` or `react-icons` import
+   (an eslint `no-restricted-imports` rule enforces it), so vitest can load
+   all of it. Decky-facing code lives in `src/components/`, `src/instance.tsx`
+   and `src/index.tsx`.
+10. **Stay out of `probes/`** unless the task is the PR-0 probe kit. It is
+    its own throwaway plugin with its own lockfile and workflow
+    (`probe.yml`); the root tooling ignores it explicitly (below).
+11. Anything the spec does not settle that changes behaviour, a contract,
+    a file or scope: stop and escalate (spec §5), do not improvise.
+
+## Module map
+
+```
+plugin.json                 name "Moonlight Sync", flags []
+package.json                scripts, deps, the CLI pin ("moonlightSteamSync")
+main.py                     thin decky Plugin: builds Backend, one line per callable
+py_modules/moonlight_sync/  the backend (imports nothing from decky)
+  backend.py                every callable, the _spawn seam, NDJSON relay, busy guard,
+                            timeouts, pending rules on sync_done
+  install.py                read_version(), MIN_CLI_VERSION, atomic install/upgrade
+  settings.py               settings.json / ignore.json / owned-apps.json /
+                            pending.json / layouts.json, all .tmp + os.replace
+  keys.py                   SteamGridDB key sources (config -> env -> file), key file
+  events.py                 parse_line(), restart_decision(), next_pending()
+backend/entrypoint.sh       the one CLI downloader (strict), also the Decky store hook
+backend/Dockerfile          template's holo-base image, only for `decky plugin build`
+scripts/package.py          Docker-free zip: out/Moonlight-Sync.zip ("Moonlight Sync/")
+src/index.tsx               definePlugin: events, settings route, running-app watch, load()
+src/instance.tsx            the Controller wired to callable / Steam / showModal / toaster
+src/lib/                    pure modules (vitest)
+  cli.ts                    every §3.4.6 event type, Result/Failure, Backend, makeBackend,
+                            errorText (the §3.8 strings)
+  events.ts                 NDJSON parsing, lastOf/eventsOf
+  state.ts                  AppState, Store, reducers (runs, counters, stream map)
+  controller.ts             load order, runs, restart flow, hosts, settings actions
+  restart.ts                restartDecision() (the §3.9 table), modal text
+  version.ts                version parsing, the CLI-missing / too-old row
+  format.ts                 relative times, the Last sync line
+  steam.ts                  ownedApps(), currentSteamId3(), runShortcut(),
+                            shutdownSteam(), watchRunningApps() (globals only)
+src/components/             QuickAccess, SyncProgress, RestartModal, SettingsPage,
+                            HostPage, ArtworkPage, AdvancedPage, AboutPage
+src/test/fixtures.ts        loads tests/fixtures for vitest
+tests/                      pytest: fake_cli.py, fixtures/, conftest.py, test_*.py
+```
+
+PR-6 adds the Titles page and makes `search` / `pin` / `unpin` /
+`set_ignored` real; PR-7 adds the Stream button, the layout copy and
+`layouts` / `record_layout`. Until then those six callables are stubs
+returning `{"ok": false, "error": "bad-request", "message": "not yet"}`.
+
+## Backend contract in one paragraph
+
+Every callable returns `{"ok": true, …}` or `{"ok": false, "error": <code>,
+"message": …}` (codes: `cli-missing`, `cli-too-old`, `cli-protocol`,
+`cli-error`, `timeout`, `busy`, `owned-apps-missing`, `owned-apps-empty`,
+`bad-request`, `io`) and never raises. Argv is `[python3, <installed cli>,
+"--json", <subcommand>, …]` (`doctor`, `--version` and `art --help` have no
+`--json`), `cwd` and `HOME` are the deck user's home, and the child gets
+`MOONLIGHT_STEAM_SYNC_FROM_PLUGIN=1`. Long runs (`start_sync`,
+`start_art_refetch`, `start_remove_all`) share one busy guard and emit
+`sync_event {kind, event}` per stdout line and `sync_done {kind, exit,
+pending, summary, commit, failure}` at the end. `pending.json` says
+`"write"` *before* an `awaiting-steam-exit` event is relayed, and
+`layout_walk: true` after `commit.written`. `check_host`'s reachable result
+carries an additive `ignored` count for the panel's counter.
+
+## Commands
+
+```sh
+npx --yes pnpm@9 install          # pnpm is pinned to major 9 (lockfileVersion 9.0)
+pnpm run typecheck                # tsc --noEmit
+pnpm run lint                     # eslint .
+pnpm run test                     # vitest run (src/**/*.test.ts, node environment)
+pnpm run build                    # rollup -> dist/index.js
+python3 -m pytest                 # tests/ only (pyproject testpaths)
+ruff check .                      # probes/ excluded in ruff.toml
+backend/entrypoint.sh             # download + verify the pinned CLI -> backend/out/
+python3 scripts/package.py        # out/Moonlight-Sync.zip (pnpm run package)
+```
+
+Run long commands through `tee` to a log file, never `tail`.
+
+## How probes/ is kept out
+
+- `tsconfig.json` includes only `src` and excludes `probes`.
+- `eslint.config.js` ignores `probes/**`; `vitest.config.ts` includes only
+  `src/**/*.test.ts` and excludes `probes/**`.
+- pnpm: there is deliberately **no `pnpm-workspace.yaml`**. With one, a
+  `pnpm install` inside `probes/steam-input-probe` resolves to the root
+  workspace and installs the root instead of the probe (tested), which
+  would break `probe.yml`. Without one the root is a single package and the
+  probe's own `package.json` / lockfile are never touched.
+- `ruff.toml` `extend-exclude = ["probes", …]`; `pyproject.toml`
+  `testpaths = ["tests"]` and `norecursedirs` include `probes`.
+- CI's `probes` job runs `pytest probes/tests` only when that directory
+  exists (`hashFiles`), so it is green on a tree without the kit.
+
+## The test harness (off-device)
+
+There is no Steam Deck during development; everything else is tested.
+
+- `tests/fake_cli.py` stands in for the CLI. Driven by env vars:
+  `FAKE_CLI_FIXTURES` (directories, `os.pathsep`-joined, searched in order),
+  `FAKE_CLI_ARGV_LOG`, `FAKE_CLI_VERSION` (< 0.3.0 rejects the new flags
+  like argparse: stderr only, exit 2), `FAKE_CLI_ART_COMMIT`,
+  `FAKE_CLI_STEAM_GONE_FILE` / `FAKE_CLI_WAIT_S` (the await-exit wait),
+  `FAKE_CLI_SIGINT_DURING_WAIT=immediate|deferred`, `FAKE_CLI_SLEEP_MS`,
+  `FAKE_CLI_EXIT`, `FAKE_CLI_STDERR`, `FAKE_CLI_NOISE` (a non-JSON stdout
+  line), `FAKE_CLI_FIXTURE_<SUB>[_<ACTION>]` (another fixture basename, e.g.
+  `FAKE_CLI_FIXTURE_HOST_SHOW=host-none`). A missing fixture exits 99.
+- `tests/fixtures/<scenario>/<command>.ndjson` are hand-written from §3.4.6
+  (`full-sync`, `art-only`, `nothing-to-do`, `unreachable`, `stopped`,
+  `refused`, `common/`); `tests/test_fixtures.py` checks every event's key
+  set against the schema. The frontend's `events.test.ts`,
+  `restart.test.ts`, `state.test.ts` and `controller.test.ts` read the same
+  files, so the Python and TypeScript restart tables cannot drift.
+- `tests/conftest.py`: `backend` / `make_backend` (a started Backend over
+  the fake; `@pytest.mark.scenario("full-sync")` puts that scenario in front
+  of `common/`), `steam_gone`, `install_env` (a `python3` shim that prints
+  the first line of the file it runs). Async callables are driven with
+  `asyncio.run` (`conftest.run`); a long run is started and awaited inside
+  one coroutine (`backend.wait_for_run()`).
+- `tests/test_main.py` imports the real `main.py` through the
+  `tests/stubs/decky.py` stub, with the fake CLI copied to
+  `<home>/.local/bin/moonlight-steam-sync`.
+- `tests/test_hard_rules.py` greps for what can be proven mechanically:
+  `flags: []`, no live shortcut API call in `src/`, the pin only in
+  `package.json`.
+- `tests/test_entrypoint.py` runs `backend/entrypoint.sh` from a copy of
+  `backend/` with `MSY_CLI_BASE_URL=file://…`; `tests/test_package.py`
+  builds a fixture tree and checks the exact zip entry list and modes.
+
+On-device checks are not merge criteria; they are collected in
+`DEVICE-CHECKLIST.md` (arrives with PR-8).
+
+## CI and release outline
+
+- `.github/workflows/ci.yml` (push to `main`, every `pull_request`):
+  `frontend` (pnpm 9, Node 20: typecheck, lint, vitest, build, upload
+  `dist`), `backend` (Python 3.13.5: ruff, pytest), `probes` (guarded),
+  `package` (HEAD-checks the pinned CLI's `.sha256` asset: absent → a
+  `::warning title=CLI v<pin> not released::` and no `bin/`; present →
+  `backend/entrypoint.sh` strict; then `scripts/package.py` and the
+  `Moonlight-Sync` artifact).
+- `release.yml` (PR-8): on a `v*` tag, strict `entrypoint.sh`,
+  `package.py --require-cli`, `Moonlight-Sync.zip` + `.sha256` attached to
+  the GitHub release. **No agent pushes a tag or creates a release**; the
+  user cuts `v0.1.0` after the CLI's `v0.3.0` exists.
+- The plugin PRs are stacked (PR-0 → PR-5 → PR-6 → PR-7 → PR-8), each branch
+  on the previous one; never push to `main`, force-push only with
+  `--force-with-lease` on this stack's own branches.
+
+## Docs to keep current
+
+README (install, panel, restart, hosts, key, files, developing), this file
+(module map, harness), `CHANGELOG.md` `[Unreleased]`, and docstrings, in
+the same PR as the change.
