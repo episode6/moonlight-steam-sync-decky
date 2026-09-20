@@ -6,4 +6,4 @@
 {"event":"title","index":2,"total":2,"name":"Tunic","kind":"shortcut","appid":3000000007,"match":{"steam_appid":553420,"sgdb_id":4102,"matched_name":"TUNIC","how":"steamstore:exact"},"slots":{"portrait":"kept","landscape":"kept","hero":"kept","logo":"kept","icon":"sgdb"}}
 {"event":"note","message":"restart Steam to see the new artwork"}
 {"event":"commit","written":false,"restarted":false,"backup":"","relaunch_error":""}
-{"event":"summary","added":0,"replaced":0,"removed":0,"filled":2,"missing":0,"unmatched":[],"duplicates":{},"pending":0,"stopped_early":false,"stop_reason":null,"exit":0}
+{"event":"summary","added":0,"added_by_kind":{"stream":0,"shortcut":0},"replaced":0,"removed":0,"filled":2,"missing":0,"unmatched":[],"duplicates":{},"pending":0,"stopped_early":false,"stop_reason":null,"exit":0}

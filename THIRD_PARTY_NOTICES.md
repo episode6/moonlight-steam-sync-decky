@@ -6,7 +6,16 @@ travel with redistributed source. The files derived from it are
 `rollup.config.js`, `tsconfig.json`, `backend/Dockerfile`, `src/types.d.ts`,
 parts of `.gitignore` and the build/dependency section of `package.json`.
 
-No code from MoonDeck (GPLv3) is used anywhere in this repository.
+No code from MoonDeck (GPLv3) is used anywhere in this repository, and
+none of it was copied, adapted or translated. MoonDeck's *behaviour* was
+read as a reference while the design spec was written, and the few facts
+about the Steam client that the plugin depends on -- which app types
+count as owned, how a steamid3 is derived from a steam64, the launch
+source `RunGame` takes -- are recorded in that spec
+(`~/specs/moonlight-steam-sync/decky-plugin.md`, sections 2.1 and 3.9),
+which is what this repository's code is written from. Facts about an
+undocumented API are not copyrightable expression; the expression here is
+this repository's own.
 
 ## decky-plugin-template
 

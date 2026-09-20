@@ -10,6 +10,7 @@ import type {
 } from "./cli";
 import { Controller, type RestartPrompt, type SteamPort, type UiPort } from "./controller";
 import { eventsOf, lastOf } from "./events";
+import { restartRowView } from "./state";
 
 const PENDING: Pending = {
   restart_needed: "none",
@@ -183,6 +184,71 @@ describe("load order (spec 3.8)", () => {
     expect(state.clientAppid).toBe(2400000001);
     expect(state.reach?.reachable).toBe(true);
     expect(state.ignoredCount).toBe(1);
+  });
+
+  it("a failed cli_version says why and the next panelOpened() runs the whole order", async () => {
+    let attempts = 0;
+    const controller = new Controller(
+      fakeBackend(calls, {
+        cli_version: () => {
+          attempts += 1;
+          return attempts === 1
+            ? { ok: false, error: "io", message: "could not run the CLI: [Errno 13] denied" }
+            : {
+                ok: true,
+                installed: "0.3.0",
+                bundled: "0.3.0",
+                minimum: "0.3.0",
+                too_old: false,
+                capabilities: { art_commit: true },
+              };
+        },
+      }),
+      steam,
+      ui,
+      instantTiming(),
+    );
+    await controller.panelOpened();
+    expect(controller.state.cli).toBeNull();
+    expect(controller.state.message).toBe("could not run the CLI: [Errno 13] denied");
+    expect(controller.state.library).toBe("waiting"); // steps 3-5 never ran
+    expect(names()).not.toContain("status");
+
+    calls.length = 0;
+    await controller.panelOpened();
+    expect(attempts).toBe(2);
+    expect(controller.state.cli?.state).toBe("ok");
+    expect(controller.state.library).toBe("ready");
+    expect(names()).toContain("status"); // steps 3-5 ran this time
+  });
+
+  it("refreshCli() after a failed step 1 runs the whole order, not just the version", async () => {
+    let attempts = 0;
+    const controller = new Controller(
+      fakeBackend(calls, {
+        cli_version: () => {
+          attempts += 1;
+          return attempts === 1
+            ? { ok: false, error: "io", message: "boom" }
+            : {
+                ok: true,
+                installed: "0.3.0",
+                bundled: "0.3.0",
+                minimum: "0.3.0",
+                too_old: false,
+                capabilities: { art_commit: true },
+              };
+        },
+      }),
+      steam,
+      ui,
+      instantTiming(),
+    );
+    await controller.load();
+    calls.length = 0;
+    await controller.refreshCli();
+    expect(controller.state.cli?.state).toBe("ok");
+    expect(names()).toContain("status");
   });
 
   it("a missing CLI stops after the plugin-file reads", async () => {
@@ -401,6 +467,43 @@ describe("runs and the restart flow (spec 3.9)", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(calls[0]).toEqual(["clear_pending", ["restart_needed"]]);
     expect(steam.shutdowns).toBe(1);
+  });
+
+  it("the persistent row is refused while a game is running, on both paths", async () => {
+    for (const restart_needed of ["write", "art"] as const) {
+      calls = [];
+      steam = new FakeSteam();
+      ui = new FakeUi();
+      const controller = await loaded({
+        pending: { ok: true, ...PENDING, restart_needed, last_kind: "sync" },
+      });
+      controller.setInGame(true);
+      expect(restartRowView(controller.state)).toEqual({
+        description: "A game is running; exit it first",
+        disabled: true,
+      });
+      await controller.restartRow();
+      expect(calls).toEqual([]);
+      expect(steam.shutdowns).toBe(0);
+      // and it works again once the game is closed
+      controller.setInGame(false);
+      expect(restartRowView(controller.state)?.disabled).toBe(false);
+      await controller.restartRow();
+      expect(names().length).toBeGreaterThan(0);
+    }
+  });
+
+  it("an immediate run whose wait starts in-game shows the modal instead of shutting Steam down", async () => {
+    const controller = await loaded({
+      pending: { ok: true, ...PENDING, restart_needed: "write", last_kind: "sync" },
+    });
+    await controller.restartRow();
+    expect(controller.state.run?.immediate).toBe(true);
+    controller.setInGame(true);
+    relay(controller, "sync", loadFixture("refused/sync.ndjson"));
+    expect(steam.shutdowns).toBe(0);
+    expect(ui.prompts).toHaveLength(1); // the RestartModal, which says so itself
+    expect(ui.toasts[0]).toBeDefined();
   });
 
   it("the art row does the same two calls", async () => {

@@ -16,6 +16,25 @@ import pytest
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 MATCH_KEYS = {"steam_appid", "sgdb_id", "matched_name", "how"}
+SUMMARY_KEYS = {
+    "event",
+    "added",
+    "replaced",
+    "removed",
+    "filled",
+    "missing",
+    "unmatched",
+    "duplicates",
+    "pending",
+    "stopped_early",
+    "stop_reason",
+    "exit",
+}
+#: `summary` differs per command, the way `end` does: every `sync` summary
+#: carries the per-kind add counts (spec 3.4.6's plan-counts bullet, spec
+#: 3.13 A3), zeros included, and `art` / `remove` summaries never do.
+SUMMARY_KEYS_BY_COMMAND: dict[str, set[str]] = {"sync": SUMMARY_KEYS | {"added_by_kind"}}
+ADDED_BY_KIND_KEYS = {"stream", "shortcut"}
 SLOT_NAMES = {"portrait", "landscape", "hero", "logo", "icon"}
 TITLE_SLOT_VALUES = {"steam", "sgdb", "kept", "missing", "skipped", "cached-miss"}
 
@@ -44,20 +63,7 @@ EVENT_KEYS: dict[str, set[str]] = {
     "title": {"event", "index", "total", "name", "kind", "appid", "match", "slots"},
     "awaiting-steam-exit": {"event", "timeout_s"},
     "commit": {"event", "written", "restarted", "backup", "relaunch_error"},
-    "summary": {
-        "event",
-        "added",
-        "replaced",
-        "removed",
-        "filled",
-        "missing",
-        "unmatched",
-        "duplicates",
-        "pending",
-        "stopped_early",
-        "stop_reason",
-        "exit",
-    },
+    "summary": SUMMARY_KEYS,
     "app": {
         "event",
         "name",
@@ -147,7 +153,12 @@ def test_fixture_key_sets_match_the_schema(path: Path) -> None:
     command = first["command"]
     for event in events:
         name = event["event"]
-        expected = END_KEYS[command] if name == "end" else EVENT_KEYS.get(name)
+        if name == "end":
+            expected = END_KEYS[command]
+        elif name == "summary":
+            expected = SUMMARY_KEYS_BY_COMMAND.get(command, SUMMARY_KEYS)
+        else:
+            expected = EVENT_KEYS.get(name)
         assert expected is not None, f"unknown event {name!r}"
         assert set(event) == expected, f"{name}: {sorted(set(event) ^ expected)}"
         for key in ("match",):
@@ -164,6 +175,11 @@ def test_fixture_key_sets_match_the_schema(path: Path) -> None:
         if name == "app":
             for other in event["same_game_as"]:
                 assert set(other) == {"name", "host"}
+        if name == "summary" and "added_by_kind" in event:
+            by_kind = event["added_by_kind"]
+            assert set(by_kind) == ADDED_BY_KIND_KEYS
+            assert all(isinstance(v, int) and not isinstance(v, bool) for v in by_kind.values())
+            assert sum(by_kind.values()) == event["added"]
 
 
 @pytest.mark.parametrize("path", ndjson_files(), ids=lambda p: f"{p.parent.name}/{p.name}")

@@ -38,7 +38,9 @@ export function AdvancedPage() {
       />
       <SliderField
         label="Restart countdown"
-        description="Seconds before Steam restarts after a sync; 0 asks without counting down"
+        /* 0-30 s: the CLI gives up waiting for Steam after 60 s, so a longer
+         * countdown would race it (spec Decision 30; settings.py validates it). */
+        description="Seconds before Steam restarts after a sync (0-30); 0 asks without counting down"
         value={settings?.restart_countdown_s ?? 5}
         min={0}
         max={30}

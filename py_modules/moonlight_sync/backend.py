@@ -400,8 +400,15 @@ class Backend:
         SIGINT, then SIGKILL ``KILL_GRACE`` later. Output pipes still open
         ``KILL_GRACE`` after the child exited (held by a grandchild) are
         closed rather than waited for.
+
+        **This is where the SteamGridDB key is scrubbed** (hard rule 4): the
+        effective key is read once per spawn and every parsed event, every
+        stdout line kept and every stderr line -- which is also what reaches
+        the plugin log -- has it replaced by ``…<last four>`` before anything
+        downstream sees it. So :class:`RunResult` is clean by construction and
+        no caller can leak the key by forgetting to redact.
         """
-        self._log("run: " + shlex.join(argv))
+        self._log("run: " + shlex.join(argv))  # the key is never on argv (keys.py)
         proc = await asyncio.create_subprocess_exec(
             *argv,
             stdin=asyncio.subprocess.DEVNULL,
@@ -418,6 +425,7 @@ class Backend:
         stdout_parts: list[str] = []
         stderr_parts: list[str] = []
         read_errors: list[Exception] = []
+        key = self._effective_key()  # read once per spawn, not per line
 
         async def read_stdout() -> None:
             assert proc.stdout is not None
@@ -426,14 +434,16 @@ class Backend:
                 if not raw:
                     return
                 text = raw.decode("utf-8", "replace")
-                stdout_parts.append(text)
+                stdout_parts.append(self._redact(text, key))
                 if not json_mode:
                     continue
                 event = ev.parse_line(text)
                 if event is None:
                     if text.strip():
-                        self._log(f"non-JSON stdout line skipped: {text.rstrip()}")
+                        shown = self._redact(text, key).rstrip()
+                        self._log(f"non-JSON stdout line skipped: {shown}")
                     continue
+                event = self._scrub(event, key)
                 events.append(event)
                 if on_event is not None:
                     try:
@@ -447,7 +457,7 @@ class Backend:
                 raw = await proc.stderr.readline()
                 if not raw:
                     return
-                text = raw.decode("utf-8", "replace")
+                text = self._redact(raw.decode("utf-8", "replace"), key)
                 stderr_parts.append(text)
                 self._log_raw(text)
 
@@ -799,10 +809,13 @@ class Backend:
         source: str | None = None
         cached_hosts: list[Any] = []
         if fail is not None:
+            # "no host configured" is contractual: spec 3.4.6's `host` bullet
+            # pins the wording of `host show`'s exit-1 error, and the CLI's own
+            # tests assert it. Anything else that exits 1 is a real failure.
             no_host = (
                 fail.get("error") == "cli-error"
                 and fail.get("exit") == 1
-                and "no host" in str(fail.get("message", ""))
+                and "no host configured" in str(fail.get("message", ""))
             )
             if not no_host:
                 return fail
@@ -1127,8 +1140,12 @@ class Backend:
         self, kind: str, subcommand: str, args: list[str], opts: dict[str, Any]
     ) -> Result:
         """Register the run synchronously (the busy guard) and start its task."""
-        run = RunState(kind=kind, opts=opts, started=iso_now())
-        run.recent = collections.deque(maxlen=self.EVENT_RING)
+        run = RunState(
+            kind=kind,
+            opts=opts,
+            started=iso_now(),
+            recent=collections.deque(maxlen=self.EVENT_RING),
+        )
         self._run = run
         argv = [*self.cli, "--json", subcommand, *args]
         run.task = asyncio.get_running_loop().create_task(self._drive(run, argv))

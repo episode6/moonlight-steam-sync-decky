@@ -221,6 +221,11 @@ def _interrupted(subcommand: str, events: list[dict]) -> int:
         }
     )
     fields.update(stopped_early=True, stop_reason="interrupted", exit=130)
+    if subcommand == "sync":
+        # every real `sync` summary carries added_by_kind, zeros included
+        fields.setdefault("added_by_kind", {"stream": 0, "shortcut": 0})
+    else:
+        fields.pop("added_by_kind", None)
     _out(json.dumps(fields))
     _out(json.dumps({"event": "error", "exit": 130, "message": f"{subcommand}: interrupted"}))
     _err(f"{subcommand}: interrupted")

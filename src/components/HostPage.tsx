@@ -88,6 +88,8 @@ export function HostPage() {
               ) : null}
               <DialogButton
                 style={{ minWidth: 0, padding: "8px 14px" }}
+                /* The backend refuses to forget the active host; don't offer it. */
+                disabled={isActive}
                 onClick={() => confirmForget(name, setError)}
               >
                 Forget

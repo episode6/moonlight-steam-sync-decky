@@ -2,5 +2,5 @@
 {"event":"start","schema":1,"version":"0.3.0","command":"sync"}
 {"event":"plan","host":"MY-GAMING-PC","published":6,"ignored":1,"present":3,"to_add":2,"to_replace":0,"to_park":0,"to_unpark":0,"to_remove":0,"pending":0,"limit":null,"stream":3,"shortcut":2,"parked":1,"duplicates":{}}
 {"event":"title","index":1,"total":2,"name":"Cocoon","kind":"stream","appid":2862439841,"match":{"steam_appid":1497440,"sgdb_id":5,"matched_name":"COCOON","how":"sgdb:exact-verified"},"slots":{"portrait":"steam","landscape":"kept","hero":"kept","logo":"kept","icon":"kept"}}
-{"event":"summary","added":0,"replaced":0,"removed":0,"filled":1,"missing":0,"unmatched":[],"duplicates":{},"pending":0,"stopped_early":true,"stop_reason":"interrupted","exit":130}
+{"event":"summary","added":0,"added_by_kind":{"stream":0,"shortcut":0},"replaced":0,"removed":0,"filled":1,"missing":0,"unmatched":[],"duplicates":{},"pending":0,"stopped_early":true,"stop_reason":"interrupted","exit":130}
 {"event":"error","exit":130,"message":"sync: interrupted"}

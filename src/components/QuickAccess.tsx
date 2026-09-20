@@ -11,7 +11,13 @@ import { useEffect, type ReactNode } from "react";
 
 import { SETTINGS_ROUTE, controller } from "../instance";
 import { lastSyncLine, relativeTime } from "../lib/format";
-import { actionsReady, ignoredCounter, otherHostsLine, type AppState } from "../lib/state";
+import {
+  actionsReady,
+  ignoredCounter,
+  otherHostsLine,
+  restartRowView,
+  type AppState,
+} from "../lib/state";
 import { confirmSwitch } from "./confirmSwitch";
 import { SyncProgress } from "./SyncProgress";
 import { useStore } from "./useStore";
@@ -123,20 +129,14 @@ function HostRow({ state }: { state: AppState }) {
 }
 
 function RestartRow({ state }: { state: AppState }) {
-  const pending = state.pending;
-  if (!pending || pending.restart_needed === "none") return null;
-  const busy = !!state.run?.running;
-  const description = busy
-    ? "finishing the previous run…"
-    : pending.restart_needed === "art"
-      ? "New artwork shows after a Steam restart"
-      : "The last sync is ready to write; Steam restarts once";
+  const view = restartRowView(state);
+  if (!view) return null;
   return (
     <PanelSectionRow>
       <ButtonItem
         layout="below"
-        description={description}
-        disabled={busy || (pending.restart_needed === "write" && !actionsReady(state))}
+        description={view.description}
+        disabled={view.disabled}
         onClick={() => void controller.restartRow()}
       >
         Restart Steam to apply

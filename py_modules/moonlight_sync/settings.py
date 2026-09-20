@@ -36,7 +36,11 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "layout_strategy": "copy",
 }
 
-RESTART_COUNTDOWN_MAX = 60
+#: The countdown can never outlast the CLI's own await-exit wait (60 s),
+#: which would race it, so the slider and the file both stop at 30
+#: (spec Decision 30). A larger value stored by an older build is
+#: clamped on read rather than making settings.json unreadable.
+RESTART_COUNTDOWN_MAX = 30
 LAYOUT_STRATEGIES = ("copy", "picker")
 
 DEFAULT_PENDING: dict[str, Any] = {
@@ -109,12 +113,22 @@ class Store:
         return "hosts" in self._raw_settings()
 
     def settings(self) -> dict[str, Any]:
-        """Defaults overlaid with the file; ``hosts`` is ``[]`` until seeded."""
+        """Defaults overlaid with the file; ``hosts`` is ``[]`` until seeded.
+
+        ``restart_countdown_s`` is clamped to ``RESTART_COUNTDOWN_MAX`` on the
+        way out: a file written before Decision 30 lowered the ceiling to 30
+        still reads, it just counts down from 30.
+        """
         merged = dict(DEFAULT_SETTINGS)
         merged["hosts"] = []
         for key, value in self._raw_settings().items():
             if key in merged:
                 merged[key] = value
+        countdown = merged["restart_countdown_s"]
+        if isinstance(countdown, int) and not isinstance(countdown, bool):
+            merged["restart_countdown_s"] = max(0, min(countdown, RESTART_COUNTDOWN_MAX))
+        else:
+            merged["restart_countdown_s"] = DEFAULT_SETTINGS["restart_countdown_s"]
         return merged
 
     def set_settings(self, patch: Any) -> dict[str, Any]:

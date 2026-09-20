@@ -76,6 +76,22 @@ def committed(events: list[Event]) -> bool:
     return bool(commit and commit.get("written") is True)
 
 
+def settles_pending_write(kind: str, last_kind: Any) -> bool:
+    """Does a clean run of ``kind`` settle a pending ``"write"`` left by
+    ``last_kind``? (spec Decision 31.)
+
+    A run that exits 0 without ever emitting ``awaiting-steam-exit`` wrote
+    nothing *and had nothing to write* -- but only for its own kind. So it
+    settles a pending write of the same kind, and a ``sync`` also settles a
+    pending ``art`` (a sync patches icons too). A pending ``remove`` is only
+    ever settled by another ``remove``: neither a sync nor an art run would
+    have planned those removals.
+    """
+    if kind == last_kind:
+        return True
+    return kind == "sync" and last_kind == "art"
+
+
 def next_pending(
     previous: dict[str, Any],
     *,
@@ -90,13 +106,22 @@ def next_pending(
       true (false for a ``remove`` run: the entries are gone).
     - awaited but not written (Later, stopped, timed out) -> stays ``"write"``.
     - art only / stopped with images -> ``"art"``.
-    - nothing -> ``restart_needed`` unchanged.
+    - nothing -> ``restart_needed`` unchanged...
+
+    ...**except** that a clean run (exit 0, no wait) settles a pending
+    ``"write"`` it covers (:func:`settles_pending_write`, spec Decision 31):
+    there is demonstrably nothing left to write for that kind, so the
+    persistent restart row goes away -- to ``"art"`` when the run saved
+    images, else to ``"none"``. A run that does not cover the pending kind,
+    or that exited non-zero, leaves it exactly as it was.
 
     A run that got as far as a ``summary`` also records it (and its ``plan``)
     as ``last_summary`` / ``last_plan`` / ``last_kind``, which feed the
     panel's *Last sync* row; ``since`` is when that happened.
     """
     pending = dict(previous)
+    was_pending = previous.get("restart_needed", "none")
+    was_kind = previous.get("last_kind")
     summary = last_of(events, "summary")
     plan = last_of(events, "plan")
     if summary is not None:
@@ -114,6 +139,15 @@ def next_pending(
         pending.update(restart_needed="write", last_kind=kind)
         if plan is not None:
             pending["last_plan"] = plan
-    elif decision == "art":
+        return pending
+    # Decision 31: only a run that covers the pending write may lower it.
+    may_lower = was_pending != "write" or (
+        exit_code == 0 and settles_pending_write(kind, was_kind)
+    )
+    if not may_lower:
+        return pending
+    if decision == "art":
         pending.update(restart_needed="art", last_kind=kind, since=now)
+    elif was_pending == "write":
+        pending.update(restart_needed="none", last_kind=kind, since=now)
     return pending

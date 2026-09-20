@@ -159,6 +159,42 @@ def test_the_key_never_reaches_the_frontend(backend) -> None:
     assert key_file(home).read_text() == KEY + "\n"
 
 
+def test_a_key_echoed_by_the_cli_is_scrubbed_at_the_spawn_seam(make_backend, tmp_path) -> None:
+    """A CLI that echoes the key back (in a note, an error message or on
+    stderr) must not be able to leak it: Backend._spawn scrubs every parsed
+    event, every stdout line and every stderr line once per spawn, so
+    RunResult -- and therefore every callable's whole result, the events it
+    carries and the plugin log -- is clean by construction (hard rule 4)."""
+    fixture = tmp_path / "fx"
+    fixture.mkdir()
+    (fixture / "search.ndjson").write_text(
+        '{"event":"start","schema":1,"version":"0.3.0","command":"search"}\n'
+        f'{{"event":"note","message":"search: SteamGridDB rejected key {KEY}"}}\n'
+        '{"event":"end"}\n'
+    )
+    (fixture / "list.ndjson").write_text(
+        '{"event":"start","schema":1,"version":"0.3.0","command":"list"}\n'
+        f'{{"event":"note","message":"list: using key {KEY}"}}\n'
+        f'{{"event":"error","exit":4,"message":"list: SteamGridDB rejected key {KEY}"}}\n'
+    )
+    backend = make_backend(
+        env={"FAKE_CLI_FIXTURES": str(fixture), "FAKE_CLI_STDERR": f"traceback with {KEY}"},
+    )
+    key_file(Path(backend.home)).parent.mkdir(parents=True, exist_ok=True)
+    key_file(Path(backend.home)).write_text(KEY + "\n")
+    assert run(backend.write_owned_apps(12345678, {"2379780": "Balatro"}))["ok"]
+
+    tested = run(backend.test_sgdb_key())
+    assert tested["ok"] is False
+    assert KEY[-4:] in json.dumps(tested)  # the note did reach the result
+    listed = run(backend.list_apps())
+    assert listed["ok"] is False and listed["error"] == "cli-error"
+
+    blob = json.dumps([tested, listed]) + json.dumps(run(backend.log_tail(200)))
+    assert KEY not in blob
+    assert KEY[:-4] not in blob  # not even the key minus its hint
+
+
 def test_test_sgdb_key_ok_on_sgdb_candidates(backend) -> None:
     assert run(backend.test_sgdb_key()) == {"ok": True}
     argv = backend.harness.argv()[-1]

@@ -54,10 +54,17 @@ Breaking any of these is a blocker, not a judgement call.
 ```
 plugin.json                 name "Moonlight Sync", flags []
 package.json                scripts, deps, the CLI pin ("moonlightSteamSync")
-main.py                     thin decky Plugin: builds Backend, one line per callable
+main.py                     thin decky Plugin: builds Backend, one line per callable;
+                            no __init__ and `_backend` / `_startup` as class attributes, with
+                            `_get` / `_ready` as classmethods, so it is correct whether the
+                            loader instantiates the class (api_version > 0, ours) or calls
+                            through the bare class (api_version 0)
 py_modules/moonlight_sync/  the backend (imports nothing from decky)
   backend.py                every callable, the _spawn seam, NDJSON relay, busy guard,
-                            timeouts, pending rules on sync_done
+                            timeouts, pending rules on sync_done. _spawn is where the
+                            SteamGridDB key is scrubbed (once per spawn, over every parsed
+                            event and every stdout/stderr line), so RunResult and therefore
+                            every result, relayed event and log line is clean by construction
   install.py                read_version(), MIN_CLI_VERSION, atomic install/upgrade
   settings.py               settings.json / ignore.json / owned-apps.json /
                             pending.json / layouts.json, all .tmp + os.replace
@@ -103,7 +110,16 @@ Every callable returns `{"ok": true, …}` or `{"ok": false, "error": <code>,
 `sync_event {kind, event}` per stdout line and `sync_done {kind, exit,
 pending, summary, commit, failure}` at the end. `pending.json` says
 `"write"` *before* an `awaiting-steam-exit` event is relayed, and
-`layout_walk: true` after `commit.written`. `check_host`'s reachable result
+`layout_walk: true` after `commit.written`. A pending `"write"` is only
+lowered by a run that covers it (`events.settles_pending_write`, spec
+Decision 31): a run that exits 0 without ever waiting for the client proves
+there is nothing left to write *of its own kind*, so it clears a pending
+write of the same kind -- and a `sync` also clears one left by an `art` run,
+since a sync patches icons too -- to `"art"` when it saved images, else
+`"none"`. A pending `remove` is only ever cleared by another `remove`, and a
+non-zero exit clears nothing. `restart_countdown_s` is 0-30 everywhere
+(Decision 30: the CLI's await-exit wait times out at 60 s); a larger value
+in an older `settings.json` is clamped on read, not rejected. `check_host`'s reachable result
 carries an additive `ignored` count for the panel's counter.
 
 ## Commands

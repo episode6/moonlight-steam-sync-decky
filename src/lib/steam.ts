@@ -13,13 +13,14 @@
 /** The steam64 of account id 0 (`steam64 - this = steamid3`). */
 export const STEAM64_BASE = 76561197960265728n;
 
-/** MoonDeck's `isAppTypeSupported`: game, demo, beta. */
+/** The app types a Steam library entry may have to count as owned:
+ * game (1), demo (8), beta (65536) -- spec 3.9. */
 export const SUPPORTED_APP_TYPES: ReadonlySet<number> = new Set([1, 8, 65536]);
 
 /** Non-Steam shortcuts live at and above this appid. */
 export const SHORTCUT_APPID_FLOOR = 0x80000000;
 
-/** Launch source MoonDeck passes to `RunGame` for a library launch. */
+/** The launch source `RunGame` takes for a library launch (spec 2.1, 3.9). */
 const LAUNCH_SOURCE = 100;
 
 export interface AppLike {
@@ -74,7 +75,8 @@ export function ownedApps(): Record<string, string> | null {
   return Object.keys(owned).length ? owned : null;
 }
 
-/** The logged-in user's steamid3 (`App.m_CurrentUser.strSteamID`, MoonDeck's helper). */
+/** The logged-in user's steamid3, derived from `App.m_CurrentUser.strSteamID`
+ * (spec 3.9: `steamid3 = steam64 - 76561197960265728`). */
 export function currentSteamId3(): number | null {
   const app = globals().App as { m_CurrentUser?: { strSteamID?: string } } | undefined;
   return steamId3FromSteam64(app?.m_CurrentUser?.strSteamID);

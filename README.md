@@ -92,8 +92,10 @@ in one Steam restart. The CLI does all the work (listing, matching, every
 image) while Steam keeps running, then waits for Steam to exit. The plugin
 asks: "Sync finished: 2 added, 1 replaced — Restarting Steam in 5 s to show
 them", with **Restart now** and **Later** (B). The countdown length is a
-setting (0 means no countdown, just the buttons), and it never starts while
-a game is running ("A game is running. Restart Steam when you're done.").
+setting, 0 to 30 seconds (0 means no countdown, just the buttons; the
+ceiling is 30 because the CLI stops waiting for Steam after 60 s, and a
+longer countdown would race it), and it never starts while a game is
+running ("A game is running. Restart Steam when you're done.").
 
 In Game Mode, asking Steam to shut down *is* the restart: the session brings
 it straight back, and the CLI writes the file in between. **Later** stops
@@ -136,7 +138,7 @@ which needs a CLI whose `art` command accepts `--commit` and says "needs a
 newer CLI" otherwise.
 
 Settings → **Advanced** has *Copy controller layouts from the Steam game*
-(used by a later release), the restart countdown, and **Remove everything
+(used by a later release), the restart countdown (0-30 s), and **Remove everything
 this plugin created** (every shortcut, hidden entry and image the tool made;
 pins and ignored titles are kept; Steam restarts once).
 

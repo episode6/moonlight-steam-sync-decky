@@ -1,4 +1,4 @@
 # A second run over a finished library: a plan, a summary, no commit.
 {"event":"start","schema":1,"version":"0.3.0","command":"sync"}
 {"event":"plan","host":"MY-GAMING-PC","published":6,"ignored":1,"present":5,"to_add":0,"to_replace":0,"to_park":0,"to_unpark":0,"to_remove":0,"pending":0,"limit":null,"stream":3,"shortcut":2,"parked":1,"duplicates":{}}
-{"event":"summary","added":0,"replaced":0,"removed":0,"filled":0,"missing":0,"unmatched":[],"duplicates":{},"pending":0,"stopped_early":false,"stop_reason":null,"exit":0}
+{"event":"summary","added":0,"added_by_kind":{"stream":0,"shortcut":0},"replaced":0,"removed":0,"filled":0,"missing":0,"unmatched":[],"duplicates":{},"pending":0,"stopped_early":false,"stop_reason":null,"exit":0}

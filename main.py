@@ -15,13 +15,24 @@ from moonlight_sync.backend import Backend
 
 
 class Plugin:
-    def __init__(self):
-        self._backend = None
-        self._startup = None
+    # Class attributes, not ``__init__`` state. decky-loader instantiates the
+    # class only when ``plugin.json``'s ``api_version`` is > 0 (ours is 1):
+    # ``sandboxed_plugin.py`` does ``self.Plugin = module.Plugin()`` there and
+    # ``self.Plugin = module.Plugin`` -- the bare class -- for api_version 0,
+    # where every method is then called as ``method(self.Plugin, ...)``. With
+    # the state declared here the module is correct under both conventions
+    # (``tests/test_main.py`` drives it both ways).
+    _backend = None
+    _startup = None
 
-    def _get(self):
-        if self._backend is None:
-            self._backend = Backend(
+    # Classmethods so that ``self._ready()`` resolves whichever object the
+    # loader put in ``self``: bound to the class from an instance and from the
+    # class itself, so the delegating callables below read the same way under
+    # both conventions.
+    @classmethod
+    def _get(cls):
+        if cls._backend is None:
+            cls._backend = Backend(
                 settings_dir=decky.DECKY_PLUGIN_SETTINGS_DIR,
                 log_dir=decky.DECKY_PLUGIN_LOG_DIR,
                 plugin_dir=decky.DECKY_PLUGIN_DIR,
@@ -30,14 +41,15 @@ class Plugin:
                 emit=decky.emit,
                 logger=decky.logger,
             )
-        return self._backend
+        return cls._backend
 
-    async def _ready(self):
+    @classmethod
+    async def _ready(cls):
         """The backend, once its startup (install check, file seeding) has run."""
-        backend = self._get()
-        if self._startup is None:
-            self._startup = asyncio.ensure_future(backend.startup())
-        await asyncio.shield(self._startup)
+        backend = cls._get()
+        if cls._startup is None:
+            cls._startup = asyncio.ensure_future(backend.startup())
+        await asyncio.shield(cls._startup)
         return backend
 
     async def _main(self):

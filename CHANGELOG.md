@@ -27,10 +27,13 @@ project uses [semantic versioning](https://semver.org/).
 - The Quick Access panel: host dropdown with switch-and-sync, reachability
   with "last seen", Sync now with progress and Stop, Open Moonlight, the
   four counters and Last sync; the first-run "No host yet" state.
-- The restart flow: a Restart now / Later prompt with a countdown when a
-  sync is ready to write (and for art-only or stopped runs that saved
+- The restart flow: a Restart now / Later prompt with a countdown (0-30 s)
+  when a sync is ready to write (and for art-only or stopped runs that saved
   images), the in-game guard, and the persistent "Restart Steam to apply"
-  row that re-runs the sync and restarts at once.
+  row that re-runs the sync and restarts at once. Both the prompt and the
+  persistent row honour the in-game guard: while a game is running the row
+  is disabled ("A game is running; exit it first") and an immediate run that
+  reaches its wait shows the prompt instead of shutting Steam down.
 - Settings pages: Host (add with a pairing check, switch, forget), Artwork
   (key field, Retry missing art, Re-fetch all art), Advanced (layout-copy
   toggle, restart countdown, Remove everything) and About (both CLI

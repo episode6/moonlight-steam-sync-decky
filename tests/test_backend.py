@@ -74,6 +74,17 @@ def sync_argv(backend, *extra: str) -> list[str]:
 # startup and files
 
 
+def test_a_countdown_above_the_ceiling_is_clamped_not_rejected(backend) -> None:
+    """Decision 30 lowered the ceiling from 60 to 30 (the CLI's await-exit
+    wait times out at 60 s, so a 60 s countdown would race it). A
+    settings.json written by an older build still reads."""
+    path = Path(settings_path(backend, "settings.json"))
+    path.write_text(json.dumps({"version": 1, "restart_countdown_s": 60}))
+    assert run(backend.get_settings())["settings"]["restart_countdown_s"] == 30
+    path.write_text(json.dumps({"version": 1, "restart_countdown_s": "soon"}))
+    assert run(backend.get_settings())["settings"]["restart_countdown_s"] == 5
+
+
 def test_startup_creates_settings_and_ignore(backend) -> None:
     settings = json.loads(Path(settings_path(backend, "settings.json")).read_text())
     assert settings["version"] == 1
@@ -258,7 +269,64 @@ def test_art_only_sets_restart_art(backend) -> None:
 
 
 @pytest.mark.scenario("nothing-to-do")
-def test_nothing_to_do_leaves_restart_needed_alone(backend) -> None:
+def test_a_clean_run_of_the_pending_kind_clears_the_write(backend) -> None:
+    """Decision 31: a sync that exits 0 without ever waiting for the client
+    proves there is nothing left to write for a pending sync write."""
+    owned(backend)
+    (Path(backend.settings_dir) / "pending.json").write_text(
+        json.dumps({"restart_needed": "write", "layout_walk": False, "last_kind": "sync"})
+    )
+    run(start_and_wait(backend, backend.start_sync()))
+    done = backend.emitted.of("sync_done")[0]
+    assert done["exit"] == 0 and done["commit"] is None
+    assert done["pending"]["restart_needed"] == "none"
+    assert done["pending"]["last_kind"] == "sync"
+    assert ev.restart_decision(load_fixture("nothing-to-do/sync.ndjson"), 0) == "none"
+
+
+@pytest.mark.scenario("art-only")
+def test_a_clean_sync_clears_a_pending_art_write_down_to_art(backend) -> None:
+    """A sync patches icons too, so it settles a write left by an art run --
+    and, having saved images itself, leaves "art" behind."""
+    owned(backend)
+    (Path(backend.settings_dir) / "pending.json").write_text(
+        json.dumps({"restart_needed": "write", "layout_walk": False, "last_kind": "art"})
+    )
+    run(start_and_wait(backend, backend.start_sync()))
+    done = backend.emitted.of("sync_done")[0]
+    assert done["exit"] == 0
+    assert done["pending"]["restart_needed"] == "art"
+
+
+@pytest.mark.scenario("nothing-to-do")
+def test_a_sync_never_clears_a_pending_remove(backend) -> None:
+    """Only another remove can settle a pending remove: a sync never planned
+    those removals, so it proves nothing about them."""
+    owned(backend)
+    (Path(backend.settings_dir) / "pending.json").write_text(
+        json.dumps({"restart_needed": "write", "layout_walk": False, "last_kind": "remove"})
+    )
+    run(start_and_wait(backend, backend.start_sync()))
+    done = backend.emitted.of("sync_done")[0]
+    assert done["exit"] == 0
+    assert done["pending"]["restart_needed"] == "write"
+    assert done["pending"]["last_kind"] == "sync"  # the Last sync row still moves
+
+
+@pytest.mark.scenario("unreachable")
+def test_a_failing_run_clears_nothing(backend) -> None:
+    owned(backend)
+    (Path(backend.settings_dir) / "pending.json").write_text(
+        json.dumps({"restart_needed": "write", "layout_walk": False, "last_kind": "sync"})
+    )
+    run(start_and_wait(backend, backend.start_sync()))
+    done = backend.emitted.of("sync_done")[0]
+    assert done["exit"] == 3
+    assert done["pending"]["restart_needed"] == "write"
+
+
+@pytest.mark.scenario("nothing-to-do")
+def test_a_pending_art_is_left_alone_by_a_run_that_saved_nothing(backend) -> None:
     owned(backend)
     (Path(backend.settings_dir) / "pending.json").write_text(
         json.dumps({"restart_needed": "art", "layout_walk": False})
@@ -269,7 +337,6 @@ def test_nothing_to_do_leaves_restart_needed_alone(backend) -> None:
     assert done["commit"] is None
     assert done["pending"]["restart_needed"] == "art"  # unchanged
     assert done["pending"]["last_summary"]["filled"] == 0
-    assert ev.restart_decision(load_fixture("nothing-to-do/sync.ndjson"), 0) == "none"
 
 
 @pytest.mark.scenario("unreachable")
@@ -587,6 +654,19 @@ def test_list_apps_unreachable_is_cli_error(backend) -> None:
 
 
 def test_hosts_first_run(make_backend) -> None:
+    """`host show` with nothing configured exits 1 with the CLI's pinned
+    wording (spec 3.4.6, the `host` bullet): "no host configured" is
+    contractual, and the plugin reads it rather than treating exit 1 as a
+    failure. The fixture carries the CLI's exact message."""
+    message = next(
+        json.loads(line)["message"]
+        for line in (FIXTURES / "common" / "host-none.ndjson").read_text().splitlines()
+        if line.startswith("{") and json.loads(line)["event"] == "error"
+    )
+    assert message == (
+        "host: no host configured; pass --host, run `host set NAME`, "
+        "or set `host` in ~/.config/moonlight-steam-sync/config.toml"
+    )
     backend = make_backend(env={"FAKE_CLI_FIXTURE_HOST_SHOW": "host-none"})
     shown = run(backend.hosts())
     assert shown == {
@@ -649,6 +729,22 @@ def test_check_host_never_synced(backend) -> None:
     assert result["reachable"] is False
     assert result["last_seen"] is None
     assert result["cached_count"] is None
+
+
+def test_any_other_exit_1_from_host_show_is_still_a_failure(make_backend, tmp_path) -> None:
+    """Only the contractual "no host configured" is read as "first run"."""
+    fixture = tmp_path / "fx"
+    fixture.mkdir()
+    (fixture / "host.ndjson").write_text(
+        '{"event":"start","schema":1,"version":"0.3.0","command":"host"}\n'
+        '{"event":"error","exit":1,"message":"host: cannot read the host cache"}\n'
+    )
+    backend = make_backend(
+        env={"FAKE_CLI_FIXTURES": os.pathsep.join([str(fixture), str(FIXTURES / "common")])}
+    )
+    failed = run(backend.hosts())
+    assert failed["ok"] is False and failed["error"] == "cli-error"
+    assert failed["message"] == "host: cannot read the host cache"
 
 
 def test_add_host_success_on_first_run_makes_it_active(make_backend) -> None:
@@ -872,7 +968,10 @@ def test_settings_round_trip_and_validation(backend) -> None:
     assert result["settings"]["restart_countdown_s"] == 0
     assert result["settings"]["copy_layouts"] is False
     assert run(backend.get_settings())["settings"]["restart_countdown_s"] == 0
+    at_max = run(backend.set_settings({"restart_countdown_s": 30}))
+    assert at_max["settings"]["restart_countdown_s"] == 30
     for bad in (
+        {"restart_countdown_s": 31},
         {"restart_countdown_s": 61},
         {"restart_countdown_s": -1},
         {"restart_countdown_s": "5"},

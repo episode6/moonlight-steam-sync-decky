@@ -268,6 +268,28 @@ export function cliReady(state: AppState): boolean {
 }
 
 /** Can CLI-backed rows be pressed (CLI ready and the owned-apps file written)? */
+/** What the persistent *Restart Steam to apply* row renders, or `null`
+ * when there is nothing to restart for (spec 3.9, Decision 29).
+ *
+ * Both of the row's paths end in a Steam restart -- "write" starts an
+ * immediate run that shuts the client down the moment the CLI waits for it,
+ * "art" shuts it down itself -- so both are disabled while a game is
+ * running. `Controller.restartRow()` refuses in the same case.
+ */
+export function restartRowView(state: AppState): { description: string; disabled: boolean } | null {
+  const pending = state.pending;
+  if (!pending || pending.restart_needed === "none") return null;
+  if (state.run?.running) return { description: "finishing the previous run\u2026", disabled: true };
+  if (state.inGame) return { description: "A game is running; exit it first", disabled: true };
+  if (pending.restart_needed === "art") {
+    return { description: "New artwork shows after a Steam restart", disabled: false };
+  }
+  return {
+    description: "The last sync is ready to write; Steam restarts once",
+    disabled: !actionsReady(state),
+  };
+}
+
 export function actionsReady(state: AppState): boolean {
   return cliReady(state) && state.library === "ready";
 }

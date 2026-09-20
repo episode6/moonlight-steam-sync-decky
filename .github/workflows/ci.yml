@@ -49,8 +49,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          # The exact Python a stock SteamOS ships, which decky-loader runs
-          # the plugin backend with.
+          # decky-loader is a PyInstaller bundle and brings its own
+          # interpreter, so this is not the version the backend itself runs
+          # under. It is pinned to the exact Python a stock SteamOS ships
+          # because that is what the CLI child runs under on a Deck (the
+          # backend spawns `python3 <cli>`), and it is the version these
+          # backend tests therefore target.
           python-version: "3.13.5"
       - run: pip install -r requirements-dev.txt
       - run: ruff check .

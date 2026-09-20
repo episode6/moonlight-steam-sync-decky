@@ -106,9 +106,22 @@ export class Controller {
   }
 
   private async doLoad(): Promise<void> {
+    try {
+      await this.loadOrder();
+    } finally {
+      // Step 1 answered with a failure (an io/protocol failure, not
+      // "CLI missing" -- that is a `cli` state), so there is nothing to
+      // render and steps 3-5 never ran. Forget the cached promise so the
+      // next panelOpened() / refreshCli() runs the whole order again.
+      if (this.state.cli === null) this.loading = null;
+    }
+  }
+
+  private async loadOrder(): Promise<void> {
     // (1) the CLI
     const version = await this.backend.cli_version();
-    if (!isFailure(version)) this.store.set((s) => withCliVersion(s, version));
+    if (isFailure(version)) this.store.set({ message: errorText(version) });
+    else this.store.set((s) => withCliVersion(s, version));
     const cliOk = this.state.cli?.state === "ok";
 
     // (2) in parallel: settings, hosts, pending, sync_state
@@ -296,7 +309,10 @@ export class Controller {
     if (this.state.pending) {
       this.store.set({ pending: { ...this.state.pending, restart_needed: "write" } });
     }
-    if (run.immediate) {
+    // Decision 29, belt and braces: an immediate run whose wait begins while
+    // a game is running must not pull the client out from under it. Fall
+    // through to the modal, which already says so (`countdownLine`).
+    if (run.immediate && !this.state.inGame) {
       this.steam.shutdownSteam();
       return;
     }
@@ -376,6 +392,9 @@ export class Controller {
   async restartRow(): Promise<void> {
     const pending = this.state.pending;
     if (!pending || pending.restart_needed === "none") return;
+    // Decision 29: both paths end in a Steam restart, so both are refused
+    // while a game is running (the row itself is disabled, `restartRowView`).
+    if (this.state.inGame) return;
     if (pending.restart_needed === "art") {
       await this.restartForArt();
       return;
@@ -445,7 +464,14 @@ export class Controller {
 
   /** Re-read the CLI state (About after an install by hand). */
   async refreshCli(): Promise<void> {
+    if (!this.loading) {
+      // The load order never got past step 1 (see doLoad): run all of it
+      // again rather than only re-reading the version.
+      await this.load();
+      return;
+    }
     const version = await this.backend.cli_version();
-    if (!isFailure(version)) this.store.set((s) => withCliVersion(s, version));
+    if (isFailure(version)) this.store.set({ message: errorText(version) });
+    else this.store.set((s) => withCliVersion(s, version));
   }
 }

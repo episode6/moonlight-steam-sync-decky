@@ -94,7 +94,11 @@ export interface SummaryEvent {
   stopped_early: boolean;
   stop_reason: string | null;
   exit: number;
-  /** Spec 3.13 Q3: optional, used for the finish line only when present. */
+  /**
+   * On every `sync` summary from CLI 0.3.0 on (zeros included), never on an
+   * `art` or `remove` one -- spec 3.4.6, spec 3.13 A3. Still optional here so
+   * an older CLI's summary parses; the finish line only uses it when present.
+   */
   added_by_kind?: { stream: number; shortcut: number };
 }
 
