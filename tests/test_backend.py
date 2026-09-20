@@ -189,6 +189,34 @@ def test_argv_env_and_cwd_of_every_callable(make_backend) -> None:
         assert invocation["from_plugin"] == "1"
 
 
+@pytest.mark.parametrize(
+    ("loader_env", "expected"),
+    [
+        # plugin_loader under systemd: PyInstaller had nothing to save.
+        ({"LD_LIBRARY_PATH": "/tmp/_MEIabc123"}, None),
+        ({"LD_LIBRARY_PATH": "/tmp/_MEIabc123", "LD_LIBRARY_PATH_ORIG": "/opt/lib"}, "/opt/lib"),
+        ({"LD_LIBRARY_PATH": "/tmp/_MEIabc123", "LD_LIBRARY_PATH_ORIG": ""}, None),
+        ({"LD_LIBRARY_PATH": "/tmp/_MEIabc123/:/opt/lib"}, "/opt/lib"),
+        ({"LD_LIBRARY_PATH": "/opt/lib"}, "/opt/lib"),
+    ],
+)
+def test_the_cli_never_inherits_plugin_loaders_library_path(
+    make_backend, loader_env, expected
+) -> None:
+    """The first device run: PyInstaller's ``LD_LIBRARY_PATH`` reached the
+    CLI, whose ``flatpak`` call and ``import ssl`` then failed to load."""
+    backend = make_backend(env=loader_env)
+    owned(backend)
+    run(backend.list_apps())
+    run(start_and_wait(backend, backend.start_sync()))
+
+    invocations = backend.harness.invocations()
+    assert len(invocations) > 2  # startup's --version probes count too
+    for invocation in invocations:
+        assert invocation["ld_library_path"] == expected
+        assert invocation["ld_library_path_orig"] is None
+
+
 @pytest.mark.scenario("nothing-to-do")
 def test_argv_of_the_long_runs(make_backend) -> None:
     backend = make_backend(env={"FAKE_CLI_ART_COMMIT": "1", "FAKE_CLI_WAIT_S": "0.3"})

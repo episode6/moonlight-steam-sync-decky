@@ -19,8 +19,8 @@ backend's ``cli=`` seam. Everything is driven by environment variables:
     ``doctor`` prints ``doctor.txt`` verbatim. A missing fixture prints
     ``fake_cli: no fixture for X`` to stderr and exits **99**.
 ``FAKE_CLI_ARGV_LOG``
-    Append ``{"argv", "cwd", "from_plugin", "home"}`` as one JSON line per
-    invocation.
+    Append ``{"argv", "cwd", "from_plugin", "home", "ld_library_path",
+    "ld_library_path_orig"}`` as one JSON line per invocation.
 ``FAKE_CLI_VERSION`` (default ``0.3.0``)
     ``--version`` prints ``moonlight-steam-sync <v>``. Below 0.3.0 the new
     flags and subcommands are rejected the way argparse does: usage and
@@ -146,6 +146,8 @@ def _log_argv(argv: list[str]) -> None:
                     "cwd": os.getcwd(),
                     "from_plugin": os.environ.get("MOONLIGHT_STEAM_SYNC_FROM_PLUGIN"),
                     "home": os.environ.get("HOME"),
+                    "ld_library_path": os.environ.get("LD_LIBRARY_PATH"),
+                    "ld_library_path_orig": os.environ.get("LD_LIBRARY_PATH_ORIG"),
                 }
             )
             + "\n"

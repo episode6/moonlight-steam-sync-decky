@@ -169,7 +169,11 @@ Every callable returns `{"ok": true, …}` or `{"ok": false, "error": <code>,
 `bad-request`, `io`) and never raises. Argv is `[python3, <installed cli>,
 "--json", <subcommand>, …]` (`doctor`, `--version` and `art --help` have no
 `--json`), `cwd` and `HOME` are the deck user's home, and the child gets
-`MOONLIGHT_STEAM_SYNC_FROM_PLUGIN=1`. Long runs (`start_sync`,
+`MOONLIGHT_STEAM_SYNC_FROM_PLUGIN=1`. The child never inherits
+plugin_loader's PyInstaller `LD_LIBRARY_PATH` (`/tmp/_MEI…`, an older
+bundled OpenSSL that breaks both `flatpak` and the CLI's `import ssl`):
+`Backend._child_env()` restores `LD_LIBRARY_PATH_ORIG` or drops the `_MEI*`
+entries, and any new subprocess the backend spawns must go through it. Long runs (`start_sync`,
 `start_art_refetch`, `start_remove_all`) share one busy guard and emit
 `sync_event {kind, event}` per stdout line and `sync_done {kind, exit,
 pending, summary, commit, failure}` at the end. `pending.json` says

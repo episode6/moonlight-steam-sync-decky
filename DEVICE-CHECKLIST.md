@@ -34,6 +34,19 @@ section 5), not decided here.
    `~/homebrew/settings/Moonlight Sync/settings.json` to `"copy"` or
    `"picker"` (removing the key restores the default, currently `"copy"`),
    then reload.
+5. The CLI must work *from the plugin*, not only from SSH: plugin_loader
+   is a PyInstaller binary whose `LD_LIBRARY_PATH=/tmp/_MEI…` once broke
+   the CLI's `flatpak` call ("moonlight CLI not found") and its `import
+   ssl` ("5 consecutive network failures"). With Moonlight installed as
+   the Flathub flatpak, pick a host in the panel and search for a title in
+   the match fixer; then `grep -n "not found\|network failures"
+   "$HOME/homebrew/logs/Moonlight Sync/moonlight-sync.log"` must find
+   nothing newer than the install. To reproduce the loader's environment
+   from SSH: `env -i HOME=$HOME PATH=/usr/bin LD_LIBRARY_PATH=$(ls -d
+   /tmp/_MEI* | head -1) python3 ~/.local/bin/moonlight-steam-sync doctor`
+   — the `moonlight:` line must name the flatpak (CLI 0.3.1 or newer;
+   0.3.0 prints `not found` there, which the plugin's cleaned environment
+   hides).
 
 ## 1. PR-0: device probes
 

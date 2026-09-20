@@ -6,7 +6,24 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
-Nothing yet.
+Prepared for the patch release after `0.1.0`. At release time, once
+moonlight-steam-sync `v0.3.1` exists, move `package.json`'s
+`"moonlightSteamSync"` pin to `0.3.1` (it carries the same fix on the CLI
+side); `MIN_CLI_VERSION` stays `0.3.0`, since the fix below does not depend
+on it.
+
+### Fixed
+
+- **"moonlight CLI not found" and search/artwork stopping on "5 consecutive
+  network failures", on every device.** Decky's plugin_loader is a
+  PyInstaller-frozen binary that exports `LD_LIBRARY_PATH=/tmp/_MEI…` (its
+  own bundled, older OpenSSL), and the backend passed its environment
+  straight to the CLI. Under it the CLI's `flatpak list` died in the
+  dynamic linker, which read as "Moonlight is not installed", and its own
+  `import ssl` failed, so no HTTPS call ever succeeded. The backend now
+  gives every CLI child the original library path back
+  (`LD_LIBRARY_PATH_ORIG`, or `LD_LIBRARY_PATH` minus its `_MEI*` entries).
+  Found on the first device run.
 
 ## [0.1.0] - 2026-09-20
 
