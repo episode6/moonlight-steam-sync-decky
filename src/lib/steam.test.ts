@@ -110,6 +110,10 @@ describe("the layout seam over the globals (spec 3.10)", () => {
     };
   });
   afterEach(() => {
+    // The watched list and active index are module state that only an
+    // unregister clears: reset them here so a test that fails before its own
+    // stop() cannot leak into the next one.
+    watchControllers()();
     delete g.SteamClient;
     delete g.controllerStore;
     delete g.ControllerStore;

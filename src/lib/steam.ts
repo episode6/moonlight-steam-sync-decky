@@ -157,8 +157,10 @@ interface Unregisterable {
  * Keep `lastControllers` and `activeController` current from
  * `SteamClient.Input`. Either registration may be missing: the client the
  * PR-0 probes ran on has no `RegisterForControllerListChanges` at all, and
- * calling it unguarded would throw while the plugin loads. Returns the
- * unregister function.
+ * calling it unguarded would throw while the plugin loads.
+ * `RegisterForActiveControllerChanges` delivers the current index as soon as
+ * it is registered (measured there, no pad switch needed), so no separate
+ * initial read is made. Returns the unregister function.
  */
 export function watchControllers(): () => void {
   const input = SteamClient.Input as unknown as Record<string, unknown>;
@@ -168,8 +170,10 @@ export function watchControllers(): () => void {
     if (typeof fn !== "function") return;
     try {
       registrations.push((fn as (cb: (message: unknown) => void) => Unregisterable).call(input, callback));
-    } catch {
-      // a client that has the name but refuses the call: the store is still there
+    } catch (error) {
+      // A client that has the name but refuses the call: the store is still
+      // there. Said out loud, so the loader log shows it without a probe run.
+      console.warn(`Moonlight Sync: SteamClient.Input.${name} failed`, error);
     }
   };
   register("RegisterForControllerListChanges", (controllers) => {

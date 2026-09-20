@@ -92,7 +92,8 @@ src/lib/                    pure modules (vitest)
                             pinTitle, setIgnored,
                             streamPress() (guard, copy, run), chooseLayout(), layoutWalk()
   layouts.ts                DEFAULT_LAYOUT_STRATEGY (the one switch), layoutStrategy(),
-                            copyEnabled(), the SteamInput seam, copyLayout() (the §3.10
+                            copyEnabled(), the SteamInput seam, isUnselected() (no URL,
+                            default://, or bSelected false), copyLayout() (the §3.10
                             rule), deckControllerIndexFrom() (by type: the type string when
                             the client has it -- final either way -- else the enum),
                             layoutControllerIndexFrom() (the Deck's, else the active or

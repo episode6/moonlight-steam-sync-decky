@@ -49,7 +49,12 @@ everything that needs a Steam Deck, including the PR-0 probes.
   fifth, selection-type argument or it silently selects nothing; the
   controller store global is `ControllerStore`; and
   `RegisterForControllerListChanges` may not exist, so the controller
-  watch no longer throws at load without it. Results (`copied` / `kept` / `unavailable`) are recorded
+  watch no longer throws at load without it. A config Steam only offers
+  (`bSelected: false`, how a never-configured game reads back, as
+  `template://…`) counts as no selection on either side. One behaviour
+  follows from the non-Deck rule: a docked Deck with its built-in
+  controller off and one external pad used to get `unavailable` and now
+  copies for that pad. Results (`copied` / `kept` / `unavailable`) are recorded
   in `layouts.json` (`layouts` / `record_layout`) and shown on the Titles
   row as copied / own layout / Steam default / unavailable, and next to the
   button. The Advanced toggle turns the copy off. The post-restart walk

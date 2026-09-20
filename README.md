@@ -308,8 +308,11 @@ fifth, selection-type argument Steam's own configurator passes (with four
 it returns normally and does nothing). Probe V1 found a community layout
 and an exported personal layout both read back as `workshop://…`, a
 layout edited in place as `autosave:///…` (a file path; whether that one
-copies is untested), and an untouched game as an unselected `template://…`;
-all of it for games that are not installed. A Deck itself is still
+copies is untested), and an untouched game as `template://…` with
+`bSelected: false` -- a layout Steam offers, not one anybody chose, which
+the plugin therefore treats like Steam's `default://` guess (a fresh
+shortcut itself reads `default://<lowercased name>`); all of it for games
+that are not installed. A Deck itself is still
 untested. The fallback stays built in:
 
 - `layout_strategy` in `settings.json` (`"copy"`, the default, or

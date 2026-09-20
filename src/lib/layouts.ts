@@ -49,6 +49,13 @@ export function copyEnabled(settings: Pick<Settings, "layout_strategy" | "copy_l
 export interface LayoutConfig {
   URL?: string;
   Title?: string;
+  /**
+   * `false` on a config Steam only *offers*: PR-0 probe V1 read a game whose
+   * controller settings were never opened as `template://…` with
+   * `bSelected: false`. (`eSelectionType` is not the signal: a layout edited
+   * in place is a user's choice and reads 0, like Steam's guess.)
+   */
+  bSelected?: boolean;
 }
 
 /** The three Steam Input touchpoints `copyLayout` needs; `steam.ts` implements them. */
@@ -67,6 +74,15 @@ export const DEFAULT_URL_PREFIX = "default://";
 /** No selection: nothing chosen, or Steam's guess. */
 export function isDefaultUrl(url: string | null | undefined): boolean {
   return !url || url.startsWith(DEFAULT_URL_PREFIX);
+}
+
+/**
+ * Nobody chose this config: no URL, Steam's `default://` guess (which reads
+ * `bSelected: true`, so the prefix is still needed), or any URL Steam
+ * reports with `bSelected: false`. A missing `bSelected` decides nothing.
+ */
+export function isUnselected(config: LayoutConfig | null | undefined): boolean {
+  return isDefaultUrl(config?.URL) || config?.bSelected === false;
 }
 
 export interface LayoutOutcome {
@@ -98,8 +114,13 @@ export async function copyLayout(realAppid: number, shortcutAppid: number, input
     if (idx === null) return { result: "unavailable", url: null };
     const real = await input.getConfig(realAppid, idx);
     const mine = await input.getConfig(shortcutAppid, idx);
-    if (isDefaultUrl(real?.URL)) return { result: "kept", url: mine?.URL ?? null };
-    if (!isDefaultUrl(mine?.URL)) return { result: "kept", url: mine!.URL! };
+    if (isUnselected(real)) {
+      // An offered-but-unselected URL on the shortcut is not its "own layout":
+      // record Steam's guess, or nothing, so the row reads "Steam default".
+      const offeredOnly = isUnselected(mine) && !isDefaultUrl(mine?.URL);
+      return { result: "kept", url: offeredOnly ? null : (mine?.URL ?? null) };
+    }
+    if (!isUnselected(mine)) return { result: "kept", url: mine!.URL! };
     const url = real!.URL!;
     await input.setConfig(shortcutAppid, idx, url);
     const after = await input.getConfig(shortcutAppid, idx);
