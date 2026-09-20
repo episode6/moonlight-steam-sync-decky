@@ -217,6 +217,29 @@ def test_test_sgdb_key_maps_401(make_backend, tmp_path) -> None:
     assert result["message"] == "SteamGridDB rejected the key"
 
 
+def test_test_sgdb_key_says_network_not_key_on_the_hard_stop(make_backend, tmp_path) -> None:
+    """The first device run: no HTTPS call could succeed, and the failed
+    test read as a verdict on a key that was never sent."""
+    fixture = tmp_path / "fx"
+    fixture.mkdir()
+    (fixture / "search.ndjson").write_text(
+        '{"event":"start","schema":1,"version":"0.3.0","command":"search"}\n'
+        '{"event":"error","exit":4,"message":"search: 5 consecutive network failures; '
+        'stopping."}\n'
+    )
+    backend = make_backend(env={"FAKE_CLI_FIXTURES": str(fixture)}, start=False)
+    backend.installed_version = (0, 3, 0)
+    backend.cli_ok = True
+    result = run(backend.test_sgdb_key())
+    assert result["ok"] is False
+    assert result["error"] == "cli-error"
+    assert result["exit"] == 4
+    assert result["message"].startswith(
+        "Could not reach SteamGridDB (network), so the key was not tested: "
+    )
+    assert "5 consecutive network failures" in result["message"]
+
+
 def test_search_and_pin_results_never_carry_the_key(make_backend, tmp_path) -> None:
     """Hard rule 4: even a CLI that echoed the key only hands on its last four."""
     fixture = tmp_path / "fx"

@@ -24,6 +24,12 @@ on it.
   gives every CLI child the original library path back
   (`LD_LIBRARY_PATH_ORIG`, or `LD_LIBRARY_PATH` minus its `_MEI*` entries).
   Found on the first device run.
+- **The SteamGridDB key test no longer blames the key for a network
+  failure.** The test runs the CLI's `search`; when that ends in the CLI's
+  network hard stop (exit 4, anything but an HTTP 401) the message is now
+  "Could not reach SteamGridDB (network), so the key was not tested: …"
+  instead of the bare CLI error, which read as a rejected key. A 401 still
+  says "SteamGridDB rejected the key".
 
 ## [0.1.0] - 2026-09-20
 

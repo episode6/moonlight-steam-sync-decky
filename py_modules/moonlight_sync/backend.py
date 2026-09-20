@@ -1069,6 +1069,13 @@ class Backend:
         if fail is not None:
             if fail.get("error") == "cli-error" and "401" in str(fail.get("message", "")):
                 fail["message"] = "SteamGridDB rejected the key"
+            elif fail.get("error") == "cli-error" and fail.get("exit") == 4:
+                # The CLI's network hard stop: the key was never judged, so
+                # do not let the failure read as a verdict on it.
+                fail["message"] = (
+                    "Could not reach SteamGridDB (network), so the key was not "
+                    f"tested: {fail.get('message', '')}"
+                )
             return fail
         assert result is not None
         if any(c.get("source") == "sgdb" for c in self._of(result, "candidate")):
