@@ -27,11 +27,33 @@ moonlight-steam-sync **0.3.0**, which is not released yet either.
   was built for and installs it for you (below), so there is nothing to
   install separately.
 
-## Install (manual)
+## Install
 
-There is no store listing yet. Download `Moonlight-Sync.zip` (from a
-release once one exists; until then, from the `Moonlight-Sync` artifact of
-a CI run), copy it to the Deck, and in a Desktop Mode terminal or over SSH:
+There is no store listing yet. **No release has been tagged yet either**
+(the plugin waits on moonlight-steam-sync's own `v0.3.0`; see "The bundled
+CLI" below and `AGENTS.md`'s "Cutting a release"), so the one-liner and the
+manual steps below only work once the user has cut `v0.1.0`. Until then,
+build from source (see "Developing") or use the `Moonlight-Sync` artifact
+of a CI run as the manual zip.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/episode6/moonlight-steam-sync-decky/main/install.sh | sh
+```
+
+`install.sh` downloads the latest (or a `MOONLIGHT_SYNC_VERSION`-pinned)
+release's `Moonlight-Sync.zip` and its `.sha256`, verifies the checksum,
+unzips it into `~/homebrew/plugins/` and restarts `plugin_loader` so the
+new plugin loads. Both of those steps run through `sudo` (Decky's plugin
+directory belongs to root on a stock install), so you will be asked for
+your password twice on the terminal; the script never runs `sudo`
+non-interactively. It is safe to re-run: it always re-downloads and
+reinstalls, even when already current, so re-running it is also how you
+pick up a new release.
+
+### Manual install
+
+Download `Moonlight-Sync.zip` from a release, copy it to the Deck, and in a
+Desktop Mode terminal or over SSH:
 
 ```sh
 sudo unzip -o Moonlight-Sync.zip -d ~/homebrew/plugins/
@@ -39,9 +61,26 @@ sudo systemctl restart plugin_loader
 ```
 
 The zip holds a single `Moonlight Sync/` directory, which is the plugin's
-directory under `~/homebrew/plugins/` (`sudo` because Decky's plugin
-directory belongs to root on a stock install). Restarting `plugin_loader`
-loads it; Moonlight Sync then appears in the Quick Access menu's Decky tab.
+directory under `~/homebrew/plugins/`. Restarting `plugin_loader` loads it;
+Moonlight Sync then appears in the Quick Access menu's Decky tab.
+
+### Uninstall
+
+```sh
+sudo rm -rf ~/homebrew/plugins/"Moonlight Sync"
+sudo systemctl restart plugin_loader
+```
+
+This removes only the plugin. It never touches the CLI it bundled
+(`~/.local/bin/moonlight-steam-sync`), your Steam shortcuts, or anything
+under the Steam directory (the CLI is the only writer there, see "Hard
+rules" in `AGENTS.md`); uninstall the CLI separately if you want it gone
+too — see [episode6/moonlight-steam-sync](https://github.com/episode6/moonlight-steam-sync)
+for how it was installed and how to remove it.
+
+None of this has been run on a real Steam Deck yet; see
+[`DEVICE-CHECKLIST.md`](DEVICE-CHECKLIST.md) for the full list of on-device
+checks to run once you have one.
 
 ## The bundled CLI
 
