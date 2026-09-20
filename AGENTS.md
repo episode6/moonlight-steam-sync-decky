@@ -83,7 +83,9 @@ src/lib/                    pure modules (vitest)
   state.ts                  AppState, Store, reducers (runs, counters, stream map)
   controller.ts             load order, runs, restart flow, hosts, settings actions,
                             loadTitles() (list -> list_cached fallback, and list_cached
-                            while a run is going), pinTitle, setIgnored
+                            while a run is going; `status` only reaches the shared store
+                            when no run is going, the page always gets its entries),
+                            pinTitle, setIgnored
   join.ts                   the Titles page: list + status joined by name into rows
                             (badge, chips, match line, capsule), filters, Show parked,
                             pages of 50, applyPin; the Change match rows (candidateRows,
@@ -140,7 +142,12 @@ finished. `restart_countdown_s` is 0-30 everywhere
 in an older `settings.json` is clamped on read, not rejected. `check_host`'s
 reachable result carries an additive `ignored` count for the panel's
 counter. `pin` / `unpin` always pass `--defer-art` and share the long runs'
-busy guard (a `match` writes the same `matches.json` a run is writing);
+busy guard, in both directions: a `match` writes the same `matches.json` a
+run is writing, so a pin is refused while a run is going *and* `start_sync`
+/ `start_art_refetch` / `start_remove_all` are refused while a `match`
+child is in flight. `busy`'s `kind` says which side is holding the guard
+(a run kind, or `"match"`), and `errorText` turns the two into different
+sentences.
 `search`, `pin` and `unpin` keep the spec's argv order (`match NAME --steam
 ID --defer-art`) except that a name or term starting with `-` goes last,
 behind `--`, so argparse never reads it as an option. `set_ignored` needs no

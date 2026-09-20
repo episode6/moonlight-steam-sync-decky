@@ -541,7 +541,11 @@ export class Controller {
     } else {
       return { ok: false, message: errorText(listed), neverSynced: false };
     }
-    if (!isFailure(status)) this.store.set((s) => withStatus(s, status.entries));
+    // Only fold status into the shared store when nothing is running: while
+    // a run is going the panel's counters and stream map belong to the run
+    // (the Titles page is reading the cache anyway), and a mid-run `status`
+    // snapshot would flicker them. The page still gets these entries below.
+    if (!isFailure(status) && !running) this.store.set((s) => withStatus(s, status.entries));
     const ignoredNames = isFailure(ignored) ? [] : ignored.ignored;
     if (!isFailure(ignored)) this.store.set({ ignoredCount: ignoredNames.length });
     return {

@@ -644,6 +644,9 @@ describe("the Titles page (spec 3.8)", () => {
     });
     await controller.sync();
     calls.length = 0;
+    const countersBefore = controller.state.counters;
+    const entriesBefore = controller.state.entries;
+    const clientBefore = controller.state.clientAppid;
     const load = await controller.loadTitles();
     expect(names()).toContain("list_cached");
     expect(names()).not.toContain("list_apps");
@@ -652,6 +655,12 @@ describe("the Titles page (spec 3.8)", () => {
     expect(load.data.source).toBe("syncing");
     expect(load.data.cachedWhen).toBe("2026-09-18T14:02:00Z");
     expect(load.data.unreachable).toBeNull();
+    // the mid-run status snapshot reaches the page but not the shared store:
+    // the panel's counters and stream map stay as the run left them
+    expect(load.data.entries.length).toBeGreaterThan(0);
+    expect(controller.state.counters).toEqual(countersBefore);
+    expect(controller.state.entries).toEqual(entriesBefore);
+    expect(controller.state.clientAppid).toBe(clientBefore);
   });
 
   it("a run with no cache yet says the list fills in when it finishes", async () => {

@@ -1352,6 +1352,35 @@ def test_pin_during_a_run_is_busy(make_backend, steam_gone) -> None:
     assert run(backend.pin("Hades II", 1145350, None, False))["ok"] is True
 
 
+def test_a_run_during_a_pin_is_busy(make_backend) -> None:
+    """The other direction of the same guard: while a ``match`` child is
+    still writing matches.json, a sync / art / remove is refused."""
+    backend = make_backend(env={"FAKE_CLI_SLEEP_MS": "150"})
+    owned(backend)
+    backend.harness.clear()
+
+    async def scenario() -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        pinning = asyncio.ensure_future(backend.pin("Hades II", 1145350, None, False))
+        await wait_until(lambda: backend._matching > 0)
+        refused = [
+            await backend.start_sync(),
+            await backend.start_art_refetch(),
+            await backend.start_remove_all(),
+        ]
+        return await pinning, refused
+
+    pinned, refused = run(scenario())
+    assert pinned["ok"] is True
+    for busy in refused:
+        assert busy["ok"] is False
+        assert busy["error"] == "busy"
+        assert busy["kind"] == "match"
+    assert [argv[1] for argv in backend.harness.argv()] == ["match"]  # nothing else ran
+    # and a run starts fine once the pin is written
+    assert backend._matching == 0
+    assert run(start_and_wait(backend, backend.start_sync()))["ok"] is True
+
+
 def test_cli_too_old_short_circuits_search_and_pin(make_backend) -> None:
     backend = make_backend(env={"FAKE_CLI_VERSION": "0.2.0"})
     backend.harness.clear()

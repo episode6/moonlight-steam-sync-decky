@@ -18,6 +18,9 @@ project uses [semantic versioning](https://semver.org/).
   cannot be read, is still killed and reaped), and the plugin's own `settings.json`, `ignore.json`,
   `owned-apps.json` and `pending.json`. `layouts` and `record_layout`
   answer "not yet".
+- The busy guard is symmetric: a `sync`, `art` or `remove` run is refused
+  while a `match` (a pin or unpin) is still being written, as well as the
+  other way round, since both write `matches.json`.
 - The Titles page (Settings → Titles, also opened from the panel's
   header): every title the active host publishes, joined from `list` and
   `status`, with Steam's capsule, the match line, a badge (stream button,

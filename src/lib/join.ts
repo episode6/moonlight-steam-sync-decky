@@ -343,10 +343,33 @@ export function outcomeOf(candidate: CandidateEvent): Outcome {
   return candidate.owned ? "becomes stream button" : "shortcut";
 }
 
-export function isCurrentCandidate(candidate: CandidateEvent, current: Match | null): boolean {
-  if (!current) return false;
-  if (candidate.source === "steam") return current.steam_appid !== null && candidate.id === current.steam_appid;
-  return current.sgdb_id !== null && candidate.id === current.sgdb_id;
+const candidateKey = (candidate: CandidateEvent) => `${candidate.source}:${candidate.id}`;
+
+/**
+ * The key of the one row that is the current match, or `null`.
+ *
+ * At most one row may be marked. A pinned or resolved match can carry both a
+ * `steam_appid` and an `sgdb_id`, and both a Steam-store and a SteamGridDB
+ * candidate could answer to them -- but only when the SGDB lookup failed,
+ * because the real CLI already drops a Steam-store candidate whose appid
+ * equals an SGDB candidate's `steam_appid` (spec 3.4.6, the `search` bullet:
+ * "SGDB wins"). So the SGDB candidate wins here too, and the Steam one is
+ * the current match only when no SGDB candidate answers.
+ */
+export function currentCandidateKey(
+  candidates: readonly CandidateEvent[],
+  current: Match | null,
+): string | null {
+  if (!current) return null;
+  if (current.sgdb_id !== null) {
+    const sgdb = candidates.find((c) => c.source === "sgdb" && c.id === current.sgdb_id);
+    if (sgdb) return candidateKey(sgdb);
+  }
+  if (current.steam_appid !== null) {
+    const steam = candidates.find((c) => c.source === "steam" && c.id === current.steam_appid);
+    if (steam) return candidateKey(steam);
+  }
+  return null;
 }
 
 function candidateDetail(candidate: CandidateEvent, current: boolean): string {
@@ -368,11 +391,12 @@ export function candidateRows(candidates: readonly CandidateEvent[], current: Ma
     ...candidates.filter((c) => c.source === "steam"),
     ...candidates.filter((c) => c.source === "sgdb"),
   ];
+  const currentKey = currentCandidateKey(candidates, current);
   return ordered.map((candidate) => {
-    const isCurrent = isCurrentCandidate(candidate, current);
+    const isCurrent = candidateKey(candidate) === currentKey;
     const outcome = outcomeOf(candidate);
     return {
-      key: `${candidate.source}:${candidate.id}`,
+      key: candidateKey(candidate),
       source: candidate.source,
       name: candidate.name,
       detail: candidateDetail(candidate, isCurrent),

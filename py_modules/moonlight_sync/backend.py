@@ -176,6 +176,10 @@ class Backend:
         self._started = False
         self._run: RunState | None = None
         self._last_run: RunState | None = None
+        #: In-flight `match` children. The busy guard is symmetric: a match
+        #: writes the same matches.json a long run writes, so neither may
+        #: start while the other is going.
+        self._matching = 0
         self._host_memo: dict[str, tuple[float, Result]] = {}
         self._procs: set[asyncio.subprocess.Process] = set()
 
@@ -1098,18 +1102,23 @@ class Backend:
         ``matches.json`` only, marked ``stale_art``, and the next sync
         replaces the entry and re-fetches its art in its one restart.
 
-        Shares the long runs' busy guard: a ``match`` writes
-        ``matches.json``, which a running ``sync`` / ``art`` / ``remove``
-        child is writing too.
+        Shares the long runs' busy guard, in both directions: a ``match``
+        writes ``matches.json``, which a running ``sync`` / ``art`` /
+        ``remove`` child is writing too -- so a match is refused while a run
+        is going, and a run is refused while a match is in flight.
         """
         busy = self._busy()
         if busy is not None:
             return busy
-        result, fail = await self._collect(
-            "match",
-            self._positional(name, [*selector, "--defer-art"]),
-            timeout=self.TIMEOUT_SHORT,
-        )
+        self._matching += 1
+        try:
+            result, fail = await self._collect(
+                "match",
+                self._positional(name, [*selector, "--defer-art"]),
+                timeout=self.TIMEOUT_SHORT,
+            )
+        finally:
+            self._matching -= 1
         if fail is not None:
             return fail
         assert result is not None
@@ -1199,8 +1208,17 @@ class Backend:
     # long runs
 
     def _busy(self) -> Result | None:
+        """The one busy guard, shared by the long runs and by ``match``.
+
+        ``kind`` says which side is holding it: a run kind (``sync`` /
+        ``art`` / ``remove``) or ``"match"`` for a pin or unpin still being
+        written. The frontend turns the two into different sentences
+        (``errorText``).
+        """
         if self._run is not None and self._run.running:
             return failure("busy", "A sync is already running", kind=self._run.kind)
+        if self._matching:
+            return failure("busy", "A match change is still being saved", kind="match")
         return None
 
     @staticmethod

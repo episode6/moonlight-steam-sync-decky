@@ -58,13 +58,14 @@ function Thumb({ url }: { url: string | null }) {
 
 function Row({
   row,
-  pinLocked,
+  locked,
   ignoring,
   onChangeMatch,
   onIgnore,
 }: {
   row: TitleRow;
-  pinLocked: boolean;
+  /** A run is going: both edits are held until it finishes. */
+  locked: boolean;
   ignoring: boolean;
   onChangeMatch(): void;
   onIgnore(): void;
@@ -101,7 +102,7 @@ function Row({
       </div>
       <Pill tone={row.badge.tone}>{row.badge.text}</Pill>
       {!row.ignored ? (
-        <DialogButton style={SMALL} disabled={pinLocked} onClick={onChangeMatch}>
+        <DialogButton style={SMALL} disabled={locked} onClick={onChangeMatch}>
           Change match
         </DialogButton>
       ) : null}
@@ -110,7 +111,7 @@ function Row({
           Ignored in config.toml
         </DialogButton>
       ) : (
-        <DialogButton style={SMALL} disabled={ignoring} onClick={onIgnore}>
+        <DialogButton style={SMALL} disabled={locked || ignoring} onClick={onIgnore}>
           {row.ignored ? "Unignore" : "Ignore"}
         </DialogButton>
       )}
@@ -137,8 +138,8 @@ function headline(data: TitlesData, rows: readonly TitleRow[]): string {
  * load-more row; *Change match* opens the picker, *Ignore* / *Unignore*
  * edits `ignore.json`. Nothing here restarts Steam: a pin or an ignore
  * takes effect on the next sync. While a run is going the list comes from
- * the CLI's per-host cache (no live `list` racing the run) and refreshes
- * when the run finishes.
+ * the CLI's per-host cache (no live `list` racing the run), both row edits
+ * are locked, and the page refreshes when the run finishes.
  */
 export function TitlesPage() {
   const state = useStore(controller.store);
@@ -218,7 +219,10 @@ export function TitlesPage() {
       title: "Moonlight Sync",
       body: `${ignore ? "Ignored" : "Unignored"} “${row.name}”; sync to apply`,
     });
-    void refresh();
+    // No re-list: `set_ignored` touches ignore.json only, its result *is* the
+    // new ignore list, and joinTitles applies it locally. `controller
+    // .setIgnored` has already refreshed the panel's Ignored counter. The
+    // titles themselves only change on the next sync.
   };
 
   if (!ready || !active) {
@@ -265,7 +269,8 @@ export function TitlesPage() {
       ) : null}
       {running ? (
         <div style={{ fontSize: 11.5, opacity: 0.7, marginBottom: 6 }}>
-          A sync is running; this list refreshes and matches can be changed when it finishes.
+          A sync is running; this list refreshes, and matches and ignores can be changed, when it
+          finishes.
         </div>
       ) : null}
       <Focusable flow-children="horizontal" style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
@@ -295,7 +300,7 @@ export function TitlesPage() {
           <Row
             key={row.name}
             row={row}
-            pinLocked={running}
+            locked={running}
             ignoring={ignoring === row.name}
             onChangeMatch={() => changeMatch(row)}
             onIgnore={() => void toggleIgnore(row)}

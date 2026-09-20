@@ -248,7 +248,8 @@ export interface Failure {
   installed?: string;
   minimum?: string;
   stderr?: string;
-  kind?: RunKind;
+  /** Which side of the busy guard answered: a run kind, or `"match"`. */
+  kind?: RunKind | "match";
   timeout_s?: number;
 }
 
@@ -489,7 +490,9 @@ export function errorText(failure: Failure): string {
         ? `Timed out after ${failure.timeout_s} s`
         : failure.message || "Timed out";
     case "busy":
-      return "A sync is already running";
+      return failure.kind === "match"
+        ? "A match change is still being saved"
+        : "A sync is already running";
     case "owned-apps-missing":
     case "owned-apps-empty":
       return "Steam library not loaded";

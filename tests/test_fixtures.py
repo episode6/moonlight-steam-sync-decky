@@ -192,6 +192,24 @@ def test_error_is_last_and_summary_follows_plan(path: Path) -> None:
         assert "summary" in names
 
 
+def test_search_fixtures_follow_the_cli_dedup_rule() -> None:
+    """The real CLI drops a Steam-store candidate whose appid equals an SGDB
+    candidate's steam_appid (spec 3.4.6, the `search` bullet: "SGDB wins"),
+    so no fixture may carry both -- otherwise the Change match modal would
+    be tested against a listing the CLI cannot produce."""
+    for path in sorted(FIXTURES.glob("*/search*.ndjson")):
+        candidates = [e for e in load(path) if e["event"] == "candidate"]
+        sgdb_appids = {
+            c["steam_appid"]
+            for c in candidates
+            if c["source"] == "sgdb" and c["steam_appid"] is not None
+        }
+        clashing = [
+            c["id"] for c in candidates if c["source"] == "steam" and c["id"] in sgdb_appids
+        ]
+        assert clashing == [], f"{path.name}: steam {clashing} duplicate an SGDB steam_appid"
+
+
 def test_placeholder_hosts_only() -> None:
     for path in FIXTURES.glob("*/*"):
         text = path.read_text()

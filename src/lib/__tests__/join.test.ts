@@ -1,13 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import { loadFixture } from "../../test/fixtures";
-import type { AppEvent, EntryEvent, Match } from "../cli";
+import type { AppEvent, CandidateEvent, EntryEvent, Match } from "../cli";
 import { eventsOf, lastOf } from "../events";
 import {
   applyPin,
   candidateRows,
   capsuleUrl,
   compareNames,
+  currentCandidateKey,
   filterCounts,
   filterRows,
   joinTitles,
@@ -347,6 +348,53 @@ describe("the Change match modal's rows", () => {
     expect(rows2.filter((r) => r.current).map((r) => r.key)).toEqual(["steam:1145360"]);
     expect(rows2[0].detail).toBe("Steam 1145350 · owned on this account");
     expect(candidateRows(candidates, null).some((r) => r.current)).toBe(false);
+  });
+
+  it("at most one row is the current match, and the SGDB one wins", () => {
+    // A match can carry both ids. The real CLI drops a Steam-store candidate
+    // whose appid equals an SGDB candidate's steam_appid (spec 3.4.6,
+    // "SGDB wins"), so both only reach the modal when that lookup failed --
+    // and then the SGDB row is still the current one.
+    const both: Match = { steam_appid: 1145360, sgdb_id: 36072, matched_name: "Hades", how: "pinned" };
+    const clash: CandidateEvent[] = [
+      { event: "candidate", source: "steam", id: 1145360, name: "Hades", verified: true, owned: false, steam_appid: 1145360 },
+      { event: "candidate", source: "sgdb", id: 36072, name: "Hades", verified: true, owned: false, steam_appid: 1145360 },
+    ];
+    expect(candidateRows(clash, both).filter((r) => r.current).map((r) => r.key)).toEqual(["sgdb:36072"]);
+    expect(currentCandidateKey(clash, both)).toBe("sgdb:36072");
+
+    // No SGDB candidate answers: the Steam one is the current match.
+    const steamOnlyList = clash.filter((c) => c.source === "steam");
+    expect(candidateRows(steamOnlyList, both).filter((r) => r.current).map((r) => r.key)).toEqual([
+      "steam:1145360",
+    ]);
+    expect(currentCandidateKey(steamOnlyList, both)).toBe("steam:1145360");
+
+    // Neither answers: nothing is marked.
+    expect(currentCandidateKey([], both)).toBeNull();
+  });
+
+  it("never marks more than one row over any of the search fixtures", () => {
+    for (const fixture of ["common/search.ndjson", "common/search-no-key.ndjson", "common/search-empty.ndjson"]) {
+      const list = eventsOf(loadFixture(fixture), "candidate");
+      for (const match of [hades, null, { ...hades, sgdb_id: null }, { ...hades, steam_appid: null }]) {
+        expect(candidateRows(list, match).filter((r) => r.current).length).toBeLessThanOrEqual(1);
+      }
+    }
+  });
+
+  it("no search fixture breaks the CLI's de-dup rule", () => {
+    // A fixture must be producible by the real CLI: it drops a Steam-store
+    // candidate whose appid equals an SGDB candidate's steam_appid.
+    for (const fixture of ["common/search.ndjson", "common/search-no-key.ndjson", "common/search-empty.ndjson"]) {
+      const list = eventsOf(loadFixture(fixture), "candidate");
+      const sgdbAppids = new Set(
+        list.filter((c) => c.source === "sgdb" && c.steam_appid !== null).map((c) => c.steam_appid),
+      );
+      for (const steam of list.filter((c) => c.source === "steam")) {
+        expect(sgdbAppids.has(steam.id)).toBe(false);
+      }
+    }
   });
 
   it("an SGDB title without a Steam release is community art only", () => {
