@@ -75,7 +75,11 @@ export interface TitlesData {
   /** `ignore.json`. */
   ignored: string[];
   host: string;
-  source: "live" | "cached";
+  /**
+   * `live` = a fresh `list`; `cached` = the per-host cache because the host
+   * is unreachable; `syncing` = the cache because a run is rewriting it.
+   */
+  source: "live" | "cached" | "syncing";
   /** The cache's timestamp for a cached listing ("cached from <when>"). */
   cachedWhen: string | null;
   /** The CLI's message when the live listing failed with exit 3. */
@@ -210,11 +214,26 @@ export class Controller {
     return isFailure(result) ? result : null;
   }
 
+  /**
+   * One rewrite of owned-apps.json at a time: concurrent calls that all hit
+   * the same steamid3 mismatch share it instead of each writing the file.
+   */
+  private rewritingOwned: Promise<Failure | null> | null = null;
+
+  private rewriteOwnedApps(): Promise<Failure | null> {
+    if (!this.rewritingOwned) {
+      this.rewritingOwned = this.writeOwnedApps().finally(() => {
+        this.rewritingOwned = null;
+      });
+    }
+    return this.rewritingOwned;
+  }
+
   /** A collecting call, retried once after rewriting owned-apps.json on a steamid3 mismatch. */
   private async withOwnedRetry<T extends object>(call: () => Promise<Result<T>>): Promise<Result<T>> {
     const result = await call();
     if (isFailure(result) && isSteamUserMismatch(result)) {
-      const failed = await this.writeOwnedApps();
+      const failed = await this.rewriteOwnedApps();
       if (!failed) return call();
     }
     return result;
@@ -461,26 +480,50 @@ export class Controller {
   // -------------------------------------------------------------------------
   // the Titles page (spec 3.8)
 
+  /** When a cached listing was taken, from its apps or from `host show`. */
+  private cachedStamp(active: string, apps: AppEvent[]): string | null {
+    return (
+      apps.find((app) => app.cached_when)?.cached_when ??
+      this.state.hosts?.cached_hosts.find((c) => c.name.toLowerCase() === active.toLowerCase())?.when ??
+      null
+    );
+  }
+
   /**
    * `list_apps()`, `status()` and `ignore.json` for the Titles page. When
    * the live listing fails with exit 3 (host unreachable) the page reads
    * `list_cached(active)` instead; exit 3 there means there is no cache for
    * the host yet ("never synced").
+   *
+   * While a run is going the page reads `list_cached(active)` from the
+   * start (`source: "syncing"`): a live `list` would race the running CLI's
+   * own listing and cache write, and buys nothing because the page re-lists
+   * when the run finishes.
    */
   async loadTitles(): Promise<TitlesLoad> {
     const active = this.state.hosts?.active;
     if (!active) return { ok: false, message: "No host yet; add one on the Host page", neverSynced: false };
+    const running = !!this.state.run?.running;
     const [listed, status, ignored] = await Promise.all([
-      this.withOwnedRetry(() => this.backend.list_apps()),
+      running
+        ? this.withOwnedRetry(() => this.backend.list_cached(active))
+        : this.withOwnedRetry(() => this.backend.list_apps()),
       this.withOwnedRetry(() => this.backend.status()),
       this.backend.get_ignored(),
     ]);
     let apps: AppEvent[];
-    let source: TitlesData["source"] = "live";
+    let source: TitlesData["source"] = running ? "syncing" : "live";
     let cachedWhen: string | null = null;
     let unreachable: string | null = null;
     if (!isFailure(listed)) {
       apps = listed.apps;
+      if (running) cachedWhen = this.cachedStamp(active, apps);
+    } else if (running) {
+      const neverSynced = listed.error === "cli-error" && listed.exit === 3;
+      const message = neverSynced
+        ? `${active} was never synced; this list fills in when the sync finishes`
+        : errorText(listed);
+      return { ok: false, message, neverSynced };
     } else if (listed.error === "cli-error" && listed.exit === 3) {
       unreachable = listed.message;
       const cached = await this.withOwnedRetry(() => this.backend.list_cached(active));
@@ -494,10 +537,7 @@ export class Controller {
       }
       apps = cached.apps;
       source = "cached";
-      cachedWhen =
-        cached.apps.find((app) => app.cached_when)?.cached_when ??
-        this.state.hosts?.cached_hosts.find((c) => c.name.toLowerCase() === active.toLowerCase())?.when ??
-        null;
+      cachedWhen = this.cachedStamp(active, apps);
     } else {
       return { ok: false, message: errorText(listed), neverSynced: false };
     }

@@ -24,7 +24,8 @@ project uses [semantic versioning](https://semver.org/).
   shortcut, unmatched, ignored, parked, duplicate) and chips (fuzzy, pinned,
   same game on another host, art refreshes on next sync); the All / Stream
   buttons / Shortcuts / Unmatched / Ignored filters, Show parked, pages of
-  50, and the last cached listing when the host is unreachable.
+  50, and the last cached listing when the host is unreachable or while a
+  sync is running.
 - Change match: searches Steam's store and SteamGridDB, shows one list
   (Steam first) with what each result would make of the title ("becomes
   stream button" for an owned game), marks the current match, offers No

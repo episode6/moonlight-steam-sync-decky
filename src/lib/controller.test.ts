@@ -638,6 +638,34 @@ describe("the Titles page (spec 3.8)", () => {
     expect(load.data.unreachable).toBe("list: moonlight: host MY-GAMING-PC unreachable");
   });
 
+  it("reads the cache instead of a live list while a run is going", async () => {
+    const controller = await loaded({
+      list_cached: { ok: true, apps: cachedApps, host: "MY-GAMING-PC", count: 7, notes: [] },
+    });
+    await controller.sync();
+    calls.length = 0;
+    const load = await controller.loadTitles();
+    expect(names()).toContain("list_cached");
+    expect(names()).not.toContain("list_apps");
+    expect(load.ok).toBe(true);
+    if (!load.ok) return;
+    expect(load.data.source).toBe("syncing");
+    expect(load.data.cachedWhen).toBe("2026-09-18T14:02:00Z");
+    expect(load.data.unreachable).toBeNull();
+  });
+
+  it("a run with no cache yet says the list fills in when it finishes", async () => {
+    const controller = await loaded({
+      list_cached: { ...unreachable, message: "list: no cached app list for host MY-GAMING-PC" },
+    });
+    await controller.sync();
+    expect(await controller.loadTitles()).toEqual({
+      ok: false,
+      message: "MY-GAMING-PC was never synced; this list fills in when the sync finishes",
+      neverSynced: true,
+    });
+  });
+
   it("an unreachable host with no cache is never synced", async () => {
     const controller = await loaded({
       list_apps: unreachable,
@@ -695,7 +723,36 @@ describe("the Titles page (spec 3.8)", () => {
     });
     expect((await controller.loadTitles()).ok).toBe(true);
     expect(names().filter((n) => n === "list_apps")).toHaveLength(2);
-    expect(names()).toContain("write_owned_apps");
+    expect(names().filter((n) => n === "write_owned_apps")).toHaveLength(1);
+  });
+
+  it("two concurrent mismatches rewrite owned apps once and both retry", async () => {
+    const mismatch = (what: string) => ({
+      ok: false,
+      error: "cli-error",
+      message: `${what}: owned-apps file is for Steam user 1 but sync would write to user 2`,
+      exit: 1,
+    });
+    let listFirst = true;
+    let armed = false; // the load order's own status() call must succeed first
+    const controller = await loaded({
+      list_apps: () => {
+        if (!listFirst) return listed;
+        listFirst = false;
+        return mismatch("list");
+      },
+      status: () => {
+        if (!armed) return { ok: true, entries: [], notes: [] };
+        armed = false;
+        return mismatch("status");
+      },
+    });
+    armed = true;
+    const load = await controller.loadTitles();
+    expect(load.ok).toBe(true);
+    expect(names().filter((n) => n === "write_owned_apps")).toHaveLength(1);
+    expect(names().filter((n) => n === "list_apps")).toHaveLength(2);
+    expect(names().filter((n) => n === "status")).toHaveLength(2);
   });
 
   it("Use this pins exactly the chosen selector", async () => {

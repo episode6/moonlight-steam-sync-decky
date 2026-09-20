@@ -123,6 +123,10 @@ function headline(data: TitlesData, rows: readonly TitleRow[]): string {
   if (data.source === "cached") {
     return `${published} titles cached from ${relativeTime(data.cachedWhen)} · ${data.host} is unreachable · sorted by name`;
   }
+  if (data.source === "syncing") {
+    const when = data.cachedWhen ? ` from ${relativeTime(data.cachedWhen)}` : "";
+    return `${published} titles cached${when} · refreshes when the sync finishes`;
+  }
   return `${published} published by ${data.host} · sorted by name`;
 }
 
@@ -132,7 +136,9 @@ function headline(data: TitlesData, rows: readonly TitleRow[]): string {
  * with what the next sync does with it. Rows render 50 at a time with a
  * load-more row; *Change match* opens the picker, *Ignore* / *Unignore*
  * edits `ignore.json`. Nothing here restarts Steam: a pin or an ignore
- * takes effect on the next sync.
+ * takes effect on the next sync. While a run is going the list comes from
+ * the CLI's per-host cache (no live `list` racing the run) and refreshes
+ * when the run finishes.
  */
 export function TitlesPage() {
   const state = useStore(controller.store);
@@ -259,7 +265,7 @@ export function TitlesPage() {
       ) : null}
       {running ? (
         <div style={{ fontSize: 11.5, opacity: 0.7, marginBottom: 6 }}>
-          A sync is running; matches can be changed when it finishes.
+          A sync is running; this list refreshes and matches can be changed when it finishes.
         </div>
       ) : null}
       <Focusable flow-children="horizontal" style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>

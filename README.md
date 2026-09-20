@@ -154,7 +154,9 @@ and **art refreshes on next sync** (after a pin). The filters are *All*,
 a time with a "Show 50 more" row at the end, so a 500-title host stays
 quick to scroll with the D-pad. When the host is unreachable the page shows
 the last listing it cached ("titles cached from <when>"), or says it was
-never synced.
+never synced. While a sync is running it shows that cached listing too
+("refreshes when the sync finishes") instead of asking the host again in
+the middle of the run, and re-lists on its own as soon as the run ends.
 
 **Change match** searches Steam's store and SteamGridDB (prefilled with
 the title's name; edit it and **Search** again) and shows the results as
