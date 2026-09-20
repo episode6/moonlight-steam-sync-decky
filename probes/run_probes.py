@@ -92,6 +92,19 @@ class Refused(Exception):
     """A state-changing probe was asked for without its explicit flag."""
 
 
+WORKSHOP_URL_RE = re.compile(r"workshop://\d+")
+
+
+def check_workshop_url(url: str) -> None:
+    """Refuse anything that is not ``workshop://<publishedfileid>``.
+
+    Called up front in ``main()`` for both ``v2`` and ``all`` -- so ``all``
+    refuses a malformed ``--url`` before v1/v4/v5 have run -- and again in
+    ``Runner.v2``, which is reachable on its own."""
+    if not WORKSHOP_URL_RE.fullmatch(url):
+        raise Refused(f"v2 --url must look like workshop://<publishedfileid>, got {url!r}")
+
+
 # ---------------------------------------------------------------------------
 # JavaScript evaluated in the SharedJSContext
 # ---------------------------------------------------------------------------
@@ -327,7 +340,10 @@ return result;
 const appid = PARAMS.shortcut;
 const url = PARAMS.url;
 const result = { probe: "v2", shortcut: appid, url, restore: PARAMS.restore, controllers: findControllers() };
-if (appid < PARAMS.shortcut_min) { result.error = "refused in page: appid below 0x80000000"; return result; }
+// 0x80000000 is hardcoded here, never read from PARAMS: a missing or wrong
+// parameter must not be able to unlock a real game. Runner.v2 checks the
+// same bound before anything is evaluated.
+if (appid < 0x80000000) { result.error = "refused in page: appid below 0x80000000"; return result; }
 const si = steamInput();
 if (!si.input) { result.error = si.error; result.shape = si.shape; return result; }
 const plan = indexPlan(result.controllers, PARAMS.controller_index);
@@ -788,10 +804,18 @@ HOME_RE = re.compile(r"/home/[^/\s\"'|;:]+")
 def redact_paths(text: str, home: str | None = None) -> str:
     """``$HOME`` and any ``/home/<name>`` become ``~``, so a cmdline or
     ``pgrep -a`` line can go into the committed table (spec §5: no absolute
-    home paths in the repo). The raw text stays in probe-results.json."""
+    home paths in the repo). The raw text stays in probe-results.json.
+
+    The home substitution only fires at a path boundary (the home directory
+    followed by ``/`` or the end of the string), so ``/home/deckard`` is not
+    mangled into ``~ard`` when home is ``/home/deck`` -- HOME_RE still
+    redacts it, as another user's home. An empty home, ``~`` or ``/`` is
+    skipped: there is no prefix worth substituting and ``/`` would match
+    every absolute path."""
     home = home if home is not None else os.path.expanduser("~")
+    home = home.rstrip("/")
     if home and home != "~" and home.startswith("/"):
-        text = text.replace(home.rstrip("/"), "~")
+        text = re.sub(re.escape(home) + r"(?=/|$)", "~", text)
     return HOME_RE.sub("~", text)
 
 
@@ -892,7 +916,7 @@ def _rows_for(entry: dict[str, Any]) -> list[tuple[str, str, str, str, str]]:
             rows.append(("V3", "gap empty -> non-empty", "> 500 ms (seconds)", "no gap recorded", _txt(r.get("note", note_err)) + err_note))
         for i, gap in enumerate(gaps, 1):
             observed = "still empty at the end" if gap.get("gap_ms") is None else f"{gap['gap_ms']} ms"
-            rows.append(("V3", f"gap {i} (empty at t={gap.get('empty_at_ms')} ms)", "> 500 ms (seconds)", observed, f"steam_back={r.get('steam_back')} back_after_ms={r.get('back_after_ms')}{err_note}"))
+            rows.append(("V3", f"gap {i} (empty at t={gap.get('empty_at_ms')} ms)", "> 500 ms (seconds)", observed, f"steam_back={r.get('steam_back')} back_after_ms={r.get('back_after_ms')} (from the watch start, not the restart time; read the gap){err_note}"))
         # cmdline / pgrep -a carry absolute home paths: redacted here, raw in probe-results.json
         identity = "; ".join(redact_paths(str(c.get("cmdline"))) for c in (r.get("changes") or [])[:4]) or "-"
         rows.append(("V3", "process identity on change", "real client, not a wrapper script", identity, f"{len(r.get('changes') or [])} change(s)"))
@@ -980,9 +1004,8 @@ class Runner:
             raise Refused("v2 changes the shortcut's selected layout; pass --url 'workshop://<publishedfileid>' to run it")
         if shortcut < SHORTCUT_APPID_MIN:
             raise Refused(f"v2 refuses appid {shortcut}: below 0x80000000 ({SHORTCUT_APPID_MIN}); it must be a shortcut, never a real game")
-        if not re.fullmatch(r"workshop://\d+", url):
-            raise Refused(f"v2 --url must look like workshop://<publishedfileid>, got {url!r}")
-        params: dict[str, Any] = {"shortcut": shortcut, "url": url, "restore": restore, "shortcut_min": SHORTCUT_APPID_MIN, "readback_wait_ms": 1000}
+        check_workshop_url(url)
+        params: dict[str, Any] = {"shortcut": shortcut, "url": url, "restore": restore, "readback_wait_ms": 1000}
         if controller_index is not None:
             params["controller_index"] = controller_index
         result = self.devtools.evaluate("v2", params)
@@ -1021,85 +1044,113 @@ class Runner:
         reconnect_timeout_s: float = 120.0,
         reconnect_poll_s: float = 1.0,
     ) -> dict[str, Any]:
+        """Shut Steam down, watch ``pgrep -x steam`` across the restart, then
+        reconnect to the new client.
+
+        ``gaps`` -- computed from the pgrep samples -- is the V3 measurement.
+        ``back_after_ms`` is **not** the restart time: it is measured from the
+        start of the watch, and the reconnect only begins after the baseline
+        pause plus the full watch, so it is bounded below by
+        ``baseline_s + duration_s`` whatever Steam does.
+
+        The shutdown is irreversible, so the v3 record is appended whatever
+        happens after the watch starts: a handshake error while Steam
+        restarts, or Ctrl-C during the baseline, the shutdown call, the watch
+        or the reconnect wait. On an interrupt the watch is stopped, joined
+        and whatever it sampled is recorded before the exception is re-raised.
+        """
         self.confirm_v3(yes)
         self.devtools.shared_js_context()  # fail early (port closed / no target) before touching anything
-        log_lines: list[str] = []
-        log_lock = threading.Lock()
         self.v3_log_path.parent.mkdir(parents=True, exist_ok=True)
         fh = open(self.v3_log_path, "a", encoding="utf-8")  # noqa: SIM115 - closed below
 
         def log(line: str) -> None:
-            stamped = f"{now_iso()} {line}"
-            with log_lock:
-                log_lines.append(stamped)
-                fh.write(stamped + "\n")
-                fh.flush()
+            fh.write(f"{now_iso()} {line}\n")
+            fh.flush()
 
         watch: dict[str, Any] = {}
+        stop = threading.Event()
 
         def sampler() -> None:
             watch.update(
-                watch_steam(duration_s, interval_ms, pgrep=self.pgrep, clock=self.clock, sleep=self.sleep, cmdline=self.cmdline, log=log)
+                watch_steam(
+                    duration_s,
+                    interval_ms,
+                    pgrep=self.pgrep,
+                    clock=self.clock,
+                    sleep=self.sleep,
+                    cmdline=self.cmdline,
+                    log=log,
+                    stop=stop,
+                )
             )
 
-        started = self.clock()
-        thread = threading.Thread(target=sampler, name="steam-watch", daemon=True)
-        thread.start()
-        self.sleep(baseline_s)
-        shutdown: dict[str, Any]
-        shutdown_at_ms = int((self.clock() - started) * 1000)
-        try:
-            shutdown = {"sent_at_ms": shutdown_at_ms, "reply": self.devtools.evaluate("v3_shutdown", {}, timeout_s=10)}
-        except ProbeError as exc:
-            # The socket dying right after StartShutdown is the expected outcome.
-            shutdown = {"sent_at_ms": shutdown_at_ms, "reply": None, "note": f"no reply (expected if Steam shut down at once): {exc}"}
-        log(f"steam-watch shutdown sent t={shutdown_at_ms} reply={json.dumps(shutdown.get('reply'))} note={shutdown.get('note', '')}")
-        thread.join()
-
-        # The shutdown is irreversible and the watch is done: from here on the
-        # record is written whatever happens (a handshake error while Steam
-        # restarts, Ctrl-C during the wait), so the gaps are never lost.
         result: dict[str, Any] = {
             "probe": "v3",
             "duration_s": duration_s,
             "interval_ms": interval_ms,
-            "shutdown": shutdown,
-            "samples": watch.get("samples"),
-            "pgrep_errors": watch.get("pgrep_errors", 0),
-            "max_poll_ms": watch.get("max_poll_ms"),
-            "changes": watch.get("changes", []),
-            "gaps": watch.get("gaps", []),
+            "shutdown": {"sent_at_ms": None, "reply": None, "note": "not sent"},
             "steam_back": False,
+            # Measured from the start of the watch, so never less than
+            # baseline_s + duration_s. Read the gaps, not this, for V3.
             "back_after_ms": None,
             "reconnect_last_error": "reconnect not attempted",
             "log": str(self.v3_log_path),
         }
-        if not result["gaps"]:
-            result["note"] = "pgrep -x steam never came back empty during the watch; see the log"
+        started = self.clock()
+        thread = threading.Thread(target=sampler, name="steam-watch", daemon=True)
+        thread.start()
         try:
-            deadline = self.clock() + reconnect_timeout_s
-            last_error = ""
-            while self.clock() < deadline:
-                try:
-                    self.devtools.shared_js_context()
-                    ping = self.devtools.evaluate("ping", {}, timeout_s=10)
-                    if isinstance(ping, dict) and ping.get("pong"):
-                        result["steam_back"] = True
-                        result["back_after_ms"] = int((self.clock() - started) * 1000)
-                        break
-                    last_error = f"ping returned {ping!r}"
-                except (PortClosed, ProbeError) as exc:
-                    last_error = str(exc)
-                except Exception as exc:  # noqa: BLE001 - anything else while Steam is half up is "not back yet"
-                    last_error = f"{type(exc).__name__}: {exc}"
-                    log(f"steam-watch reconnect attempt raised {last_error}")
-                self.sleep(reconnect_poll_s)
-            result["reconnect_last_error"] = "" if result["steam_back"] else last_error
-            log(f"steam-watch reconnect steam_back={result['steam_back']} back_after_ms={result['back_after_ms']} last_error={result['reconnect_last_error']}")
+            self.sleep(baseline_s)
+            shutdown_at_ms = int((self.clock() - started) * 1000)
+            try:
+                shutdown = {"sent_at_ms": shutdown_at_ms, "reply": self.devtools.evaluate("v3_shutdown", {}, timeout_s=10)}
+            except (ProbeError, PortClosed) as exc:
+                # The socket dying right after StartShutdown is the expected outcome.
+                shutdown = {"sent_at_ms": shutdown_at_ms, "reply": None, "note": f"no reply (expected if Steam shut down at once): {exc}"}
+            result["shutdown"] = shutdown
+            log(f"steam-watch shutdown sent t={shutdown_at_ms} reply={json.dumps(shutdown.get('reply'))} note={shutdown.get('note', '')}")
+            thread.join()
+
+            try:
+                deadline = self.clock() + reconnect_timeout_s
+                last_error = ""
+                while self.clock() < deadline:
+                    try:
+                        self.devtools.shared_js_context()
+                        ping = self.devtools.evaluate("ping", {}, timeout_s=10)
+                        if isinstance(ping, dict) and ping.get("pong"):
+                            result["steam_back"] = True
+                            result["back_after_ms"] = int((self.clock() - started) * 1000)
+                            break
+                        last_error = f"ping returned {ping!r}"
+                    except (PortClosed, ProbeError) as exc:
+                        last_error = str(exc)
+                    except Exception as exc:  # noqa: BLE001 - anything else while Steam is half up is "not back yet"
+                        last_error = f"{type(exc).__name__}: {exc}"
+                        log(f"steam-watch reconnect attempt raised {last_error}")
+                    self.sleep(reconnect_poll_s)
+                result["reconnect_last_error"] = "" if result["steam_back"] else last_error
+                log(f"steam-watch reconnect steam_back={result['steam_back']} back_after_ms={result['back_after_ms']} last_error={result['reconnect_last_error']}")
+            except BaseException as exc:
+                result["reconnect_last_error"] = f"interrupted: {type(exc).__name__}: {exc}"
+                raise
         except BaseException as exc:
-            result["reconnect_last_error"] = f"interrupted: {type(exc).__name__}: {exc}"
+            result["interrupted"] = f"{type(exc).__name__}: {exc}"
+            log(f"steam-watch interrupted: {type(exc).__name__}: {exc}")
             raise
         finally:
+            # Whatever happened, stop the watch, take what it sampled and
+            # write the record; the shutdown cannot be undone.
+            stop.set()
+            thread.join(timeout=max(10.0, interval_ms / 1000 * 20))
+            result["samples"] = watch.get("samples")
+            result["pgrep_errors"] = watch.get("pgrep_errors", 0)
+            result["max_poll_ms"] = watch.get("max_poll_ms")
+            result["changes"] = watch.get("changes", [])
+            result["gaps"] = watch.get("gaps", [])
+            if not result["gaps"]:
+                result["note"] = "pgrep -x steam never came back empty during the watch; see the log"
             fh.close()
             entry = self.record("v3", {"duration_s": duration_s, "interval_ms": interval_ms}, result)
         return entry
@@ -1259,7 +1310,10 @@ def main(
         steam_root=steam_root,
     )
     try:
-        # Refusals come before any network access, so a refused run touches nothing.
+        # Refusals come before any network access, so a refused run touches
+        # nothing -- and, under `all`, nothing runs before the refusal either.
+        if args.probe in ("v2", "all") and args.url:
+            check_workshop_url(args.url)
         if args.probe == "v2":
             if not args.url:
                 raise Refused("v2 changes the shortcut's selected layout; pass --url 'workshop://<publishedfileid>' to run it")

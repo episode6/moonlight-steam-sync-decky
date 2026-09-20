@@ -34,9 +34,14 @@ second client).
 3. Note the Deck's IP (Settings → Internet, or `ip -4 addr` in Konsole) and
    check the login from your PC: `ssh deck@<deck-ip>`.
 4. Get this directory onto the Deck (SteamOS has `git` and Python 3.13.5;
-   the runner needs nothing from the plugin build):
+   the runner needs nothing from the plugin build). **Check out the branch
+   the probe kit is on** — until the plugin stack merges that is
+   `pr0-steam-input-probe`, not `main`, which does not carry `probes/` yet:
    ```sh
-   git clone https://github.com/episode6/moonlight-steam-sync-decky ~/moonlight-steam-sync-decky
+   git clone --branch pr0-steam-input-probe \
+     https://github.com/episode6/moonlight-steam-sync-decky ~/moonlight-steam-sync-decky
+   # already cloned, from ~/moonlight-steam-sync-decky:
+   #   git fetch origin && git checkout pr0-steam-input-probe
    # or, from the PC:  scp -r probes deck@<deck-ip>:~/probes
    ```
 5. Create the venv with the runner's one dependency (the shipped CLI stays
@@ -120,6 +125,7 @@ run_probes.py v2 --shortcut <different-name-shortcut-appid> --url 'workshop://<i
 
 # V3, last: Steam exits and gamescope restarts it. ~90 s of pgrep samples, then a reconnect.
 run_probes.py v3            # asks for confirmation; --yes skips the prompt
+#   Read `gaps` for the V3 measurement, never `back_after_ms` (see below).
 ```
 
 `all` runs v1, v4 and v5 (without `--run`) in one go, v2 only when `--url` is
@@ -131,7 +137,17 @@ run_probes.py all --appids <a>,<b>,<c>,<d> --shortcut <same-name-shortcut-appid>
 
 Every subcommand prints one JSON object and appends it to
 `probes/probe-results.json` (next to the script). V3 also writes every
-sample to `probes/probe-v3-pgrep.log`. When done, render the results table
+sample to `probes/probe-v3-pgrep.log`.
+
+**V3 is measured from `gaps`, not from `back_after_ms`.** The gaps come from
+the `pgrep -x steam` samples and are how long the client was actually gone —
+the number the CLI's `--commit await-exit` window depends on.
+`back_after_ms` only says when the runner got a `pong` from the new client:
+it is measured from the start of the watch, and the reconnect loop does not
+begin until the baseline pause plus the whole `--duration` have elapsed, so
+it is bounded below by roughly `1 s + --duration` (≈ 91 s by default)
+whatever Steam does. Treat it as "Steam came back: yes/no", which is all the
+results table asks of it. When done, render the results table
 and paste it over the empty one in §5:
 
 ```sh
@@ -160,7 +176,10 @@ to the PC (`scp deck@<deck-ip>:~/moonlight-steam-sync-decky/probes/probe-*.{json
 
 The same five probes as Quick Access Menu buttons, for when the runner is
 not an option. Every button logs to the Decky console (`console.log` with a
-`[steam-input-probe]` prefix) **and** to `~/homebrew/logs/steam-input-probe.log`,
+`[steam-input-probe]` prefix) **and** to
+`~/homebrew/logs/steam-input-probe/steam-input-probe.log` (the loader's
+`DECKY_PLUGIN_LOG_DIR`; a loader old enough not to set it falls back to
+`~/homebrew/logs/steam-input-probe.log`),
 each line prefixed with an ISO timestamp in milliseconds. The file is the
 record; read it from Desktop Mode afterwards.
 
@@ -330,6 +349,8 @@ Set up the games and shortcuts as in §1.2 first.
    `steam-watch summary …` and `steam-watch gap #1: empty at t=… non-empty
    at t=… gap_ms=…`.
 3. Expected: `pgrep -x steam` goes empty for **seconds** (well over 500 ms).
+   The gap is the measurement; the runner's `back_after_ms` is not (it is
+   bounded below by the baseline plus the whole watch, see §1.3).
    The `cmdline` on each change shows whether a pid is the real client
    (`…/ubuntu12_32/steam …`) or a wrapper script (`/bin/bash /usr/bin/steam …`)
    — a wrapper that stays alive while the client is gone would hide the gap
@@ -386,7 +407,8 @@ Left empty on purpose: the probes have not been run.
 
 ### Raw log excerpts
 
-Paste the relevant lines here (from `~/homebrew/logs/steam-input-probe.log`,
+Paste the relevant lines here (from
+`~/homebrew/logs/steam-input-probe/steam-input-probe.log`,
 `probes/probe-results.json` or `probes/probe-v3-pgrep.log`). Replace any
 Steam ID or home path with a placeholder before committing.
 

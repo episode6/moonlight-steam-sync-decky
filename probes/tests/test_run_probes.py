@@ -12,6 +12,7 @@ import socket
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -145,7 +146,7 @@ def test_v4_prints_one_json_object_and_appends_it(tmp_path):
     assert code == EXIT_OK, err
     assert json.loads(out)["result"]["total"] == 3
     assert json.loads(out)["result"]["userdata_check"]["match"] is None  # no userdata dir: unchecked, not "no"
-    code, out2, _, _ = run(["v4"], tmp_path, fake)
+    code, _out2, _, _ = run(["v4"], tmp_path, fake, steam_root=tmp_path / "no-steam")
     assert code == EXIT_OK
     results = json.loads((tmp_path / "probe-results.json").read_text())
     assert [r["probe"] for r in results] == ["v4", "v4"]
@@ -198,7 +199,7 @@ def test_v2_runs_with_url_on_a_shortcut_and_passes_restore(tmp_path):
     (name, params), = fake.calls
     assert name == "v2"
     assert params["shortcut"] == SHORTCUT and params["url"] == "workshop://123" and params["restore"] is True
-    assert params["shortcut_min"] == 0x80000000
+    assert "shortcut_min" not in params  # the page hardcodes the bound (test_v2_js_refuses_a_real_game_...)
 
 
 def test_v5_without_run_never_asks_the_page_to_run(tmp_path):
@@ -256,6 +257,23 @@ def test_all_refuses_v2_on_a_real_game_but_runs_the_rest(tmp_path):
     assert code == EXIT_OK, err
     assert [c[0] for c in fake.calls] == ["v4", "v5"]
     assert "0x80000000" in json.loads(out)["skipped"]["v2"]
+
+
+def test_all_refuses_a_malformed_url_before_running_any_probe(tmp_path):
+    """The workshop:// shape is checked up front, with the other two
+    refusals, so `all` never runs v1/v4/v5 and then dies on v2's --url."""
+    code, _out, err, fake = run(["all", "--appids", "1", "--shortcut", str(SHORTCUT), "--url", "template://x.vdf"], tmp_path)
+    assert code == EXIT_REFUSED
+    assert "workshop://" in err
+    assert fake.calls == []
+    assert not (tmp_path / "probe-results.json").exists()
+
+
+def test_v2_refuses_a_malformed_url_before_touching_the_port(tmp_path):
+    code, _out, err, fake = run(["v2", "--shortcut", str(SHORTCUT), "--url", "workshop://abc"], tmp_path)
+    assert code == EXIT_REFUSED
+    assert "workshop://" in err
+    assert fake.calls == [] and fake.target_calls == 0
 
 
 # ---- the gap computation -----------------------------------------------------
@@ -484,6 +502,65 @@ def test_v3_records_the_gaps_even_when_the_reconnect_wait_is_interrupted(tmp_pat
     assert len(saved[0]["result"]["gaps"]) == 1 and saved[0]["result"]["gaps"][0]["back_at_ms"] is None
     assert saved[0]["result"]["steam_back"] is False
     assert saved[0]["result"]["reconnect_last_error"].startswith("interrupted: KeyboardInterrupt")
+
+
+def test_v3_records_the_samples_when_the_baseline_sleep_is_interrupted(tmp_path):
+    """Ctrl-C between the watch starting and the shutdown call: the watch is
+    stopped and joined, and the v3 record is still appended with whatever it
+    sampled (the shutdown is irreversible, so nothing may be lost)."""
+    main_thread = threading.current_thread()
+
+    def sleep(seconds):
+        if threading.current_thread() is main_thread:
+            time.sleep(0.08)  # let the watch take a few samples first
+            raise KeyboardInterrupt()
+        time.sleep(seconds)
+
+    fake = FakeDevTools()
+    runner = Runner(
+        fake,
+        out=io.StringIO(),
+        err=io.StringIO(),
+        results_path=tmp_path / "r.json",
+        v3_log_path=tmp_path / "v3.log",
+        pgrep=lambda *a: (0, "10\n"),
+        sleep=sleep,
+        cmdline=lambda pid: "x",
+    )
+    with pytest.raises(KeyboardInterrupt):
+        runner.v3(yes=True, duration_s=30, interval_ms=10, baseline_s=1, reconnect_timeout_s=5, reconnect_poll_s=0.01)
+
+    assert fake.calls == []  # the shutdown was never sent
+    saved = json.loads((tmp_path / "r.json").read_text())
+    assert [r["probe"] for r in saved] == ["v3"]
+    result = saved[0]["result"]
+    assert result["samples"] >= 1
+    assert result["gaps"] == [] and result["changes"]
+    assert result["shutdown"] == {"sent_at_ms": None, "reply": None, "note": "not sent"}
+    assert result["interrupted"].startswith("KeyboardInterrupt")
+    assert result["steam_back"] is False and result["back_after_ms"] is None
+    log = (tmp_path / "v3.log").read_text()
+    assert "steam-watch interrupted: KeyboardInterrupt" in log and "steam-watch summary" in log
+
+
+# ---- redaction ---------------------------------------------------------------
+
+
+def test_redact_paths_only_substitutes_home_at_a_path_boundary():
+    """A home of /home/deck must not turn /home/deckard into ~ard; HOME_RE
+    still redacts it, as another user's home."""
+    assert run_probes.redact_paths("ls /home/deck/Games", home="/home/deck") == "ls ~/Games"
+    assert run_probes.redact_paths("cd /home/deck", home="/home/deck") == "cd ~"
+    assert run_probes.redact_paths("ls /home/deckard/Games", home="/home/deck") == "ls ~/Games"
+    assert run_probes.redact_paths("/opt/x /srv/deckard", home="/srv/deck") == "/opt/x /srv/deckard"
+
+
+def test_redact_paths_skips_an_empty_or_root_home():
+    """home="" or "/" has no prefix worth substituting, and "/" would match
+    every absolute path."""
+    for home in ("", "/", "~"):
+        assert run_probes.redact_paths("run /opt/steam/steam.sh --silent", home=home) == "run /opt/steam/steam.sh --silent"
+    assert run_probes.redact_paths("run /home/deck/steam.sh", home="/") == "run ~/steam.sh"
 
 
 def _fake_websockets(monkeypatch, connect_behaviour):
@@ -728,7 +805,7 @@ def eval_in_node(name: str, params: dict, prelude: str = "") -> dict:
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 @pytest.mark.parametrize("name,params", [
     ("v1", {"appids": [1], "candidate_wait_ms": 10}),
-    ("v2", {"shortcut": SHORTCUT, "url": "workshop://1", "restore": False, "shortcut_min": 0x80000000, "readback_wait_ms": 10}),
+    ("v2", {"shortcut": SHORTCUT, "url": "workshop://1", "restore": False, "readback_wait_ms": 10}),
     ("v3_shutdown", {}),
     ("v4", {}),
     ("v5", {"shortcut": SHORTCUT, "run": True}),
@@ -742,7 +819,9 @@ def test_probe_js_reports_missing_globals_instead_of_throwing(name, params):
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_v2_js_refuses_a_real_game_even_if_the_runner_is_bypassed():
-    result = eval_in_node("v2", {"shortcut": REAL_GAME, "url": "workshop://1", "restore": False, "shortcut_min": 0x80000000, "readback_wait_ms": 10})
+    """The bound is hardcoded in the page, not read from PARAMS: these params
+    carry no shortcut_min at all and a real game is still refused."""
+    result = eval_in_node("v2", {"shortcut": REAL_GAME, "url": "workshop://1", "restore": False, "readback_wait_ms": 10})
     assert result["error"] == "refused in page: appid below 0x80000000"
 
 
@@ -790,7 +869,7 @@ def test_v1_and_v2_js_against_stubbed_steam_input():
     assert v1["candidates"]["1245620"]["unregistered"] is True
     assert v1["configs"]["1245620"]["indexConfirmed"] is True and v1["configs"]["1245620"]["index"] == 15
     assert "warning" not in v1
-    v2 = eval_in_node("v2", {"shortcut": SHORTCUT, "url": "workshop://111", "restore": True, "shortcut_min": 0x80000000, "readback_wait_ms": 5}, stub)
+    v2 = eval_in_node("v2", {"shortcut": SHORTCUT, "url": "workshop://111", "restore": True, "readback_wait_ms": 5}, stub)
     assert v2["before"]["URL"] == f"default://app{SHORTCUT}"
     assert v2["after"]["URL"] == "workshop://111" and v2["stuck"] is True
     assert v2["restored"] is True and v2["afterRestore"]["URL"] == f"default://app{SHORTCUT}"
@@ -834,7 +913,7 @@ def test_v1_js_still_probes_when_the_deck_index_is_not_found_by_type():
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_v2_js_uses_the_fallback_index_and_the_override():
-    params = {"shortcut": SHORTCUT, "url": "workshop://1", "restore": False, "shortcut_min": 0x80000000, "readback_wait_ms": 5}
+    params = {"shortcut": SHORTCUT, "url": "workshop://1", "restore": False, "readback_wait_ms": 5}
     v2 = eval_in_node("v2", params, INPUT_ONLY_STUB)
     assert v2["index"] == 15 and v2["indexConfirmed"] is False and "not found by type" in v2["warning"]
     assert v2["setReturned"] is True
@@ -903,6 +982,44 @@ def test_plugin_backend_mirrors_the_error_sample_rule(monkeypatch):
         {"empty_at_ms": 200, "back_at_ms": 400, "gap_ms": 200, "empty_samples": 1}
     ]
     assert main_py.compute_gaps([(0, None), (100, None)]) == []
+
+
+def test_plugin_backend_log_path_prefers_the_decky_log_dir(monkeypatch, tmp_path):
+    """DECKY_PLUGIN_LOG_DIR is the loader's documented (and pre-created)
+    place for persistent plugin logs; the old ~/homebrew/logs path is only
+    the fallback when the attribute is missing."""
+    main_py = load_plugin_backend(monkeypatch)
+    main_py.decky.DECKY_PLUGIN_LOG_DIR = str(tmp_path / "homebrew" / "logs" / "steam-input-probe")
+    assert main_py._log_path() == str(tmp_path / "homebrew" / "logs" / "steam-input-probe" / "steam-input-probe.log")
+    main_py.decky.DECKY_PLUGIN_LOG_DIR = None
+    main_py.decky.DECKY_HOME = str(tmp_path / "homebrew")
+    assert main_py._log_path() == str(tmp_path / "homebrew" / "logs" / "steam-input-probe.log")
+
+
+def test_plugin_backend_pgrep_reaps_a_child_that_timed_out(monkeypatch):
+    """wait_for cancels communicate() but leaves the child running: the
+    watch must kill and reap it, or a 60 s run leaks one process (and one
+    pair of pipes) per timed-out sample."""
+    import asyncio
+
+    main_py = load_plugin_backend(monkeypatch)
+    spawned = []
+    real_exec = asyncio.create_subprocess_exec
+    real_wait_for = asyncio.wait_for
+
+    async def slow_child(_program, *_args, **kwargs):
+        proc = await real_exec(sys.executable, "-c", "import time; time.sleep(30)", **kwargs)
+        spawned.append(proc)
+        return proc
+
+    async def quick_wait_for(awaitable, timeout=None):
+        return await real_wait_for(awaitable, 0.2)
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", slow_child)
+    monkeypatch.setattr(asyncio, "wait_for", quick_wait_for)
+    rc, text = asyncio.run(main_py.Plugin()._pgrep("-x", "steam"))
+    assert rc == -1 and "pgrep failed: TimeoutError" in text
+    assert len(spawned) == 1 and spawned[0].returncode is not None  # reaped, not a zombie
 
 
 def test_plugin_backend_pgrep_env_restores_the_loader_library_path(monkeypatch):

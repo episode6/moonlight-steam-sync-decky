@@ -2,9 +2,11 @@
 
 Two jobs, nothing else:
 
-* ``log(line)`` appends one line to ``~/homebrew/logs/steam-input-probe.log``
-  with an ISO timestamp in milliseconds. Every probe in the frontend logs
-  through it, so the whole run can be read from the file alone.
+* ``log(line)`` appends one line to ``steam-input-probe.log`` in
+  ``decky.DECKY_PLUGIN_LOG_DIR`` (``~/homebrew/logs/steam-input-probe/``,
+  which the loader creates) with an ISO timestamp in milliseconds. Every
+  probe in the frontend logs through it, so the whole run can be read from
+  the file alone.
 * ``start_steam_watch()`` starts the V3 watcher: an asyncio task that runs
   ``pgrep -x steam`` every 100 ms for 60 s, logs every state change (with
   ``pgrep -a -x steam`` and ``/proc/<pid>/cmdline`` so a wrapper script
@@ -38,11 +40,18 @@ def _now_iso() -> str:
 
 
 def _log_path() -> str:
-    home = getattr(decky, "DECKY_HOME", None)
-    if not home:
-        user_home = getattr(decky, "DECKY_USER_HOME", None) or os.path.expanduser("~")
-        home = os.path.join(user_home, "homebrew")
-    return os.path.join(home, "logs", "steam-input-probe.log")
+    """``<DECKY_PLUGIN_LOG_DIR>/steam-input-probe.log`` -- the directory the
+    loader creates and documents for persistent plugin logs. Older loaders
+    (and the tests' decky stub, when it leaves the attribute out) fall back
+    to ``<DECKY_HOME>/logs/steam-input-probe.log``."""
+    log_dir = getattr(decky, "DECKY_PLUGIN_LOG_DIR", None)
+    if not log_dir:
+        home = getattr(decky, "DECKY_HOME", None)
+        if not home:
+            user_home = getattr(decky, "DECKY_USER_HOME", None) or os.path.expanduser("~")
+            home = os.path.join(user_home, "homebrew")
+        log_dir = os.path.join(home, "logs")
+    return os.path.join(log_dir, "steam-input-probe.log")
 
 
 def _fmt_pids(pids: list[int]) -> str:
@@ -133,10 +142,23 @@ class Plugin:
             proc = await asyncio.create_subprocess_exec(
                 "pgrep", *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=pgrep_env()
             )
+        except asyncio.CancelledError:
+            raise
+        except OSError as exc:
+            return -1, f"pgrep failed: {type(exc).__name__}: {exc}"
+        try:
             out, err = await asyncio.wait_for(proc.communicate(), timeout=5)
         except asyncio.CancelledError:
             raise
         except (OSError, asyncio.TimeoutError) as exc:
+            # wait_for cancelled communicate(): the child is still alive and
+            # its pipes are still open. Kill and reap it, or the watch leaks
+            # one process (and one pair of fds) per timed-out sample.
+            try:
+                proc.kill()
+                await proc.wait()
+            except ProcessLookupError:
+                pass
             return -1, f"pgrep failed: {type(exc).__name__}: {exc}"
         text = out.decode(errors="replace").strip()
         if err:
