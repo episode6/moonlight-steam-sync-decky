@@ -1,10 +1,11 @@
 /**
  * The frontend's behaviour, independent of React and of `@decky/*`:
  * the load order and first run (spec 3.8), runs and their events, the
- * restart flow (spec 3.9), host switching (spec 3.12) and the settings-page
- * actions. `index.tsx` wires it to the real backend (`makeBackend(callable)`),
- * the real Steam client (`steam.ts`) and the real modal/toaster; the tests
- * wire it to fakes.
+ * restart flow (spec 3.9), the Stream press and the controller-layout copy
+ * (spec 3.10), host switching (spec 3.12) and the settings-page actions.
+ * `index.tsx` wires it to the real backend (`makeBackend(callable)`), the
+ * real Steam client (`steam.ts`) and the real modal/toaster; the tests wire
+ * it to fakes.
  */
 
 import {
@@ -15,6 +16,7 @@ import {
   type Backend,
   type EntryEvent,
   type Failure,
+  type LayoutResult,
   type PinnedEvent,
   type Result,
   type RunKind,
@@ -24,6 +26,16 @@ import {
   type SyncEventPayload,
 } from "./cli";
 import type { PinChoice } from "./join";
+import {
+  copyEnabled,
+  copyLayout,
+  WALK_POLL_MS,
+  WALK_STEP_MS,
+  WALK_TIMEOUT_MS,
+  walkPairs,
+  type LayoutOutcome,
+  type SteamInput,
+} from "./layouts";
 import { restartDecision, unwrittenMessage, type RestartDecision } from "./restart";
 import {
   applyRunDone,
@@ -42,6 +54,14 @@ export interface SteamPort {
   currentSteamId3(): number | null;
   runShortcut(appid: number): boolean;
   shutdownSteam(): void;
+  /** The Steam Input seam `copyLayout` runs over (spec 3.10). */
+  input(): SteamInput;
+  /** `appStore.GetAppOverviewByAppID(appid)` is non-null (the shortcut list is loaded). */
+  overviewLoaded(appid: number): boolean;
+  /** The client has `SteamClient.Apps.ShowControllerConfigurator` (else *Choose layout* is hidden). */
+  canChooseLayout(): boolean;
+  /** Open Steam's layout picker for a shortcut; `false` when the client cannot. */
+  showControllerConfigurator(appid: number): boolean;
 }
 
 export interface RestartPrompt {
@@ -113,6 +133,8 @@ export class Controller {
   private mismatchRetried = false;
   /** The run a `start_*` call is starting, until the call answers. */
   private starting: { kind: RunKind; immediate: boolean } | null = null;
+  /** The layout walk in progress (spec 3.10: never two at once). */
+  private walking: Promise<void> | null = null;
 
   constructor(
     private readonly backend: Backend,
@@ -138,32 +160,34 @@ export class Controller {
     try {
       await this.loadOrder();
     } finally {
-      // Step 1 answered with a failure (an io/protocol failure, not
-      // "CLI missing" -- that is a `cli` state), so there is nothing to
-      // render and steps 3-5 never ran. Forget the cached promise so the
-      // next panelOpened() / refreshCli() runs the whole order again.
+      // Step 1 answered with a failure (an io/protocol failure, not "CLI
+      // missing" -- that is a `cli` state; see readCli's `cliError`), so
+      // there is nothing to render and steps 3-5 never ran. Forget the
+      // cached promise, so the next panelOpened() runs the whole order
+      // again rather than resolving straight away. (The panel's Retry goes
+      // through refreshCli(), which finishes the order in place.)
       if (this.state.cli === null) this.loading = null;
     }
   }
 
   private async loadOrder(): Promise<void> {
     // (1) the CLI
-    const version = await this.backend.cli_version();
-    if (isFailure(version)) this.store.set({ message: errorText(version) });
-    else this.store.set((s) => withCliVersion(s, version));
-    const cliOk = this.state.cli?.state === "ok";
+    const cliOk = await this.readCli();
 
-    // (2) in parallel: settings, hosts, pending, sync_state
-    const [settings, hosts, pending, syncState] = await Promise.all([
+    // (2) in parallel: settings, hosts, pending, sync_state (and layouts.json,
+    // a plugin file like settings)
+    const [settings, hosts, pending, syncState, layouts] = await Promise.all([
       this.backend.get_settings(),
       cliOk ? this.backend.hosts() : Promise.resolve(null),
       this.backend.pending(),
       this.backend.sync_state(),
+      this.backend.layouts(),
     ]);
     this.store.set({
       settings: isFailure(settings) ? null : settings.settings,
       hosts: hosts && !isFailure(hosts) ? hosts : null,
       pending: isFailure(pending) ? null : pending,
+      layouts: isFailure(layouts) ? {} : layouts.entries,
     });
     if (!isFailure(syncState)) {
       const run = runFromSyncState(syncState);
@@ -173,14 +197,36 @@ export class Controller {
     await this.refreshIgnored();
     this.store.set({ loaded: true });
     if (!cliOk) return; // steps 3-5 need the CLI
+    await this.finishLoad();
+  }
 
+  /**
+   * Step 1: read the CLI's version. `false` when it is missing, too old or
+   * could not be read at all; the last case leaves `cli` null and records
+   * `cliError`, which the panel offers a Retry for.
+   */
+  private async readCli(): Promise<boolean> {
+    const version = await this.backend.cli_version();
+    if (isFailure(version)) {
+      this.store.set({ cliError: errorText(version) });
+      return false;
+    }
+    this.store.set((s) => withCliVersion(s, version));
+    return this.state.cli?.state === "ok";
+  }
+
+  /** Steps 3-5, once the CLI is known to be there. */
+  private async finishLoad(): Promise<void> {
     // (3) the library, then owned-apps.json
     await this.loadLibrary();
     if (this.state.library !== "ready") return;
 
-    // (4) status + reachability (the layout walk is PR-7; the persistent
-    // restart row renders from `pending`)
+    // (4) status + reachability, then the layout walk when a sync's restart
+    // just happened (`pending.layout_walk`, spec 3.10); the persistent
+    // restart row renders from `pending`. The walk can take 90 s, so the
+    // load does not wait for it (it is kept from running twice by itself).
     await Promise.all([this.refreshStatus(), this.checkHost(false)]);
+    void this.layoutWalk();
   }
 
   /** Step 3: poll the library every 500 ms (60 s at most), then write owned-apps.json. */
@@ -260,6 +306,11 @@ export class Controller {
   async refreshSettings(): Promise<void> {
     const result = await this.backend.get_settings();
     if (!isFailure(result)) this.store.set({ settings: result.settings });
+  }
+
+  async refreshLayouts(): Promise<void> {
+    const result = await this.backend.layouts();
+    if (!isFailure(result)) this.store.set({ layouts: result.entries });
   }
 
   private async refreshIgnored(): Promise<void> {
@@ -403,7 +454,8 @@ export class Controller {
       }
     }
     this.store.set({ message });
-    await Promise.all([this.refreshStatus(), this.refreshHosts(), this.refreshIgnored()]);
+    // layouts.json too: a remove run deletes it
+    await Promise.all([this.refreshStatus(), this.refreshHosts(), this.refreshIgnored(), this.refreshLayouts()]);
   }
 
   private showPrompt(
@@ -594,6 +646,124 @@ export class Controller {
     return ok;
   }
 
+  // -------------------------------------------------------------------------
+  // the Stream button and controller layouts (spec 3.9, 3.10)
+
+  /** Is there a Stream button for this owned game right now? */
+  hasStream(steamAppid: number): boolean {
+    return this.state.streamMap.has(steamAppid);
+  }
+
+  /**
+   * A press of the Stream button on an owned game's library page: while
+   * anything is running only a toast; otherwise the layout copy (strategy
+   * `copy` and the Advanced toggle on), recorded, then the hidden shortcut
+   * is run through Steam. `false` when nothing was launched.
+   */
+  async streamPress(steamAppid: number): Promise<boolean> {
+    const shortcut = this.state.streamMap.get(steamAppid);
+    if (shortcut === undefined) return false;
+    if (this.state.inGame) {
+      this.ui.toast("Moonlight Sync", "Something is already running");
+      return false;
+    }
+    if (copyEnabled(this.state.settings)) await this.copyAndRecord(steamAppid, shortcut);
+    const ok = this.steam.runShortcut(shortcut);
+    if (!ok) this.ui.toast("Moonlight Sync", "The Stream shortcut is not loaded yet; restart Steam");
+    return ok;
+  }
+
+  /**
+   * *Choose layout* on a Titles row: Steam's own layout picker for the
+   * hidden shortcut, recorded as `picker` (under either strategy; under
+   * `picker` it is the only layout affordance). `false` when the client has
+   * no such method, in which case the pages hide the action.
+   */
+  async chooseLayout(shortcutAppid: number, realAppid: number): Promise<boolean> {
+    if (!this.steam.showControllerConfigurator(shortcutAppid)) return false;
+    await this.recordLayout(shortcutAppid, realAppid, "picker", null);
+    return true;
+  }
+
+  canChooseLayout(): boolean {
+    return this.steam.canChooseLayout();
+  }
+
+  private async copyAndRecord(realAppid: number, shortcutAppid: number): Promise<LayoutOutcome> {
+    const outcome = await copyLayout(realAppid, shortcutAppid, this.steam.input());
+    await this.recordLayout(shortcutAppid, realAppid, outcome.result, outcome.url);
+    return outcome;
+  }
+
+  private async recordLayout(
+    shortcutAppid: number,
+    realAppid: number,
+    result: LayoutResult,
+    url: string | null,
+  ): Promise<void> {
+    const recorded = await this.backend.record_layout(shortcutAppid, realAppid, result, url);
+    if (!isFailure(recorded)) this.store.set({ layouts: recorded.entries });
+  }
+
+  /**
+   * The post-restart walk (spec 3.10): when `pending.layout_walk` says a
+   * sync's restart just happened, copy the layout of every pair in the
+   * stream map once the shortcut list is loaded, then clear the flag. With
+   * the copy off (strategy `picker`, or the toggle) the flag is cleared at
+   * once. Never runs twice at the same time: a call while one is going
+   * returns that walk's promise.
+   */
+  layoutWalk(): Promise<void> {
+    if (!this.walking) {
+      this.walking = this.doWalk().finally(() => {
+        this.walking = null;
+      });
+    }
+    return this.walking;
+  }
+
+  private async doWalk(): Promise<void> {
+    if (!this.state.pending?.layout_walk) return;
+    if (!copyEnabled(this.state.settings)) {
+      await this.clearWalk();
+      return;
+    }
+    if (this.state.entries === null) {
+      // `status` has not answered (it failed, or has not run yet), so the
+      // stream map is empty for want of data rather than because there is
+      // nothing to walk. Leave pending.layout_walk set and do nothing: the
+      // next load, or the panel's Retry, walks once status is in.
+      return;
+    }
+    this.store.set({ walking: true });
+    try {
+      const pairs = walkPairs(this.state.streamMap);
+      // Readiness: every shortcut in the map resolves to an overview, polled
+      // every 2 s for at most 90 s (normally immediate).
+      const deadline = this.timing.now() + WALK_TIMEOUT_MS;
+      const unresolved = () => pairs.filter((pair) => !this.steam.overviewLoaded(pair.shortcutAppid));
+      while (unresolved().length && this.timing.now() < deadline) await this.timing.sleep(WALK_POLL_MS);
+      for (const { realAppid, shortcutAppid } of pairs) {
+        if (this.steam.overviewLoaded(shortcutAppid)) {
+          await this.copyAndRecord(realAppid, shortcutAppid);
+        } else {
+          console.warn(`Moonlight Sync: shortcut ${shortcutAppid} (Steam ${realAppid}) never loaded; layout not copied`);
+          await this.recordLayout(shortcutAppid, realAppid, "unavailable", null);
+        }
+        await this.timing.sleep(WALK_STEP_MS);
+      }
+      await this.clearWalk();
+    } finally {
+      this.store.set({ walking: false });
+    }
+  }
+
+  private async clearWalk(): Promise<void> {
+    const result = await this.backend.clear_pending("layout_walk");
+    if (!isFailure(result)) this.store.set({ pending: result });
+    else if (this.state.pending) this.store.set({ pending: { ...this.state.pending, layout_walk: false } });
+  }
+
   async setSettings(patch: SettingsPatch): Promise<Result> {
     const result = await this.backend.set_settings(patch);
     if (!isFailure(result)) this.store.set({ settings: result.settings });
@@ -612,16 +782,16 @@ export class Controller {
     }
   }
 
-  /** Re-read the CLI state (About after an install by hand). */
+  /**
+   * Re-read the CLI state: About's *Refresh* after an install by hand, and the
+   * panel's Retry when `cli_version()` itself failed. When the CLI turns out
+   * to be there and the load stopped short of it, the rest of the load order
+   * (hosts, the library, status, reachability) runs now.
+   */
   async refreshCli(): Promise<void> {
-    if (!this.loading) {
-      // The load order never got past step 1 (see doLoad): run all of it
-      // again rather than only re-reading the version.
-      await this.load();
-      return;
-    }
-    const version = await this.backend.cli_version();
-    if (isFailure(version)) this.store.set({ message: errorText(version) });
-    else this.store.set((s) => withCliVersion(s, version));
+    if (!(await this.readCli())) return;
+    if (this.state.library !== "waiting") return; // steps 3-5 already ran
+    if (!this.state.hosts) await this.refreshHosts();
+    await this.finishLoad();
   }
 }

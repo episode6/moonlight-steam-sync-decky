@@ -43,6 +43,13 @@ DEFAULT_SETTINGS: dict[str, Any] = {
 RESTART_COUNTDOWN_MAX = 30
 LAYOUT_STRATEGIES = ("copy", "picker")
 
+#: What one layout copy (or *Choose layout*) can record (spec 3.10).
+LAYOUT_RESULTS = ("copied", "kept", "unavailable", "picker")
+#: Non-Steam shortcuts live at and above this appid (the CLI's ``| 0x80000000``).
+SHORTCUT_APPID_FLOOR = 0x80000000
+
+DEFAULT_LAYOUTS: dict[str, Any] = {"version": 1, "entries": {}}
+
 DEFAULT_PENDING: dict[str, Any] = {
     "restart_needed": "none",
     "layout_walk": False,
@@ -212,6 +219,56 @@ class Store:
         return self.write_pending(pending)
 
     # -- layouts.json ----------------------------------------------------
+
+    def layouts(self) -> dict[str, Any]:
+        """``{"version": 1, "entries": {<shortcut appid>: {...}}}`` (spec 3.10).
+
+        The file is a record of results, not a source of truth, so one that
+        is missing, unparsable or not of that shape reads as empty rather
+        than failing the callable; the next ``record_layout`` rewrites it.
+        """
+        try:
+            data = read_json(self.path(LAYOUTS_FILE), DEFAULT_LAYOUTS)
+        except ValueError:
+            data = copy.deepcopy(DEFAULT_LAYOUTS)
+        entries = data.get("entries") if isinstance(data, dict) else None
+        if not isinstance(entries, dict):
+            entries = {}
+        return {"version": 1, "entries": entries}
+
+    def record_layout(
+        self,
+        shortcut_appid: int,
+        real_appid: int,
+        result: str,
+        url: str | None,
+        *,
+        when: str,
+    ) -> dict[str, Any]:
+        """Upsert one shortcut's entry atomically; returns the whole file."""
+        if isinstance(shortcut_appid, bool) or not isinstance(shortcut_appid, int):
+            raise SettingsError("shortcut_appid must be an integer")
+        if shortcut_appid < SHORTCUT_APPID_FLOOR:
+            raise SettingsError(
+                "shortcut_appid must be a non-Steam shortcut appid (0x80000000 or above)"
+            )
+        if isinstance(real_appid, bool) or not isinstance(real_appid, int) or real_appid <= 0:
+            raise SettingsError("real_appid must be a positive integer")
+        if real_appid >= SHORTCUT_APPID_FLOOR:
+            raise SettingsError("real_appid must be a Steam appid (below 0x80000000)")
+        if result not in LAYOUT_RESULTS:
+            raise SettingsError(f"result must be one of {', '.join(LAYOUT_RESULTS)}")
+        if url is not None and not isinstance(url, str):
+            raise SettingsError("url must be a string or null")
+        data = self.layouts()
+        data["entries"][str(shortcut_appid)] = {
+            "real_appid": real_appid,
+            "result": result,
+            "url": url or None,
+            "when": when,
+        }
+        write_json_atomic(self.path(LAYOUTS_FILE), data)
+        return data
 
     def delete_layouts(self) -> None:
         with contextlib.suppress(FileNotFoundError):

@@ -410,6 +410,12 @@ def test_stop_during_the_wait_under_both_sigint_modes(make_backend, mode) -> Non
     assert done["exit"] == (130 if mode == "immediate" else 2)
     assert done["commit"] is None  # nothing was written
     assert done["pending"]["restart_needed"] == "write"
+    if mode == "immediate":
+        # The interrupt landed before the write, so nothing was added: the
+        # *Last sync* row must not claim shortcuts that do not exist.
+        assert done["summary"]["added"] == 0
+        assert done["summary"]["replaced"] == 0
+        assert done["pending"]["last_summary"]["added"] == 0
     state = run(backend.sync_state())
     assert state["running"] is False
     assert state["awaiting_exit"] is False
@@ -431,6 +437,7 @@ def test_stop_outside_the_wait_ends_in_130(make_backend) -> None:
     done = backend.emitted.of("sync_done")[0]
     assert done["exit"] == 130
     assert done["summary"]["stop_reason"] == "interrupted"
+    assert done["summary"]["added"] == 0  # nothing reached shortcuts.vdf
     assert backend.emitted.relayed()[-1] == {
         "event": "error",
         "exit": 130,
@@ -438,6 +445,75 @@ def test_stop_outside_the_wait_ends_in_130(make_backend) -> None:
         "message": "interrupted; resume with the same command",
     }
     assert run(backend.stop_sync()) == {"ok": True, "running": False}
+
+
+@pytest.mark.scenario("full-sync")
+def test_stop_before_the_child_is_spawned(make_backend) -> None:
+    """The run is registered before its child exists; a stop there still stops it."""
+    backend = make_backend(env={"FAKE_CLI_SLEEP_MS": "300"})
+    owned(backend)
+
+    async def scenario() -> dict[str, Any]:
+        await backend.start_sync()
+        # stop_sync() never awaits anything, so _drive has not run yet: the
+        # run is "running" for the busy guard but run.proc is still None.
+        assert backend._run is not None and backend._run.proc is None
+        stopped = await backend.stop_sync()
+        await backend.wait_for_run()
+        return stopped
+
+    stopped = run(scenario())
+    assert stopped == {"ok": True, "running": True}
+    done = backend.emitted.of("sync_done")[0]
+    # 130 either way: the CLI handled the signal, or died from it before it
+    # could (no summary then) and the backend reported the stop honestly.
+    assert done["exit"] == 130
+    summary = done["summary"]
+    assert summary is None or summary["stop_reason"] == "interrupted"
+    assert done["pending"]["restart_needed"] == "none"  # nothing was written
+    assert run(backend.sync_state())["running"] is False
+
+
+@pytest.mark.scenario("full-sync")
+def test_a_spawn_failure_with_a_stop_pending_keeps_its_io_failure(make_backend) -> None:
+    """The "stopped before the CLI printed anything" override turns a
+    signalled death into a clean exit 130. It must not swallow a run that
+    never started at all: no child existed, so the OSError stands."""
+    backend = make_backend()
+    owned(backend)
+    # Started fine, so cli_ok stands; the interpreter is gone by the time the
+    # run spawns, which is what an OSError from create_subprocess_exec means.
+    backend.cli = ["/nonexistent/python3", "moonlight-steam-sync"]
+
+    async def scenario() -> None:
+        await backend.start_sync()
+        assert backend._run is not None and backend._run.proc is None
+        await backend.stop_sync()
+        await backend.wait_for_run()
+
+    run(scenario())
+    done = backend.emitted.of("sync_done")[0]
+    assert done["exit"] == 127
+    assert done["failure"]["error"] == "io"
+    assert "could not run the CLI" in done["failure"]["message"]
+    assert backend._run is not None and backend._run.spawned is False
+
+
+@pytest.mark.scenario("full-sync")
+def test_unload_before_the_child_is_spawned(make_backend) -> None:
+    """Unloading in the same window leaves no orphan behind."""
+    backend = make_backend(env={"FAKE_CLI_SLEEP_MS": "300"})
+    owned(backend)
+
+    async def scenario() -> None:
+        await backend.start_sync()
+        assert backend._run is not None and backend._run.proc is None
+        await backend.unload()
+
+    run(scenario())
+    assert backend._run is not None
+    assert backend._run.running is False
+    assert backend._run.exit == 130
 
 
 @pytest.mark.scenario("full-sync")
@@ -1082,10 +1158,74 @@ def test_pending_and_clear_pending(backend) -> None:
     assert run(backend.clear_pending("everything"))["error"] == "bad-request"
 
 
-def test_pr7_stubs(backend) -> None:
-    not_yet = {"ok": False, "error": "bad-request", "message": "not yet"}
-    assert run(backend.layouts()) == not_yet
-    assert run(backend.record_layout(1, 2, "copied", None)) == not_yet
+SHORTCUT = 0x80000000 + 42
+REAL = 1245620
+
+
+def test_layouts_empty_then_record_upserts_atomically(backend) -> None:
+    """layouts() / record_layout() over layouts.json (spec 3.7, 3.10)."""
+    path = Path(backend.settings_dir) / "layouts.json"
+    assert run(backend.layouts()) == {"ok": True, "version": 1, "entries": {}}
+    assert not path.exists()  # reading never creates it
+
+    first = run(backend.record_layout(SHORTCUT, REAL, "copied", "workshop://2810081311"))
+    assert first["ok"] is True and first["version"] == 1
+    entry = first["entries"][str(SHORTCUT)]
+    assert entry["real_appid"] == REAL
+    assert entry["result"] == "copied"
+    assert entry["url"] == "workshop://2810081311"
+    assert entry["when"].endswith("Z") and "T" in entry["when"]
+    assert json.loads(path.read_text()) == {"version": 1, "entries": first["entries"]}
+    assert not (Path(backend.settings_dir) / "layouts.json.tmp").exists()
+
+    # a second record for the same shortcut replaces it; another shortcut is added
+    second = run(backend.record_layout(SHORTCUT, REAL, "kept", "template://x.vdf"))
+    other = run(backend.record_layout(SHORTCUT + 1, 620, "unavailable", None))
+    assert second["entries"][str(SHORTCUT)]["result"] == "kept"
+    assert set(other["entries"]) == {str(SHORTCUT), str(SHORTCUT + 1)}
+    assert other["entries"][str(SHORTCUT + 1)] == {
+        "real_appid": 620,
+        "result": "unavailable",
+        "url": None,
+        "when": other["entries"][str(SHORTCUT + 1)]["when"],
+    }
+    picker = run(backend.record_layout(SHORTCUT, REAL, "picker", ""))
+    assert picker["entries"][str(SHORTCUT)]["url"] is None  # an empty URL is null
+    assert run(backend.layouts())["entries"] == picker["entries"]
+
+
+def test_record_layout_refuses_bad_arguments(backend) -> None:
+    path = Path(backend.settings_dir) / "layouts.json"
+    for args in (
+        (REAL, REAL, "copied", None),  # a Steam appid is not a shortcut
+        ("x", REAL, "copied", None),
+        (True, REAL, "copied", None),
+        (SHORTCUT, SHORTCUT, "copied", None),  # a shortcut is not a Steam game
+        (SHORTCUT, 0, "copied", None),
+        (SHORTCUT, REAL, "mirrored", None),
+        (SHORTCUT, REAL, "copied", 5),
+        (None, None, None, None),
+    ):
+        result = run(backend.record_layout(*args))
+        assert result["ok"] is False and result["error"] == "bad-request", args
+    assert not path.exists()
+
+
+def test_layouts_tolerates_a_broken_file(backend) -> None:
+    path = Path(backend.settings_dir) / "layouts.json"
+    path.write_text("{not json")
+    assert run(backend.layouts()) == {"ok": True, "version": 1, "entries": {}}
+    path.write_text('{"version": 1, "entries": [1, 2]}')
+    assert run(backend.layouts())["entries"] == {}
+    recorded = run(backend.record_layout(SHORTCUT, REAL, "copied", "workshop://1"))
+    assert list(recorded["entries"]) == [str(SHORTCUT)]
+    assert json.loads(path.read_text())["entries"] == recorded["entries"]
+
+
+def test_record_layout_is_logged(backend) -> None:
+    run(backend.record_layout(SHORTCUT, REAL, "copied", "workshop://1"))
+    log = Path(backend.log_path).read_text()
+    assert f"layout copied for shortcut {SHORTCUT} (Steam {REAL}): workshop://1" in log
 
 
 def test_log_tail(backend) -> None:

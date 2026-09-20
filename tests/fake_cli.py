@@ -220,7 +220,15 @@ def _load(path: str) -> list[dict]:
     return events
 
 
-def _interrupted(subcommand: str, events: list[dict]) -> int:
+def _interrupted(subcommand: str, events: list[dict], *, wrote: bool = False) -> int:
+    """The summary a run interrupted by SIGINT prints, then its error.
+
+    The counts come from the fixture's own summary, but ``added`` /
+    ``replaced`` / ``removed`` describe what reached ``shortcuts.vdf``: unless
+    the run already printed a ``commit`` with ``written: true`` they are zero,
+    as the real CLI's are. ``filled`` is kept: art files are written as the run
+    goes and survive the interrupt.
+    """
     summary = next((e for e in events if e.get("event") == "summary"), None)
     fields = (
         dict(summary)
@@ -237,6 +245,8 @@ def _interrupted(subcommand: str, events: list[dict]) -> int:
             "pending": 0,
         }
     )
+    if not wrote:
+        fields.update(added=0, replaced=0, removed=0)
     fields.update(stopped_early=True, stop_reason="interrupted", exit=130)
     if subcommand == "sync":
         # every real `sync` summary carries added_by_kind, zeros included
@@ -251,7 +261,7 @@ def _interrupted(subcommand: str, events: list[dict]) -> int:
     return 130
 
 
-def _wait_for_steam(subcommand: str, events: list[dict]) -> int | None:
+def _wait_for_steam(subcommand: str, events: list[dict], *, wrote: bool = False) -> int | None:
     """``None`` when Steam "exited"; else the exit code the fake ends with."""
     gone = os.environ.get("FAKE_CLI_STEAM_GONE_FILE")
     limit = float(os.environ.get("FAKE_CLI_WAIT_S", "5"))
@@ -264,7 +274,7 @@ def _wait_for_steam(subcommand: str, events: list[dict]) -> int | None:
                 deferred = True
                 _err(f"{subcommand}: interrupt deferred until the wait ends")
             else:
-                return _interrupted(subcommand, events)
+                return _interrupted(subcommand, events, wrote=wrote)
         if not deferred and gone and os.path.exists(gone):
             return None
         time.sleep(0.05)
@@ -285,23 +295,26 @@ def _replay(subcommand: str, path: str) -> int:
     events = _load(path)
     sleep_s = int(os.environ.get("FAKE_CLI_SLEEP_MS", "0")) / 1000.0
     noise = os.environ.get("FAKE_CLI_NOISE")
+    wrote = False  # a `commit` with written: true has been printed
     for index, event in enumerate(events):
         if INTERRUPTED:
-            return _interrupted(subcommand, events)
+            return _interrupted(subcommand, events, wrote=wrote)
         _out(json.dumps(event))
         _err(f"{subcommand}: {event.get('event')}")
+        if event.get("event") == "commit" and event.get("written") is True:
+            wrote = True
         if index == 0 and noise:
             _out(noise)
         if index == 0 and os.environ.get("FAKE_CLI_NOISE_BYTES"):
             _out("x" * int(os.environ["FAKE_CLI_NOISE_BYTES"]))
         if event.get("event") == "awaiting-steam-exit":
-            code = _wait_for_steam(subcommand, events)
+            code = _wait_for_steam(subcommand, events, wrote=wrote)
             if code is not None:
                 return code
         if sleep_s:
             _sleep(sleep_s)
     if INTERRUPTED:
-        return _interrupted(subcommand, events)
+        return _interrupted(subcommand, events, wrote=wrote)
     code = 0
     errors = [e for e in events if e.get("event") == "error"]
     summaries = [e for e in events if e.get("event") == "summary"]

@@ -22,6 +22,11 @@ node_modules
 bower_components
 .pnpm-store
 
+# There is deliberately no workspace here (see AGENTS.md): with one, a
+# `pnpm install` inside probes/steam-input-probe resolves to the root instead,
+# and pnpm 9 refuses to run any script from a workspace with no `packages`.
+pnpm-workspace.yaml
+
 # Editors / OS
 .idea
 *.iml

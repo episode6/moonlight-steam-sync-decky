@@ -60,15 +60,20 @@ function Row({
   row,
   locked,
   ignoring,
+  canChooseLayout,
   onChangeMatch,
   onIgnore,
+  onChooseLayout,
 }: {
   row: TitleRow;
   /** A run is going: both edits are held until it finishes. */
   locked: boolean;
   ignoring: boolean;
+  /** `SteamClient.Apps.ShowControllerConfigurator` exists (else the action is hidden, spec 3.10). */
+  canChooseLayout: boolean;
   onChangeMatch(): void;
   onIgnore(): void;
+  onChooseLayout(): void;
 }) {
   return (
     <Focusable
@@ -98,12 +103,18 @@ function Row({
               {chip.text}
             </Pill>
           ))}
+          {row.layout ? <span style={{ marginLeft: 2 }}>· layout: {row.layout}</span> : null}
         </div>
       </div>
       <Pill tone={row.badge.tone}>{row.badge.text}</Pill>
       {!row.ignored ? (
         <DialogButton style={SMALL} disabled={locked} onClick={onChangeMatch}>
           Change match
+        </DialogButton>
+      ) : null}
+      {row.layoutTarget && canChooseLayout ? (
+        <DialogButton style={SMALL} onClick={onChooseLayout}>
+          Choose layout
         </DialogButton>
       ) : null}
       {row.ignoredBy === "config" ? (
@@ -136,10 +147,13 @@ function headline(data: TitlesData, rows: readonly TitleRow[]): string {
  * every title the active host publishes, joined from `list` and `status`,
  * with what the next sync does with it. Rows render 50 at a time with a
  * load-more row; *Change match* opens the picker, *Ignore* / *Unignore*
- * edits `ignore.json`. Nothing here restarts Steam: a pin or an ignore
- * takes effect on the next sync. While a run is going the list comes from
- * the CLI's per-host cache (no live `list` racing the run), both row edits
- * are locked, and the page refreshes when the run finishes.
+ * edits `ignore.json`. A Stream button's row also shows its last layout
+ * result ("copied" / "own layout" / "Steam default" / "unavailable", spec
+ * 3.10) and has *Choose layout*, Steam's own picker for the hidden shortcut
+ * (hidden when the client lacks it). Nothing here restarts Steam: a pin or
+ * an ignore takes effect on the next sync. While a run is going the list
+ * comes from the CLI's per-host cache (no live `list` racing the run), both
+ * row edits are locked, and the page refreshes when the run finishes.
  */
 export function TitlesPage() {
   const state = useStore(controller.store);
@@ -177,7 +191,12 @@ export function TitlesPage() {
   }, [running, ready, active, refresh]);
 
   const data = load?.ok && load.data.host === active ? load.data : null;
-  const rows = useMemo(() => (data ? joinTitles(data.apps, data.entries, data.ignored) : []), [data]);
+  const layouts = state.layouts;
+  const rows = useMemo(
+    () => (data ? joinTitles(data.apps, data.entries, data.ignored, layouts) : []),
+    [data, layouts],
+  );
+  const canChooseLayout = controller.canChooseLayout();
   const shown = useMemo(() => filterRows(rows, filter, showParked), [rows, filter, showParked]);
   const counts = useMemo(() => filterCounts(rows, showParked), [rows, showParked]);
   const page = pageOf(shown, pages);
@@ -302,8 +321,13 @@ export function TitlesPage() {
             row={row}
             locked={running}
             ignoring={ignoring === row.name}
+            canChooseLayout={canChooseLayout}
             onChangeMatch={() => changeMatch(row)}
             onIgnore={() => void toggleIgnore(row)}
+            onChooseLayout={() => {
+              const target = row.layoutTarget;
+              if (target) void controller.chooseLayout(target.shortcutAppid, target.realAppid);
+            }}
           />
         ))}
         {page.hasMore ? (
