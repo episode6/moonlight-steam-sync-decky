@@ -6,7 +6,8 @@ import { QuickAccess } from "./components/QuickAccess";
 import { SettingsPage } from "./components/SettingsPage";
 import { SETTINGS_ROUTE, TITLES_ROUTE, controller } from "./instance";
 import type { SyncDonePayload, SyncEventPayload } from "./lib/cli";
-import { watchRunningApps } from "./lib/steam";
+import { watchControllers, watchRunningApps } from "./lib/steam";
+import { patchLibraryApp } from "./routes/libraryApp";
 
 function runningAppids(): number[] {
   try {
@@ -56,7 +57,24 @@ export default definePlugin(() => {
     console.warn("Moonlight Sync: could not watch running apps", error);
   }
 
-  // The load order runs here, not when the panel opens (spec 3.8).
+  // The controller list, for the Deck controller's index (spec 3.10).
+  let unwatchControllers: () => void = () => undefined;
+  try {
+    unwatchControllers = watchControllers();
+  } catch (error) {
+    console.warn("Moonlight Sync: could not watch controllers", error);
+  }
+
+  // The Stream button on owned games' library pages (spec 3.9).
+  let unpatchLibrary: () => void = () => undefined;
+  try {
+    unpatchLibrary = patchLibraryApp();
+  } catch (error) {
+    console.warn("Moonlight Sync: could not patch the library page", error);
+  }
+
+  // The load order runs here, not when the panel opens (spec 3.8); it starts
+  // the post-restart layout walk when one is pending (spec 3.10).
   void controller.load();
 
   return {
@@ -68,6 +86,8 @@ export default definePlugin(() => {
       removeEventListener("sync_event", onEvent);
       removeEventListener("sync_done", onDone);
       unwatch();
+      unwatchControllers();
+      unpatchLibrary();
       routerHook.removeRoute(SETTINGS_ROUTE);
     },
   };

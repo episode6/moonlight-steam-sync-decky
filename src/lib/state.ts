@@ -1,7 +1,8 @@
 /**
  * The frontend's one store (spec 3.6): CLI state, settings, hosts, the
  * pending flags, the last `status` snapshot and what it derives (counters,
- * the stream map), host reachability, and the progress of the current run.
+ * the stream map), host reachability, the progress of the current run, and
+ * the layout results of `layouts.json` (spec 3.10).
  *
  * Pure: reducers are plain functions over plain data and `Store` is a tiny
  * subscribe/notify container, so everything here is unit-tested with vitest.
@@ -15,6 +16,7 @@ import type {
   EntryEvent,
   HostCheck,
   HostsInfo,
+  LayoutEntry,
   Pending,
   PlanEvent,
   RunKind,
@@ -238,6 +240,10 @@ export interface AppState {
   /** A one-line outcome under the panel's buttons ("Stopped; sync again to resume"). */
   message: string | null;
   inGame: boolean;
+  /** `layouts.json`: the last layout result per hidden shortcut, keyed by its appid (spec 3.10). */
+  layouts: Record<string, LayoutEntry>;
+  /** The post-restart layout walk is running. */
+  walking: boolean;
 }
 
 export function initialState(): AppState {
@@ -260,11 +266,18 @@ export function initialState(): AppState {
     run: null,
     message: null,
     inGame: false,
+    layouts: {},
+    walking: false,
   };
 }
 
 export function withCliVersion(state: AppState, info: CliVersion): AppState {
   return { ...state, cliVersion: info, cli: cliStatus(info), cliError: null };
+}
+
+/** The layout record for a hidden shortcut, or `null` (spec 3.10). */
+export function layoutEntryFor(state: Pick<AppState, "layouts">, shortcutAppid: number): LayoutEntry | null {
+  return state.layouts[String(shortcutAppid)] ?? null;
 }
 
 export function withStatus(state: AppState, entries: EntryEvent[]): AppState {

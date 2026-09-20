@@ -12,7 +12,8 @@
  *   pin would produce, the current match marked, and a final *No match*.
  */
 
-import type { AppEvent, CandidateEvent, EntryEvent, Match, PinnedEvent, SameGameAs } from "./cli";
+import type { AppEvent, CandidateEvent, EntryEvent, LayoutEntry, Match, PinnedEvent, SameGameAs } from "./cli";
+import { layoutStatusText } from "./layouts";
 
 // ---------------------------------------------------------------------------
 // rows
@@ -58,6 +59,14 @@ export interface TitleRow {
   unmatched: boolean;
   duplicateOf: string | null;
   sameGameAs: SameGameAs[];
+  /**
+   * The last layout result for a Stream button's hidden shortcut
+   * ("copied" / "own layout" / "Steam default" / "unavailable" / "picker
+   * opened", spec 3.10); `null` for other rows and before any copy.
+   */
+  layout: string | null;
+  /** The hidden shortcut and the owned game a *Choose layout* / copy would work on. */
+  layoutTarget: { shortcutAppid: number; realAppid: number } | null;
 }
 
 export const BADGES: Record<BadgeId, Badge> = {
@@ -110,6 +119,19 @@ interface RowInput {
   sameGameAs: SameGameAs[];
   entry: EntryEvent | null;
   ignoredBy: "plugin" | "config" | null;
+  layouts: Readonly<Record<string, LayoutEntry>>;
+}
+
+/**
+ * The hidden shortcut a layout copy works on: a stream row whose entry is
+ * hidden, not parked, and matched to a Steam appid (the stream map's rule).
+ */
+export function layoutTargetOf(kind: RowKind, entry: EntryEvent | null): TitleRow["layoutTarget"] {
+  const steam = entry?.match?.steam_appid;
+  if (kind !== "stream" || !entry || !entry.hidden || entry.parked || entry.client || typeof steam !== "number") {
+    return null;
+  }
+  return { shortcutAppid: entry.appid, realAppid: steam };
 }
 
 function buildRow(input: RowInput): TitleRow {
@@ -117,6 +139,8 @@ function buildRow(input: RowInput): TitleRow {
   const ignored = ignoredBy !== null;
   const kind: RowKind = ignored ? "ignored" : input.kind;
   const unmatched = kind === "shortcut" && !hasIds(match);
+  const layoutTarget = layoutTargetOf(kind, entry);
+  const layout = layoutTarget ? layoutStatusText(input.layouts[String(layoutTarget.shortcutAppid)]) : null;
 
   let badge: Badge;
   if (kind === "shortcut") badge = unmatched ? BADGES.unmatched : BADGES.shortcut;
@@ -145,6 +169,8 @@ function buildRow(input: RowInput): TitleRow {
     unmatched,
     duplicateOf,
     sameGameAs,
+    layout,
+    layoutTarget,
   };
 }
 
@@ -161,12 +187,14 @@ export function compareNames(a: string, b: string): number {
  * parked entry `list` did not mention. `ignoreFile` is `ignore.json`: a name
  * in it is ignored (and can be unignored) even before the next `list` says
  * so; a name `list` calls ignored that is not in it is ignored by the CLI's
- * `config.toml`, which the plugin never writes.
+ * `config.toml`, which the plugin never writes. `layouts` is `layouts.json`'s
+ * `entries`, for the stream rows' layout text.
  */
 export function joinTitles(
   apps: readonly AppEvent[],
   entries: readonly EntryEvent[],
   ignoreFile: readonly string[] = [],
+  layouts: Readonly<Record<string, LayoutEntry>> = {},
 ): TitleRow[] {
   const byName = new Map<string, EntryEvent>();
   for (const entry of entries) {
@@ -189,6 +217,7 @@ export function joinTitles(
         sameGameAs: app.same_game_as ?? [],
         entry: byName.get(app.name) ?? null,
         ignoredBy,
+        layouts,
       }),
     );
   }
@@ -205,6 +234,7 @@ export function joinTitles(
         sameGameAs: [],
         entry,
         ignoredBy: inFile.has(entry.name) ? "plugin" : null,
+        layouts,
       }),
     );
   }

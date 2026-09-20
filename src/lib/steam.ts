@@ -1,14 +1,19 @@
 /**
- * The Steam-client touchpoints (spec 3.9): the owned-apps map, the current
- * user's steamid3, running a shortcut, and shutting Steam down. No layout
- * code (that is PR-7), and nothing that writes a Steam file: the plugin never
+ * The Steam-client touchpoints (spec 3.9, 3.10): the owned-apps map, the
+ * current user's steamid3, running a shortcut, shutting Steam down, the
+ * running-app watch, and the Steam Input seam for the layout copy (read a
+ * selection, set a selection, the Deck controller's index by type) plus
+ * Steam's layout picker. Nothing here writes a Steam file: the plugin never
  * calls AddShortcut, RemoveShortcut, SetShortcutName, SetAppLaunchOptions,
  * SetAppHiddenState or SetCustomArtworkForApp.
  *
  * Only globals are used here (`SteamClient`, `collectionStore`, `appStore`,
- * `App`), so this module imports nothing from `@decky/*`; the pure helpers
- * (`buildOwnedMap`, `steamId3FromSteam64`) are unit-tested.
+ * `controllerStore`, `App`), so this module imports nothing from `@decky/*`;
+ * the pure helpers (`buildOwnedMap`, `steamId3FromSteam64`, and
+ * `layouts.ts`'s `copyLayout` / `deckControllerIndexFrom`) are unit-tested.
  */
+
+import { deckControllerIndexFrom, type ControllerLike, type LayoutConfig, type SteamInput } from "./layouts";
 
 /** The steam64 of account id 0 (`steam64 - this = steamid3`). */
 export const STEAM64_BASE = 76561197960265728n;
@@ -122,4 +127,82 @@ export function watchRunningApps(
     onChange(running.size > 0);
   });
   return () => registration.unregister();
+}
+
+// ---------------------------------------------------------------------------
+// controller layouts (spec 3.10)
+
+interface ControllerStoreLike {
+  GetControllers?(): ControllerLike[];
+  /** Steam's `EControllerType -> "controller_…"` mapping, when the store exposes it. */
+  GetControllerTypeString?(type: number): string;
+}
+
+/** The last list `RegisterForControllerListChanges` delivered (the fallback when `controllerStore` is not a global). */
+let lastControllers: ControllerLike[] | null = null;
+
+/**
+ * Keep `lastControllers` current from `SteamClient.Input.RegisterForControllerListChanges`,
+ * so the Deck controller can be found even when `controllerStore` is not
+ * exposed as a global. Returns the unregister function.
+ */
+export function watchControllers(): () => void {
+  const registration = SteamClient.Input.RegisterForControllerListChanges((controllers) => {
+    lastControllers = Array.isArray(controllers) ? (controllers as ControllerLike[]) : null;
+  });
+  return () => registration.unregister();
+}
+
+/** The Deck's built-in controller index, by type (spec 2.2; it is not 0), or `null`. */
+export function deckControllerIndex(): number | null {
+  const store = globals().controllerStore as ControllerStoreLike | undefined;
+  let listed: ControllerLike[] | null = null;
+  try {
+    listed = store?.GetControllers?.() ?? null;
+  } catch {
+    listed = null;
+  }
+  const controllers = listed ?? lastControllers;
+  const typeString = typeof store?.GetControllerTypeString === "function" ? store.GetControllerTypeString.bind(store) : undefined;
+  return deckControllerIndexFrom(controllers, typeString) ?? deckControllerIndexFrom(controllers);
+}
+
+/** The Steam Input seam of `layouts.ts`, over `SteamClient.Input`. */
+export function steamInput(): SteamInput {
+  return {
+    deckControllerIndex,
+    async getConfig(appid, controllerIndex) {
+      const config = (await SteamClient.Input.GetConfigForAppAndController(appid, controllerIndex)) as
+        | LayoutConfig
+        | null
+        | undefined;
+      return config ?? null;
+    },
+    async setConfig(appid, controllerIndex, url) {
+      await SteamClient.Input.SetSelectedConfigForApp(appid, controllerIndex, url, false);
+    },
+  };
+}
+
+/** The shortcut list is loaded as far as this appid is concerned **[verify V5]**. */
+export function overviewLoaded(appid: number): boolean {
+  const store = globals().appStore as AppStoreLike | undefined;
+  return !!store?.GetAppOverviewByAppID(appid);
+}
+
+interface AppsWithConfigurator {
+  ShowControllerConfigurator?: (appid: number) => void;
+}
+
+/** `SteamClient.Apps.ShowControllerConfigurator` exists on this client **[verify]**. */
+export function controllerConfiguratorAvailable(): boolean {
+  const apps = (globals().SteamClient as { Apps?: AppsWithConfigurator } | undefined)?.Apps;
+  return typeof apps?.ShowControllerConfigurator === "function";
+}
+
+/** Open Steam's layout picker for a (hidden) shortcut; `false` when the client has no such method. */
+export function showControllerConfigurator(appid: number): boolean {
+  if (!controllerConfiguratorAvailable()) return false;
+  SteamClient.Apps.ShowControllerConfigurator(appid);
+  return true;
 }

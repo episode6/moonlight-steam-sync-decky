@@ -345,6 +345,22 @@ export interface KeyState {
   config_parse_error: boolean;
 }
 
+/** What one layout copy (or *Choose layout*) recorded for a hidden shortcut (spec 3.10). */
+export type LayoutResult = "copied" | "kept" | "unavailable" | "picker";
+
+export interface LayoutEntry {
+  real_appid: number;
+  result: LayoutResult;
+  url: string | null;
+  when: string;
+}
+
+/** `layouts.json`: `entries` keyed by the shortcut appid as a string. */
+export interface LayoutsInfo {
+  version: number;
+  entries: Record<string, LayoutEntry>;
+}
+
 export interface ListResult {
   apps: AppEvent[];
   host: string | null;
@@ -409,6 +425,15 @@ export interface Backend {
   unpin(name: string): Promise<Result<{ pinned: PinnedEvent; notes: string[] }>>;
   /** Add or remove one exact name in `ignore.json` (sorted, idempotent). */
   set_ignored(name: string, ignored: boolean): Promise<Result<{ ignored: string[] }>>;
+  /** `layouts.json` (spec 3.10). */
+  layouts(): Promise<Result<LayoutsInfo>>;
+  /** Upsert one shortcut's layout result atomically; answers with the whole file. */
+  record_layout(
+    shortcut_appid: number,
+    real_appid: number,
+    result: LayoutResult,
+    url: string | null,
+  ): Promise<Result<LayoutsInfo>>;
 }
 
 /** `@decky/api`'s `callable`, as far as this module needs it. */
@@ -448,6 +473,8 @@ const CALLABLES = [
   "pin",
   "unpin",
   "set_ignored",
+  "layouts",
+  "record_layout",
 ] as const satisfies readonly (keyof Backend)[];
 
 /**

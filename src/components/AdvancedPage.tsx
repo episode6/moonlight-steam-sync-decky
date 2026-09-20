@@ -1,17 +1,23 @@
 import { ButtonItem, ConfirmModal, SliderField, ToggleField, showModal } from "@decky/ui";
 
 import { controller } from "../instance";
+import { layoutStrategy } from "../lib/layouts";
 import { actionsReady } from "../lib/state";
 import { useStore } from "./useStore";
 
 /**
- * Settings → Advanced (spec 3.8): the layout-copy toggle (read by PR-7), the
- * restart countdown, and *Remove everything this plugin created*.
+ * Settings → Advanced (spec 3.8): the layout-copy toggle (spec 3.10: read on
+ * every Stream press and by the post-restart walk), the restart countdown,
+ * and *Remove everything this plugin created*.
  */
 export function AdvancedPage() {
   const state = useStore(controller.store);
   const settings = state.settings;
   const entries = state.entries?.length ?? null;
+  const picker = layoutStrategy(settings) === "picker";
+  const copyDescription = picker
+    ? "Off for this device: settings.json sets layout_strategy to \"picker\", so layouts are only chosen by hand (Titles → Choose layout)"
+    : "When a hidden Stream shortcut has no layout of its own, give it the one chosen for the real game (on each Stream press and after a sync's restart)";
 
   const removeAll = () =>
     showModal(
@@ -31,9 +37,9 @@ export function AdvancedPage() {
     <div>
       <ToggleField
         label="Copy controller layouts from the Steam game"
-        description="When a hidden shortcut has no layout of its own, give it the one chosen for the real game"
+        description={copyDescription}
         checked={!!settings?.copy_layouts}
-        disabled={!settings}
+        disabled={!settings || picker}
         onChange={(checked) => void controller.setSettings({ copy_layouts: checked })}
       />
       <SliderField

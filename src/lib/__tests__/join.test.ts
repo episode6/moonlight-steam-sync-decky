@@ -12,6 +12,7 @@ import {
   filterCounts,
   filterRows,
   joinTitles,
+  layoutTargetOf,
   loadMoreLabel,
   matchSummary,
   noMatchRow,
@@ -447,5 +448,49 @@ describe("EntryEvent typing sanity", () => {
   it("the status fixture has the client entry the join skips", () => {
     const client: EntryEvent | undefined = entries.find((e) => e.client);
     expect(client?.name).toBe("Moonlight");
+  });
+});
+
+describe("the layout text per row (spec 3.10)", () => {
+  const when = "2026-09-18T14:02:00Z";
+  const layouts = {
+    "2718281828": { real_appid: 2379780, result: "copied" as const, url: "workshop://1", when },
+    "2987654321": { real_appid: 1244090, result: "kept" as const, url: "template://sea.vdf", when },
+  };
+
+  it("stream rows carry copied / own layout / Steam default / unavailable from layouts.json", () => {
+    const rows = joinTitles(apps, entries, [], layouts);
+    expect(byName(rows, "Balatro").layout).toBe("copied");
+    expect(byName(rows, "Sea of Stars").layout).toBe("own layout");
+    const kept = joinTitles(apps, entries, [], {
+      "2718281828": { real_appid: 2379780, result: "kept", url: "default://balatro", when },
+    });
+    expect(byName(kept, "Balatro").layout).toBe("Steam default");
+    const unavailable = joinTitles(apps, entries, [], {
+      "2718281828": { real_appid: 2379780, result: "unavailable", url: null, when },
+    });
+    expect(byName(unavailable, "Balatro").layout).toBe("unavailable");
+    const picker = joinTitles(apps, entries, [], {
+      "2718281828": { real_appid: 2379780, result: "picker", url: null, when },
+    });
+    expect(byName(picker, "Balatro").layout).toBe("picker opened");
+  });
+
+  it("is null before any copy and for rows that have no hidden shortcut", () => {
+    const rows = joinTitles(apps, entries, [], layouts);
+    expect(byName(rowsOf(), "Balatro").layout).toBeNull(); // no layouts.json yet
+    for (const name of ["Hades II", "Tunic", "Desktop", "Sea of Stars (GOG)", "Spiritfarer"]) {
+      expect(byName(rows, name).layout).toBeNull();
+      expect(byName(rows, name).layoutTarget).toBeNull();
+    }
+  });
+
+  it("names the pair Choose layout and the copy work on", () => {
+    const rows = joinTitles(apps, entries, [], layouts);
+    expect(byName(rows, "Balatro").layoutTarget).toEqual({ shortcutAppid: 2718281828, realAppid: 2379780 });
+    expect(byName(rows, "Sea of Stars").layoutTarget).toEqual({ shortcutAppid: 2987654321, realAppid: 1244090 });
+    expect(layoutTargetOf("stream", null)).toBeNull();
+    expect(layoutTargetOf("shortcut", entries[0])).toBeNull();
+    expect(layoutTargetOf("stream", { ...entries[0], parked: true })).toBeNull();
   });
 });

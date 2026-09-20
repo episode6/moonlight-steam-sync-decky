@@ -10,7 +10,16 @@ import { showModal } from "@decky/ui";
 import { RestartModal } from "./components/RestartModal";
 import { makeBackend, type CallableFactory } from "./lib/cli";
 import { Controller, type UiPort } from "./lib/controller";
-import { currentSteamId3, ownedApps, runShortcut, shutdownSteam } from "./lib/steam";
+import {
+  controllerConfiguratorAvailable,
+  currentSteamId3,
+  overviewLoaded,
+  ownedApps,
+  runShortcut,
+  showControllerConfigurator,
+  shutdownSteam,
+  steamInput,
+} from "./lib/steam";
 
 export const backend = makeBackend(callable as CallableFactory);
 
@@ -26,7 +35,16 @@ const ui: UiPort = {
 
 export const controller = new Controller(
   backend,
-  { ownedApps, currentSteamId3, runShortcut, shutdownSteam },
+  {
+    ownedApps,
+    currentSteamId3,
+    runShortcut,
+    shutdownSteam,
+    input: steamInput,
+    overviewLoaded,
+    canChooseLayout: controllerConfiguratorAvailable,
+    showControllerConfigurator,
+  },
   ui,
 );
 

@@ -10,6 +10,7 @@ import type {
 } from "./cli";
 import { Controller, type RestartPrompt, type SteamPort, type UiPort } from "./controller";
 import { eventsOf, lastOf } from "./events";
+import type { SteamInput } from "./layouts";
 import { restartRowView } from "./state";
 
 const PENDING: Pending = {
@@ -86,6 +87,12 @@ function fakeBackend(calls: Calls, answers: Partial<Record<keyof Backend, unknow
     stop_sync: { ok: true, running: true },
     clear_pending: { ok: true, ...PENDING },
     set_host: { ok: true, active: "OFFICE-PC" },
+    layouts: { ok: true, version: 1, entries: {} },
+    // upserts like the backend does, answering with the whole file
+    record_layout: (shortcut: number, real: number, result: string, url: string | null) => {
+      layoutsFile[String(shortcut)] = { real_appid: real, result, url, when: "2026-09-18T14:02:00Z" };
+      return { ok: true, version: 1, entries: { ...layoutsFile } };
+    },
   };
   return new Proxy({} as Backend, {
     get(_target, name: string) {
@@ -98,11 +105,38 @@ function fakeBackend(calls: Calls, answers: Partial<Record<keyof Backend, unknow
   });
 }
 
+/** A scripted Steam Input: a selection per appid, and a log of every set. */
+class FakeInput implements SteamInput {
+  index: number | null = 15;
+  urls = new Map<number, string>();
+  sets: [number, number, string][] = [];
+  /** When set, `setConfig` "sticks" this URL instead of the requested one. */
+  sticksAs: string | null = null;
+  throwOnSet = false;
+  deckControllerIndex() {
+    return this.index;
+  }
+  async getConfig(appid: number) {
+    const URL = this.urls.get(appid);
+    return URL === undefined ? null : { URL };
+  }
+  async setConfig(appid: number, idx: number, url: string) {
+    if (this.throwOnSet) throw new Error("Steam Input refused");
+    this.sets.push([appid, idx, url]);
+    this.urls.set(appid, this.sticksAs ?? url);
+  }
+}
+
 class FakeSteam implements SteamPort {
   apps: Record<string, string> | null = { "2379780": "Balatro", "1244090": "Sea of Stars" };
   steamid3: number | null = 12345678;
   shutdowns = 0;
   launched: number[] = [];
+  steamInput = new FakeInput();
+  /** Shortcut appids whose overview is loaded (`null` = every one). */
+  loaded: Set<number> | null = null;
+  configurator = true;
+  configuratorOpened: number[] = [];
   ownedApps() {
     return this.apps;
   }
@@ -115,6 +149,20 @@ class FakeSteam implements SteamPort {
   }
   shutdownSteam() {
     this.shutdowns++;
+  }
+  input() {
+    return this.steamInput;
+  }
+  overviewLoaded(appid: number) {
+    return this.loaded === null || this.loaded.has(appid);
+  }
+  canChooseLayout() {
+    return this.configurator;
+  }
+  showControllerConfigurator(appid: number) {
+    if (!this.configurator) return false;
+    this.configuratorOpened.push(appid);
+    return true;
   }
 }
 
@@ -155,11 +203,14 @@ function done(kind: RunKind, events: CliEvent[], exit: number, pending: Partial<
 let calls: Calls;
 let steam: FakeSteam;
 let ui: FakeUi;
+/** What the fake backend's `record_layout` has written (reset per test). */
+let layoutsFile: Record<string, { real_appid: number; result: string; url: string | null; when: string }>;
 
 beforeEach(() => {
   calls = [];
   steam = new FakeSteam();
   ui = new FakeUi();
+  layoutsFile = {};
 });
 
 const names = () => calls.map(([name]) => name);
@@ -170,7 +221,7 @@ describe("load order (spec 3.8)", () => {
     await controller.load();
     const order = names();
     expect(order[0]).toBe("cli_version");
-    expect(order.slice(1, 5).sort()).toEqual(["get_settings", "hosts", "pending", "sync_state"]);
+    expect(order.slice(1, 6).sort()).toEqual(["get_settings", "hosts", "layouts", "pending", "sync_state"]);
     expect(order.indexOf("write_owned_apps")).toBeLessThan(order.indexOf("status"));
     expect(order.indexOf("write_owned_apps")).toBeLessThan(order.indexOf("check_host"));
     expect(calls.find(([n]) => n === "write_owned_apps")?.[1]).toEqual([
@@ -813,5 +864,220 @@ describe("the Titles page (spec 3.8)", () => {
     expect(calls).toEqual([["set_ignored", ["Tunic", true]]]);
     expect(controller.state.ignoredCount).toBe(2);
     expect((reach() as { ignored?: number }).ignored).toBeUndefined();
+  });
+});
+
+describe("the Stream button and controller layouts (spec 3.9, 3.10)", () => {
+  const BALATRO = 2379780;
+  const BALATRO_SHORTCUT = 2718281828;
+  const SEA = 1244090;
+  const SEA_SHORTCUT = 2987654321;
+
+  async function loaded(answers: Partial<Record<keyof Backend, unknown>> = {}) {
+    const controller = new Controller(fakeBackend(calls, answers), steam, ui, instantTiming());
+    await controller.load();
+    await controller.layoutWalk();
+    calls.length = 0;
+    return controller;
+  }
+
+  const recorded = () => calls.filter(([n]) => n === "record_layout").map(([, args]) => args);
+
+  it("a press copies the layout, records it and runs the hidden shortcut", async () => {
+    const controller = await loaded();
+    steam.steamInput.urls.set(BALATRO, "workshop://12345");
+    expect(await controller.streamPress(BALATRO)).toBe(true);
+    expect(steam.steamInput.sets).toEqual([[BALATRO_SHORTCUT, 15, "workshop://12345"]]);
+    expect(recorded()).toEqual([[BALATRO_SHORTCUT, BALATRO, "copied", "workshop://12345"]]);
+    expect(steam.launched).toEqual([BALATRO_SHORTCUT]);
+    expect(controller.state.layouts[String(BALATRO_SHORTCUT)]?.result).toBe("copied");
+  });
+
+  it("a second press is idempotent: the shortcut now has its own selection", async () => {
+    const controller = await loaded();
+    steam.steamInput.urls.set(BALATRO, "workshop://12345");
+    await controller.streamPress(BALATRO);
+    await controller.streamPress(BALATRO);
+    expect(steam.steamInput.sets).toHaveLength(1);
+    expect(recorded().map((args) => args[2])).toEqual(["copied", "kept"]);
+    expect(controller.state.layouts[String(BALATRO_SHORTCUT)]?.url).toBe("workshop://12345");
+    expect(steam.launched).toEqual([BALATRO_SHORTCUT, BALATRO_SHORTCUT]);
+  });
+
+  it("while something is running a press only toasts", async () => {
+    const controller = await loaded();
+    controller.setInGame(true);
+    expect(await controller.streamPress(BALATRO)).toBe(false);
+    expect(ui.toasts).toEqual(["Moonlight Sync"]);
+    expect(steam.launched).toEqual([]);
+    expect(names()).not.toContain("record_layout");
+  });
+
+  it("a game without a Stream button is not launched", async () => {
+    const controller = await loaded();
+    expect(controller.hasStream(BALATRO)).toBe(true);
+    expect(controller.hasStream(620)).toBe(false);
+    expect(await controller.streamPress(620)).toBe(false);
+    expect(steam.launched).toEqual([]);
+  });
+
+  it("the Advanced toggle off skips the copy but still launches", async () => {
+    const controller = await loaded({
+      get_settings: {
+        ok: true,
+        settings: { version: 1, hosts: ["MY-GAMING-PC"], copy_layouts: false, restart_countdown_s: 5, retry_missing: false },
+      },
+    });
+    steam.steamInput.urls.set(BALATRO, "workshop://12345");
+    expect(await controller.streamPress(BALATRO)).toBe(true);
+    expect(steam.steamInput.sets).toEqual([]);
+    expect(names()).not.toContain("record_layout");
+    expect(steam.launched).toEqual([BALATRO_SHORTCUT]);
+  });
+
+  it("the picker strategy makes no Steam Input calls on a press", async () => {
+    const controller = await loaded({
+      get_settings: {
+        ok: true,
+        settings: {
+          version: 1,
+          hosts: ["MY-GAMING-PC"],
+          copy_layouts: true,
+          restart_countdown_s: 5,
+          retry_missing: false,
+          layout_strategy: "picker",
+        },
+      },
+    });
+    steam.steamInput.urls.set(BALATRO, "workshop://12345");
+    expect(await controller.streamPress(BALATRO)).toBe(true);
+    expect(steam.steamInput.sets).toEqual([]);
+    expect(names()).not.toContain("record_layout");
+    expect(steam.launched).toEqual([BALATRO_SHORTCUT]);
+  });
+
+  it("Choose layout opens Steam's picker and records 'picker'; hidden when the client lacks it", async () => {
+    const controller = await loaded();
+    expect(controller.canChooseLayout()).toBe(true);
+    expect(await controller.chooseLayout(BALATRO_SHORTCUT, BALATRO)).toBe(true);
+    expect(steam.configuratorOpened).toEqual([BALATRO_SHORTCUT]);
+    expect(recorded()).toEqual([[BALATRO_SHORTCUT, BALATRO, "picker", null]]);
+    steam.configurator = false;
+    expect(controller.canChooseLayout()).toBe(false);
+    expect(await controller.chooseLayout(BALATRO_SHORTCUT, BALATRO)).toBe(false);
+    expect(recorded()).toHaveLength(1);
+  });
+
+  it("a remove run's sync_done re-reads layouts.json", async () => {
+    const controller = await loaded();
+    await controller.run("remove");
+    calls.length = 0;
+    await controller.onSyncDone(done("remove", loadFixture("common/remove.ndjson"), 0));
+    expect(names()).toContain("layouts");
+  });
+
+  describe("the post-restart walk", () => {
+    const walkPending = { ok: true, ...PENDING, layout_walk: true, last_kind: "sync" };
+
+    it("runs at load over every pair in the stream map, then clears the flag", async () => {
+      steam.steamInput.urls.set(BALATRO, "workshop://1");
+      steam.steamInput.urls.set(SEA, "template://sea.vdf");
+      const controller = new Controller(fakeBackend(calls, { pending: walkPending }), steam, ui, instantTiming());
+      await controller.load();
+      await controller.layoutWalk();
+      expect(steam.steamInput.sets).toEqual([
+        [BALATRO_SHORTCUT, 15, "workshop://1"],
+        [SEA_SHORTCUT, 15, "template://sea.vdf"],
+      ]);
+      expect(recorded()).toEqual([
+        [BALATRO_SHORTCUT, BALATRO, "copied", "workshop://1"],
+        [SEA_SHORTCUT, SEA, "copied", "template://sea.vdf"],
+      ]);
+      const order = names();
+      expect(order.indexOf("status")).toBeLessThan(order.indexOf("record_layout"));
+      expect(order.lastIndexOf("record_layout")).toBeLessThan(order.lastIndexOf("clear_pending"));
+      expect(calls.filter(([n]) => n === "clear_pending").map(([, a]) => a)).toEqual([["layout_walk"]]);
+      expect(controller.state.pending?.layout_walk).toBe(false);
+      expect(controller.state.walking).toBe(false);
+    });
+
+    it("does not run without the flag", async () => {
+      await loaded();
+      expect(names()).not.toContain("clear_pending");
+      expect(steam.steamInput.sets).toEqual([]);
+    });
+
+    it("clears the flag at once under the picker strategy or with the toggle off", async () => {
+      for (const settings of [
+        { copy_layouts: true, layout_strategy: "picker" },
+        { copy_layouts: false, layout_strategy: "copy" },
+      ]) {
+        calls.length = 0;
+        steam = new FakeSteam();
+        steam.steamInput.urls.set(BALATRO, "workshop://1");
+        const controller = new Controller(
+          fakeBackend(calls, {
+            pending: walkPending,
+            get_settings: {
+              ok: true,
+              settings: { version: 1, hosts: ["MY-GAMING-PC"], restart_countdown_s: 5, retry_missing: false, ...settings },
+            },
+          }),
+          steam,
+          ui,
+          instantTiming(),
+        );
+        await controller.load();
+        await controller.layoutWalk();
+        expect(steam.steamInput.sets).toEqual([]);
+        expect(names()).not.toContain("record_layout");
+        expect(calls.filter(([n]) => n === "clear_pending").map(([, a]) => a)).toEqual([["layout_walk"]]);
+      }
+    });
+
+    it("waits for the shortcut list, records 'unavailable' for one that never loads, and gives up after 90 s", async () => {
+      steam.steamInput.urls.set(BALATRO, "workshop://1");
+      steam.steamInput.urls.set(SEA, "workshop://2");
+      steam.loaded = new Set([BALATRO_SHORTCUT]); // Sea of Stars' shortcut never resolves
+      const timing = instantTiming();
+      const controller = new Controller(fakeBackend(calls, { pending: walkPending }), steam, ui, timing);
+      await controller.load();
+      await controller.layoutWalk();
+      expect(timing.now()).toBeGreaterThanOrEqual(90_000);
+      expect(recorded()).toEqual([
+        [BALATRO_SHORTCUT, BALATRO, "copied", "workshop://1"],
+        [SEA_SHORTCUT, SEA, "unavailable", null],
+      ]);
+      expect(steam.steamInput.sets).toEqual([[BALATRO_SHORTCUT, 15, "workshop://1"]]);
+      expect(controller.state.pending?.layout_walk).toBe(false);
+    });
+
+    it("copies once the list has loaded, polling every 2 s", async () => {
+      steam.steamInput.urls.set(BALATRO, "workshop://1");
+      steam.loaded = new Set();
+      const timing = instantTiming();
+      const controller = new Controller(fakeBackend(calls, { pending: walkPending }), steam, ui, timing);
+      const base = timing.sleep;
+      let polls = 0;
+      timing.sleep = async (ms: number) => {
+        await base(ms);
+        if (ms === 2_000 && ++polls === 3) steam.loaded = null; // loaded after three polls
+      };
+      await controller.load();
+      await controller.layoutWalk();
+      expect(polls).toBe(3);
+      expect(recorded().map((args) => args[2])).toEqual(["copied", "kept"]);
+    });
+
+    it("never runs twice at once", async () => {
+      steam.steamInput.urls.set(BALATRO, "workshop://1");
+      const controller = new Controller(fakeBackend(calls, { pending: walkPending }), steam, ui, instantTiming());
+      await controller.load();
+      const first = controller.layoutWalk();
+      const second = controller.layoutWalk();
+      expect(second).toBe(first);
+      await first;
+      expect(calls.filter(([n]) => n === "clear_pending")).toHaveLength(1);
+    });
   });
 });
