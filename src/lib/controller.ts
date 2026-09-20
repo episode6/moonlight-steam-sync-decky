@@ -138,20 +138,19 @@ export class Controller {
     try {
       await this.loadOrder();
     } finally {
-      // Step 1 answered with a failure (an io/protocol failure, not
-      // "CLI missing" -- that is a `cli` state), so there is nothing to
-      // render and steps 3-5 never ran. Forget the cached promise so the
-      // next panelOpened() / refreshCli() runs the whole order again.
+      // Step 1 answered with a failure (an io/protocol failure, not "CLI
+      // missing" -- that is a `cli` state; see readCli's `cliError`), so
+      // there is nothing to render and steps 3-5 never ran. Forget the
+      // cached promise, so the next panelOpened() runs the whole order
+      // again rather than resolving straight away. (The panel's Retry goes
+      // through refreshCli(), which finishes the order in place.)
       if (this.state.cli === null) this.loading = null;
     }
   }
 
   private async loadOrder(): Promise<void> {
     // (1) the CLI
-    const version = await this.backend.cli_version();
-    if (isFailure(version)) this.store.set({ message: errorText(version) });
-    else this.store.set((s) => withCliVersion(s, version));
-    const cliOk = this.state.cli?.state === "ok";
+    const cliOk = await this.readCli();
 
     // (2) in parallel: settings, hosts, pending, sync_state
     const [settings, hosts, pending, syncState] = await Promise.all([
@@ -173,7 +172,26 @@ export class Controller {
     await this.refreshIgnored();
     this.store.set({ loaded: true });
     if (!cliOk) return; // steps 3-5 need the CLI
+    await this.finishLoad();
+  }
 
+  /**
+   * Step 1: read the CLI's version. `false` when it is missing, too old or
+   * could not be read at all; the last case leaves `cli` null and records
+   * `cliError`, which the panel offers a Retry for.
+   */
+  private async readCli(): Promise<boolean> {
+    const version = await this.backend.cli_version();
+    if (isFailure(version)) {
+      this.store.set({ cliError: errorText(version) });
+      return false;
+    }
+    this.store.set((s) => withCliVersion(s, version));
+    return this.state.cli?.state === "ok";
+  }
+
+  /** Steps 3-5, once the CLI is known to be there. */
+  private async finishLoad(): Promise<void> {
     // (3) the library, then owned-apps.json
     await this.loadLibrary();
     if (this.state.library !== "ready") return;
@@ -612,16 +630,16 @@ export class Controller {
     }
   }
 
-  /** Re-read the CLI state (About after an install by hand). */
+  /**
+   * Re-read the CLI state: About's *Refresh* after an install by hand, and the
+   * panel's Retry when `cli_version()` itself failed. When the CLI turns out
+   * to be there and the load stopped short of it, the rest of the load order
+   * (hosts, the library, status, reachability) runs now.
+   */
   async refreshCli(): Promise<void> {
-    if (!this.loading) {
-      // The load order never got past step 1 (see doLoad): run all of it
-      // again rather than only re-reading the version.
-      await this.load();
-      return;
-    }
-    const version = await this.backend.cli_version();
-    if (isFailure(version)) this.store.set({ message: errorText(version) });
-    else this.store.set((s) => withCliVersion(s, version));
+    if (!(await this.readCli())) return;
+    if (this.state.library !== "waiting") return; // steps 3-5 already ran
+    if (!this.state.hosts) await this.refreshHosts();
+    await this.finishLoad();
   }
 }

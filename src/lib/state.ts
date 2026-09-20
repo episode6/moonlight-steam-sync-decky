@@ -78,13 +78,31 @@ export function clientAppid(entries: readonly EntryEvent[]): number | null {
   return client ? client.appid : null;
 }
 
-/** "OFFICE-PC parked (198 titles kept)" for the host row's subtitle. */
+/**
+ * The host row's subtitle (spec 3.8): the other known hosts and how many
+ * titles each has parked.
+ *
+ * `status` carries one parked total, which can only be attributed to a single
+ * other host ("active host · OFFICE-PC parked (198 titles kept)"). With two or
+ * more the total says nothing about any one of them, so the line names each
+ * host with the size of its last listing instead ("active host · parked from
+ * OFFICE-PC (312 titles), LIVING-ROOM-PC (40 titles)") and drops the count for
+ * a host that has never been listed.
+ */
 export function otherHostsLine(hosts: HostsInfo | null, parked: number): string {
   if (!hosts?.active) return "";
   const others = hosts.known.filter((name) => name.toLowerCase() !== hosts.active!.toLowerCase());
   if (!others.length) return "active host";
-  const titles = `${parked} ${parked === 1 ? "title" : "titles"} kept`;
-  return `active host · ${others.join(", ")} parked (${titles})`;
+  if (others.length === 1) {
+    const titles = `${parked} ${parked === 1 ? "title" : "titles"} kept`;
+    return `active host · ${others[0]} parked (${titles})`;
+  }
+  const cached = new Map(hosts.cached_hosts.map((host) => [host.name.toLowerCase(), host.count]));
+  const parts = others.map((name) => {
+    const count = cached.get(name.toLowerCase());
+    return count === undefined ? name : `${name} (${count} ${count === 1 ? "title" : "titles"})`;
+  });
+  return `active host · parked from ${parts.join(", ")}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -202,6 +220,8 @@ export interface AppState {
   loaded: boolean;
   cliVersion: CliVersion | null;
   cli: CliStatus | null;
+  /** Why `cli_version()` itself failed (then `cli` stays null and Retry shows). */
+  cliError: string | null;
   settings: Settings | null;
   hosts: HostsInfo | null;
   pending: Pending | null;
@@ -225,6 +245,7 @@ export function initialState(): AppState {
     loaded: false,
     cliVersion: null,
     cli: null,
+    cliError: null,
     settings: null,
     hosts: null,
     pending: null,
@@ -243,7 +264,7 @@ export function initialState(): AppState {
 }
 
 export function withCliVersion(state: AppState, info: CliVersion): AppState {
-  return { ...state, cliVersion: info, cli: cliStatus(info) };
+  return { ...state, cliVersion: info, cli: cliStatus(info), cliError: null };
 }
 
 export function withStatus(state: AppState, entries: EntryEvent[]): AppState {

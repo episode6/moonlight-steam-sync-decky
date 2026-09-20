@@ -275,6 +275,37 @@ describe("load order (spec 3.8)", () => {
     expect(controller.state.settings).not.toBeNull();
   });
 
+  it("a failed cli_version leaves a Retry that finishes the load", async () => {
+    let answered = false;
+    const ok = {
+      ok: true,
+      installed: "0.3.0",
+      bundled: "0.3.0",
+      minimum: "0.3.0",
+      too_old: false,
+      capabilities: { art_commit: true },
+    };
+    const backend = fakeBackend(calls, {
+      cli_version: () =>
+        answered ? ok : { ok: false, error: "io", message: "the backend did not answer" },
+    });
+    const controller = new Controller(backend, steam, ui, instantTiming());
+    await controller.load();
+    expect(controller.state.cli).toBeNull();
+    expect(controller.state.cliError).toBe("the backend did not answer");
+    expect(controller.state.library).toBe("waiting");
+    expect(names()).not.toContain("status");
+
+    answered = true; // the backend answers this time
+    await controller.refreshCli();
+    expect(controller.state.cli?.state).toBe("ok");
+    expect(controller.state.cliError).toBeNull();
+    expect(controller.state.library).toBe("ready");
+    expect(names()).toContain("hosts");
+    expect(names()).toContain("status");
+    expect(names()).toContain("check_host");
+  });
+
   it("waits for the library and gives up after 60 s", async () => {
     steam.apps = null;
     const controller = new Controller(fakeBackend(calls), steam, ui, instantTiming());

@@ -29,6 +29,19 @@ describe("errorText (spec 3.8 error strings)", () => {
     expect(errorText(fail("io"))).toBe("backend text");
   });
 
+  it("keeps the backend's own text when 'too old' is not about the version", () => {
+    // start_art_refetch's refusal: the version is fine, `art` has no --commit.
+    expect(
+      errorText(
+        fail("cli-too-old", {
+          installed: "0.3.0",
+          minimum: "0.3.0",
+          message: "re-fetching art from Game Mode needs a CLI whose art command accepts --commit",
+        }),
+      ),
+    ).toBe("re-fetching art from Game Mode needs a CLI whose art command accepts --commit");
+  });
+
   it("spots the steamid3 mismatch", () => {
     expect(
       isSteamUserMismatch({

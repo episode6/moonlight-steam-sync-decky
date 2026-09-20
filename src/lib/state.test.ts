@@ -211,4 +211,20 @@ describe("the store and derived flags", () => {
     expect(otherHostsLine({ ...hosts, known: ["MY-GAMING-PC"] }, 0)).toBe("active host");
     expect(otherHostsLine({ ...hosts, active: null }, 0)).toBe("");
   });
+
+  it("never blames one parked total on several hosts", () => {
+    // The total says nothing per host, so each host's last listing is shown.
+    const hosts = {
+      active: "MY-GAMING-PC",
+      source: "state" as const,
+      cached_hosts: [
+        { name: "OFFICE-PC", when: "2026-09-19T10:00:00Z", count: 312 },
+        { name: "MY-GAMING-PC", when: "2026-09-20T10:00:00Z", count: 40 },
+      ],
+      known: ["MY-GAMING-PC", "OFFICE-PC", "LIVING-ROOM-PC"],
+    };
+    expect(otherHostsLine(hosts, 198)).toBe(
+      "active host · parked from OFFICE-PC (312 titles), LIVING-ROOM-PC",
+    );
+  });
 });

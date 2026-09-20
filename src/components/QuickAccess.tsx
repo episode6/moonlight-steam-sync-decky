@@ -176,6 +176,24 @@ export function QuickAccess() {
     );
   }
 
+  // `cli_version()` itself failed (the loader was not ready yet, say): the CLI
+  // may well be fine, so offer the read again rather than a dead panel.
+  if (!state.cli) {
+    return (
+      <PanelSection>
+        <PanelSectionRow>
+          <ButtonItem
+            layout="below"
+            description={state.cliError ?? "The plugin backend did not answer"}
+            onClick={() => void controller.refreshCli()}
+          >
+            Retry
+          </ButtonItem>
+        </PanelSectionRow>
+      </PanelSection>
+    );
+  }
+
   if (state.run?.running) {
     return <SyncProgress run={state.run} onStop={() => void controller.stop()} />;
   }
