@@ -1326,6 +1326,32 @@ def test_pin_times_out_at_the_short_limit(backend) -> None:
     assert calls == [backend.TIMEOUT_SHORT, backend.TIMEOUT_SHORT]
 
 
+@pytest.mark.scenario("full-sync")
+def test_pin_during_a_run_is_busy(make_backend, steam_gone) -> None:
+    """A ``match`` writes matches.json; the run's child is writing it too."""
+    backend = make_backend(env={"FAKE_CLI_SLEEP_MS": "100"})
+    owned(backend)
+
+    async def scenario() -> list[dict[str, Any]]:
+        assert (await backend.start_sync())["ok"] is True
+        results = [
+            await backend.pin("Hades II", 1145350, None, False),
+            await backend.unpin("Hades II"),
+        ]
+        steam_gone()
+        await backend.wait_for_run()
+        return results
+
+    pinned, unpinned = run(scenario())
+    for busy in (pinned, unpinned):
+        assert busy["ok"] is False
+        assert busy["error"] == "busy"
+        assert busy["kind"] == "sync"
+    assert [argv for argv in backend.harness.argv() if "match" in argv] == []
+    # free again once the run is done
+    assert run(backend.pin("Hades II", 1145350, None, False))["ok"] is True
+
+
 def test_cli_too_old_short_circuits_search_and_pin(make_backend) -> None:
     backend = make_backend(env={"FAKE_CLI_VERSION": "0.2.0"})
     backend.harness.clear()

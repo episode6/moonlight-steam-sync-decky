@@ -1097,7 +1097,14 @@ class Backend:
         ``--defer-art`` always (Decision 8): the pin is written to
         ``matches.json`` only, marked ``stale_art``, and the next sync
         replaces the entry and re-fetches its art in its one restart.
+
+        Shares the long runs' busy guard: a ``match`` writes
+        ``matches.json``, which a running ``sync`` / ``art`` / ``remove``
+        child is writing too.
         """
+        busy = self._busy()
+        if busy is not None:
+            return busy
         result, fail = await self._collect(
             "match",
             self._positional(name, [*selector, "--defer-art"]),
