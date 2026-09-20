@@ -1,0 +1,3 @@
+# host show with no host resolvable at all: exit 1 (the plugin's first run).
+{"event":"start","schema":1,"version":"0.3.0","command":"host"}
+{"event":"error","exit":1,"message":"host: no host configured; pass --host, run `host set NAME`, or set `host` in ~/.config/moonlight-steam-sync/config.toml"}

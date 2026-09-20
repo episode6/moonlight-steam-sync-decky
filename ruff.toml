@@ -1,0 +1,16 @@
+# Mirrors the CLI repo's ruff.toml (episode6/moonlight-steam-sync), with the
+# plugin's layout: the backend package lives in py_modules/, and the PR-0
+# probe kit under probes/ is linted by nobody here (it is throwaway tooling
+# with its own CI job).
+target-version = "py311"
+line-length = 100
+src = ["py_modules", "tests", "scripts"]
+extend-exclude = ["probes", "node_modules", "dist", "out"]
+
+[lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = []
+
+[lint.isort]
+known-first-party = ["moonlight_sync"]
+known-third-party = ["decky"]

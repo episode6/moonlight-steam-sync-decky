@@ -1,0 +1,224 @@
+"""The plugin's own files under ``DECKY_PLUGIN_SETTINGS_DIR`` (spec 3.7).
+
+- ``settings.json``   plugin settings (never the active host: that is the
+  CLI's state file)
+- ``ignore.json``     the ``--ignore-file`` list, sorted
+- ``owned-apps.json`` the ``--owned-apps`` file (spec 3.4.1)
+- ``pending.json``    the restart/walk flags of spec 3.9
+- ``layouts.json``    per-shortcut layout results (PR-7)
+
+Every write is ``.tmp`` + ``os.replace``. None of these files is under the
+Steam directory, and ``config.toml`` is never touched.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import copy
+import json
+import os
+from typing import Any
+
+SETTINGS_FILE = "settings.json"
+IGNORE_FILE = "ignore.json"
+OWNED_APPS_FILE = "owned-apps.json"
+PENDING_FILE = "pending.json"
+LAYOUTS_FILE = "layouts.json"
+
+#: Defaults for ``settings.json``. ``hosts`` is deliberately absent from the
+#: file until it has been seeded once from ``host show`` (spec 3.7); readers
+#: see ``[]`` until then.
+DEFAULT_SETTINGS: dict[str, Any] = {
+    "version": 1,
+    "copy_layouts": True,
+    "restart_countdown_s": 5,
+    "retry_missing": False,
+    "layout_strategy": "copy",
+}
+
+#: The countdown can never outlast the CLI's own await-exit wait (60 s),
+#: which would race it, so the slider and the file both stop at 30
+#: (spec Decision 30). A larger value stored by an older build is
+#: clamped on read rather than making settings.json unreadable.
+RESTART_COUNTDOWN_MAX = 30
+LAYOUT_STRATEGIES = ("copy", "picker")
+
+DEFAULT_PENDING: dict[str, Any] = {
+    "restart_needed": "none",
+    "layout_walk": False,
+    "since": None,
+    "last_summary": None,
+    "last_plan": None,
+    "last_kind": None,
+}
+
+PENDING_KEYS = ("restart_needed", "layout_walk")
+
+
+class SettingsError(ValueError):
+    """A request the settings layer refuses (the callable's ``bad-request``)."""
+
+
+def write_json_atomic(path: str, data: Any, *, mode: int | None = None) -> None:
+    """Write ``data`` as JSON to ``path`` via ``.tmp`` + ``os.replace``."""
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    tmp = path + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, indent=2, sort_keys=True, ensure_ascii=False)
+            handle.write("\n")
+        if mode is not None:
+            os.chmod(tmp, mode)
+        os.replace(tmp, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise
+
+
+def read_json(path: str, default: Any) -> Any:
+    """The parsed file, or a deep copy of ``default`` when it does not exist."""
+    if not os.path.exists(path):
+        return copy.deepcopy(default)
+    with open(path, encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+class Store:
+    """Typed access to the files in one settings directory."""
+
+    def __init__(self, settings_dir: str) -> None:
+        self.dir = settings_dir
+
+    def path(self, name: str) -> str:
+        return os.path.join(self.dir, name)
+
+    # -- startup ---------------------------------------------------------
+
+    def ensure_files(self) -> None:
+        """Create ``settings.json`` (defaults) and ``ignore.json`` (``[]``) when absent."""
+        os.makedirs(self.dir, exist_ok=True)
+        if not os.path.exists(self.path(SETTINGS_FILE)):
+            write_json_atomic(self.path(SETTINGS_FILE), dict(DEFAULT_SETTINGS))
+        if not os.path.exists(self.path(IGNORE_FILE)):
+            write_json_atomic(self.path(IGNORE_FILE), [])
+
+    # -- settings.json ---------------------------------------------------
+
+    def _raw_settings(self) -> dict[str, Any]:
+        raw = read_json(self.path(SETTINGS_FILE), {})
+        return raw if isinstance(raw, dict) else {}
+
+    def hosts_seeded(self) -> bool:
+        return "hosts" in self._raw_settings()
+
+    def settings(self) -> dict[str, Any]:
+        """Defaults overlaid with the file; ``hosts`` is ``[]`` until seeded.
+
+        ``restart_countdown_s`` is clamped to ``RESTART_COUNTDOWN_MAX`` on the
+        way out: a file written before Decision 30 lowered the ceiling to 30
+        still reads, it just counts down from 30.
+        """
+        merged = dict(DEFAULT_SETTINGS)
+        merged["hosts"] = []
+        for key, value in self._raw_settings().items():
+            if key in merged:
+                merged[key] = value
+        countdown = merged["restart_countdown_s"]
+        if isinstance(countdown, int) and not isinstance(countdown, bool):
+            merged["restart_countdown_s"] = max(0, min(countdown, RESTART_COUNTDOWN_MAX))
+        else:
+            merged["restart_countdown_s"] = DEFAULT_SETTINGS["restart_countdown_s"]
+        return merged
+
+    def set_settings(self, patch: Any) -> dict[str, Any]:
+        """Merge ``patch`` into the file after validating every key; returns the result."""
+        if not isinstance(patch, dict):
+            raise SettingsError("settings patch must be an object")
+        for key, value in patch.items():
+            _validate_setting(key, value)
+        raw = self._raw_settings()
+        raw.update(patch)
+        raw["version"] = 1
+        write_json_atomic(self.path(SETTINGS_FILE), raw)
+        return self.settings()
+
+    def set_hosts(self, hosts: list[str]) -> list[str]:
+        raw = self._raw_settings()
+        for key, value in DEFAULT_SETTINGS.items():
+            raw.setdefault(key, value)
+        raw["hosts"] = list(hosts)
+        write_json_atomic(self.path(SETTINGS_FILE), raw)
+        return list(hosts)
+
+    # -- ignore.json -----------------------------------------------------
+
+    def ignored(self) -> list[str]:
+        data = read_json(self.path(IGNORE_FILE), [])
+        if not isinstance(data, list):
+            return []
+        return sorted(str(name) for name in data)
+
+    # -- owned-apps.json -------------------------------------------------
+
+    def owned_apps_exists(self) -> bool:
+        return os.path.exists(self.path(OWNED_APPS_FILE))
+
+    def write_owned_apps(self, steamid3: int, apps: dict[str, str]) -> int:
+        write_json_atomic(
+            self.path(OWNED_APPS_FILE),
+            {"version": 1, "steamid3": steamid3, "apps": apps},
+        )
+        return len(apps)
+
+    # -- pending.json ----------------------------------------------------
+
+    def pending(self) -> dict[str, Any]:
+        merged = copy.deepcopy(DEFAULT_PENDING)
+        data = read_json(self.path(PENDING_FILE), {})
+        if isinstance(data, dict):
+            for key in merged:
+                if key in data:
+                    merged[key] = data[key]
+        return merged
+
+    def write_pending(self, pending: dict[str, Any]) -> dict[str, Any]:
+        merged = copy.deepcopy(DEFAULT_PENDING)
+        merged.update({key: pending[key] for key in DEFAULT_PENDING if key in pending})
+        write_json_atomic(self.path(PENDING_FILE), merged)
+        return merged
+
+    def clear_pending(self, key: str) -> dict[str, Any]:
+        if key not in PENDING_KEYS:
+            raise SettingsError(f"unknown pending key {key!r}; expected one of {PENDING_KEYS}")
+        pending = self.pending()
+        pending[key] = "none" if key == "restart_needed" else False
+        return self.write_pending(pending)
+
+    # -- layouts.json ----------------------------------------------------
+
+    def delete_layouts(self) -> None:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(self.path(LAYOUTS_FILE))
+
+
+def _validate_setting(key: str, value: Any) -> None:
+    if key == "hosts":
+        raise SettingsError("hosts are changed with add_host / forget_host")
+    if key == "version":
+        raise SettingsError("version is not a setting")
+    if key in ("copy_layouts", "retry_missing"):
+        if not isinstance(value, bool):
+            raise SettingsError(f"{key} must be true or false")
+        return
+    if key == "restart_countdown_s":
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise SettingsError("restart_countdown_s must be a whole number of seconds")
+        if not 0 <= value <= RESTART_COUNTDOWN_MAX:
+            raise SettingsError(f"restart_countdown_s must be 0-{RESTART_COUNTDOWN_MAX}")
+        return
+    if key == "layout_strategy":
+        if value not in LAYOUT_STRATEGIES:
+            raise SettingsError(f"layout_strategy must be one of {', '.join(LAYOUT_STRATEGIES)}")
+        return
+    raise SettingsError(f"unknown setting {key!r}")

@@ -1,0 +1,57 @@
+# Logs, pids, coverage (from the Decky plugin template)
+lib-cov
+*.seed
+*.log
+*.csv
+*.dat
+*.out
+*.pid
+*.gz
+*.swp
+pids
+logs
+results
+tmp
+coverage
+
+# API keys and secrets
+.env
+
+# Dependencies
+node_modules
+bower_components
+.pnpm-store
+
+# Editors / OS
+.idea
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Built frontend
+dist/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+/.yalc
+yalc.lock
+
+# The downloaded CLI (backend/entrypoint.sh) -- never committed
+backend/out
+bin/
+
+# The loader's decky module, if a developer copies it in for completion
+decky_plugin.py
+
+# Packaging output (scripts/package.py, the Decky CLI)
+out
+out/*
+cli/
+cli/*
+cli/decky

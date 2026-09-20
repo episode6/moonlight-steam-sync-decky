@@ -1,0 +1,11 @@
+{
+  "name": "Moonlight Sync",
+  "author": "episode6",
+  "flags": [],
+  "api_version": 1,
+  "publish": {
+    "tags": ["moonlight", "streaming", "steam-input"],
+    "description": "Sync a Moonlight host's games into your Steam library from Game Mode: Stream buttons on the games you own, dressed shortcuts for the rest.",
+    "image": "https://opengraph.githubassets.com/1/episode6/moonlight-steam-sync-decky"
+  }
+}

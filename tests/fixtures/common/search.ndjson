@@ -1,0 +1,8 @@
+# search "Hades II": SGDB candidates first (a key is configured), then Steam,
+# de-duplicated by Steam appid; one owned.
+{"event":"start","schema":1,"version":"0.3.0","command":"search"}
+{"event":"candidate","source":"sgdb","id":5406129,"name":"Hades II","verified":true,"owned":true,"steam_appid":1145350}
+{"event":"candidate","source":"sgdb","id":36072,"name":"Hades","verified":true,"owned":false,"steam_appid":1145360}
+{"event":"candidate","source":"steam","id":2300320,"name":"Hades II Soundtrack","verified":true,"owned":false,"steam_appid":2300320}
+{"event":"candidate","source":"steam","id":1172470,"name":"Apex Legends","verified":true,"owned":false,"steam_appid":1172470}
+{"event":"end"}
