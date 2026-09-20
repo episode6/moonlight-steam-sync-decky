@@ -261,7 +261,7 @@ describe("load order (spec 3.8)", () => {
     );
     await controller.panelOpened();
     expect(controller.state.cli).toBeNull();
-    expect(controller.state.message).toBe("could not run the CLI: [Errno 13] denied");
+    expect(controller.state.cliError).toBe("could not run the CLI: [Errno 13] denied");
     expect(controller.state.library).toBe("waiting"); // steps 3-5 never ran
     expect(names()).not.toContain("status");
 
@@ -1033,6 +1033,29 @@ describe("the Stream button and controller layouts (spec 3.9, 3.10)", () => {
         expect(names()).not.toContain("record_layout");
         expect(calls.filter(([n]) => n === "clear_pending").map(([, a]) => a)).toEqual([["layout_walk"]]);
       }
+    });
+
+    it("keeps the flag when status failed, so the next load walks", async () => {
+      // An empty stream map because `status` did not answer is not "nothing
+      // to walk": clearing the flag here would lose the walk for good.
+      steam.steamInput.urls.set(BALATRO, "workshop://1");
+      const controller = new Controller(
+        fakeBackend(calls, {
+          pending: walkPending,
+          status: { ok: false, error: "io", message: "status: could not run the CLI" },
+        }),
+        steam,
+        ui,
+        instantTiming(),
+      );
+      await controller.load();
+      await controller.layoutWalk();
+      expect(controller.state.entries).toBeNull();
+      expect(names()).not.toContain("clear_pending");
+      expect(names()).not.toContain("record_layout");
+      expect(steam.steamInput.sets).toEqual([]);
+      expect(controller.state.pending?.layout_walk).toBe(true);
+      expect(controller.state.walking).toBe(false);
     });
 
     it("waits for the shortcut list, records 'unavailable' for one that never loads, and gives up after 90 s", async () => {

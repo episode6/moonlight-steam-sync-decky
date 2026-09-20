@@ -166,8 +166,14 @@ export function deckControllerIndex(): number | null {
   // for a moment while the client rebuilds it (a dock, a client start), and
   // the watched list still names the Deck controller then.
   const controllers = listed && listed.length ? listed : (lastControllers ?? listed);
-  const typeString = typeof store?.GetControllerTypeString === "function" ? store.GetControllerTypeString.bind(store) : undefined;
-  return deckControllerIndexFrom(controllers, typeString) ?? deckControllerIndexFrom(controllers);
+  const typeString =
+    typeof store?.GetControllerTypeString === "function" ? store.GetControllerTypeString.bind(store) : undefined;
+  // The eControllerType fallback is for a client that has no
+  // GetControllerTypeString at all (see DECK_CONTROLLER_TYPE). When the
+  // client *does* have it, its answer is final: falling back on a miss
+  // would let an unrelated controller whose enum value happens to be 4 be
+  // taken for the Deck's, and the layout copied onto the wrong index.
+  return deckControllerIndexFrom(controllers, typeString);
 }
 
 /** The Steam Input seam of `layouts.ts`, over `SteamClient.Input`. */

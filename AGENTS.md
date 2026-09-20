@@ -89,7 +89,9 @@ src/lib/                    pure modules (vitest)
                             streamPress() (guard, copy, run), chooseLayout(), layoutWalk()
   layouts.ts                DEFAULT_LAYOUT_STRATEGY (the one switch), layoutStrategy(),
                             copyEnabled(), the SteamInput seam, copyLayout() (the §3.10
-                            rule), deckControllerIndexFrom() (by type), the status texts,
+                            rule), deckControllerIndexFrom() (by type: the type string when
+                            the client has it -- final either way -- else the enum),
+                            the status texts,
                             walkPairs() and the walk's timings
   layouts.test.ts           copyLayout's seven cases + idempotence, the index by type,
                             the strategy switch, the stream-map derivation

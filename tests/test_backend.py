@@ -475,6 +475,31 @@ def test_stop_before_the_child_is_spawned(make_backend) -> None:
 
 
 @pytest.mark.scenario("full-sync")
+def test_a_spawn_failure_with_a_stop_pending_keeps_its_io_failure(make_backend) -> None:
+    """The "stopped before the CLI printed anything" override turns a
+    signalled death into a clean exit 130. It must not swallow a run that
+    never started at all: no child existed, so the OSError stands."""
+    backend = make_backend()
+    owned(backend)
+    # Started fine, so cli_ok stands; the interpreter is gone by the time the
+    # run spawns, which is what an OSError from create_subprocess_exec means.
+    backend.cli = ["/nonexistent/python3", "moonlight-steam-sync"]
+
+    async def scenario() -> None:
+        await backend.start_sync()
+        assert backend._run is not None and backend._run.proc is None
+        await backend.stop_sync()
+        await backend.wait_for_run()
+
+    run(scenario())
+    done = backend.emitted.of("sync_done")[0]
+    assert done["exit"] == 127
+    assert done["failure"]["error"] == "io"
+    assert "could not run the CLI" in done["failure"]["message"]
+    assert backend._run is not None and backend._run.spawned is False
+
+
+@pytest.mark.scenario("full-sync")
 def test_unload_before_the_child_is_spawned(make_backend) -> None:
     """Unloading in the same window leaves no orphan behind."""
     backend = make_backend(env={"FAKE_CLI_SLEEP_MS": "300"})

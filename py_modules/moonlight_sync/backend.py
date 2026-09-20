@@ -100,6 +100,9 @@ class RunState:
     #: ``stop_sync`` / ``unload`` asked for it; honoured as soon as the child
     #: exists, so the window between ``_start_run`` and the spawn is covered.
     stop_requested: bool = False
+    #: A child process was actually started (``_run_started`` ran). False
+    #: means the spawn itself failed, which a pending stop must not mask.
+    spawned: bool = False
     plan: dict[str, Any] | None = None
     events: list[dict[str, Any]] = field(default_factory=list)
     recent: collections.deque = field(default_factory=lambda: collections.deque(maxlen=200))
@@ -1381,6 +1384,7 @@ class Backend:
     def _run_started(self, run: RunState, proc: asyncio.subprocess.Process) -> None:
         """The run's child exists; honour a stop that arrived before it did."""
         run.proc = proc
+        run.spawned = True
         if run.stop_requested:
             self._log(f"stop: SIGINT to the {run.kind} run (asked for before it started)")
             self._interrupt(proc)
@@ -1409,7 +1413,16 @@ class Backend:
             self._log(f"{run.kind} failed:\n{traceback.format_exc()}")
             exit_code = 1
             run.failure = failure("bad-request", "the run failed; see the log")
-        if run.stop_requested and exit_code != 0 and not ev.saw(run.events, "start"):
+        if (
+            run.stop_requested
+            and exit_code != 0
+            and not ev.saw(run.events, "start")
+            # ... and a child really existed, or died of a signal. Without
+            # this a spawn failure (OSError -> exit 127, no child) that
+            # happened to coincide with a stop would be reported as a clean
+            # stop and its io failure thrown away.
+            and (run.spawned or exit_code < 0)
+        ):
             # The stop landed before the CLI could install its SIGINT handler,
             # so the signal killed it outright (exit -2) with nothing printed.
             # That is still a clean stop, not a protocol error.

@@ -32,7 +32,9 @@ project uses [semantic versioning](https://semver.org/).
   found by type. Results (`copied` / `kept` / `unavailable`) are recorded
   in `layouts.json` (`layouts` / `record_layout`) and shown on the Titles
   row as copied / own layout / Steam default / unavailable, and next to the
-  button. The Advanced toggle turns the copy off.
+  button. The Advanced toggle turns the copy off. The post-restart walk
+  keeps its pending flag when `status` did not answer, so it still runs on
+  the next load instead of being lost.
 - **Choose layout** on a Stream button's Titles row opens Steam's own
   layout picker for the hidden shortcut (hidden when the client lacks it).
 - The layout strategy switch: `DEFAULT_LAYOUT_STRATEGY` (`copy`) in

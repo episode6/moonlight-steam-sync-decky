@@ -245,11 +245,13 @@ apply to it by itself. The plugin copies it over where Steam allows:
   never assumed to be index 0 (a paired pad can take that slot). The
   sanctioned way is Steam's own type string
   (`controller_steamcontroller_neptune` from
-  `controllerStore.GetControllerTypeString`); on a client without that
-  function the plugin falls back to the enum value `4`
+  `controllerStore.GetControllerTypeString`); *only* on a client without
+  that function does the plugin fall back to the enum value `4`
   (`DECK_CONTROLLER_TYPE` in `src/lib/layouts.ts`), which is unverified
   until the PR-0 probe kit's `controllerStore.GetControllers()` dump
-  confirms it.
+  confirms it. When the client has the type string its answer is final: no
+  Deck controller listed means no copy, rather than guessing by an enum
+  value another pad might share.
 
 **This is pending the PR-0 device probes.** The plugin has not been run on
 a Steam Deck yet. Whether `SetSelectedConfigForApp` accepts a Workshop

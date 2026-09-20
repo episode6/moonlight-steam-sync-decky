@@ -728,6 +728,13 @@ export class Controller {
       await this.clearWalk();
       return;
     }
+    if (this.state.entries === null) {
+      // `status` has not answered (it failed, or has not run yet), so the
+      // stream map is empty for want of data rather than because there is
+      // nothing to walk. Leave pending.layout_walk set and do nothing: the
+      // next load, or the panel's Retry, walks once status is in.
+      return;
+    }
     this.store.set({ walking: true });
     try {
       const pairs = walkPairs(this.state.streamMap);

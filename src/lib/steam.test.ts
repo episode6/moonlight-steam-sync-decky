@@ -135,6 +135,21 @@ describe("the layout seam over the globals (spec 3.10)", () => {
     expect(unregistered).toBe(1);
   });
 
+  it("trusts GetControllerTypeString when the client has it, with no enum fallback", () => {
+    // A controller that is not a Deck but whose eControllerType happens to be
+    // 4. The enum fallback exists only for a client with no type-string call;
+    // using it here would copy the layout onto the wrong controller index.
+    const impostor = { nControllerIndex: 3, eControllerType: 4 };
+    g.controllerStore = {
+      GetControllers: () => [impostor],
+      GetControllerTypeString: () => "controller_ps5",
+    };
+    expect(deckControllerIndex()).toBeNull();
+    // the same list, on a client without the call, still falls back by enum
+    g.controllerStore = { GetControllers: () => [impostor] };
+    expect(deckControllerIndex()).toBe(3);
+  });
+
   it("reads and sets selections through SteamClient.Input with the Deck index and the false flag", async () => {
     g.controllerStore = { GetControllers: () => [deck] };
     const input = steamInput();
