@@ -94,19 +94,25 @@ everything that needs a Steam Deck, including the PR-0 probes.
   downloader (`backend/entrypoint.sh`); CI with frontend, backend, probe-kit
   and package jobs.
 - `install.sh`: downloads the latest (or a pinned) release's
-  `Moonlight-Sync.zip`, verifies its checksum, and unzips it into
+  `Moonlight-Sync.zip`, verifies its checksum, removes any previous
+  `Moonlight Sync/` install (so a file an older release shipped and the
+  new one no longer does cannot linger), unzips into
   `~/homebrew/plugins/`, then restarts `plugin_loader`, explaining the two
   `sudo` prompts it needs along the way. `release.yml`: on a `v*` tag,
   builds and packages strictly (the CLI download and the packaging step
   both fail the run rather than warn when the pinned CLI release is
   missing) and attaches `Moonlight-Sync.zip` and `Moonlight-Sync.zip.sha256`
   to a GitHub release; its build-and-package job also runs on every pull
-  request so the workflow is exercised before the first tag.
+  request and `workflow_dispatch`, where it tolerates the CLI release not
+  existing yet with the same `::warning::` CI's `package` job prints
+  (never strict off a tag), so the workflow is exercised and green before
+  the first tag.
 - `DEVICE-CHECKLIST.md`: every on-device check from the PR-0 probes and the
   PR-5/6/7/8 amendments, in the order they need a Deck.
-- A `shellcheck` CI job linting `install.sh`.
+- A `shellcheck` CI job linting `install.sh` and `backend/entrypoint.sh`.
 - Tests: pytest against a fake CLI replaying hand-written NDJSON fixtures,
   and vitest over the frontend's pure modules reading the same fixtures;
   `tests/test_install_sh.py` drives the real `install.sh` end to end
-  against a `file://` fixture with `curl`, `sudo` and `systemctl` shimmed
+  against a `file://` fixture (via `MOONLIGHT_SYNC_BASE_URL`) with `sudo`
+  and `systemctl` shimmed
   on `PATH`.

@@ -3,13 +3,13 @@
 Modelled on test_entrypoint.py: the script runs from a copy of the repo
 root under tmp_path (so the real ~/homebrew/plugins is never touched), with
 MOONLIGHT_SYNC_BASE_URL pointing at a file:// directory of fixtures and
-PLUGIN_DIR redirected into tmp_path so nothing needs sudo. install.sh does
-not read MOONLIGHT_SYNC_BASE_URL itself (it always builds the GitHub URL
-from REPO/VERSION), so these tests stub `sudo` and `curl` on PATH instead:
-a `curl` wrapper that rewrites the GitHub URL to the local fixture
-directory, and a `sudo` wrapper that just execs its argument list (mkdir,
-unzip, systemctl -- none of which need real root against a tmp_path
-target), so the real install.sh runs unmodified and unsudo'd end to end.
+PLUGIN_DIR redirected into tmp_path so nothing needs sudo. install.sh reads
+MOONLIGHT_SYNC_BASE_URL itself (the same seam as backend/entrypoint.sh's
+MSY_CLI_BASE_URL) to override the release base URL entirely, so the real
+`curl` runs unmodified against the file:// fixture. `sudo` is still stubbed
+on PATH with a wrapper that just execs its argument list (mkdir, unzip,
+systemctl -- none of which need real root against a tmp_path target), so
+the real install.sh runs unmodified and unsudo'd end to end.
 """
 
 from __future__ import annotations
@@ -43,53 +43,66 @@ def _fake_zip_bytes() -> bytes:
     return buf.getvalue()
 
 
-def release(tmp_path: Path, payload: bytes | None = None) -> Path:
-    directory = tmp_path / "release"
-    directory.mkdir(exist_ok=True)
+def release(tmp_path: Path, payload: bytes | None = None, version: str = "latest") -> Path:
+    """Build a fixture releases tree and return its root.
+
+    install.sh appends `latest/download` or `download/<tag>` to whatever
+    MOONLIGHT_SYNC_BASE_URL/https://github.com/<repo>/releases is, exactly
+    as it would for a real GitHub release, so the fixture mirrors that
+    layout: the assets live under `<root>/<version-subpath>/`, not at the
+    root itself.
+    """
+    root = tmp_path / "releases"
+    subpath = "latest/download" if version == "latest" else f"download/{version}"
+    directory = root / subpath
+    directory.mkdir(parents=True, exist_ok=True)
     payload = payload if payload is not None else _fake_zip_bytes()
     (directory / ASSET).write_bytes(payload)
     digest = hashlib.sha256(payload).hexdigest()
     (directory / f"{ASSET}.sha256").write_text(f"{digest}  {ASSET}\n")
-    return directory
+    return root
 
 
-def fake_bin(tmp_path: Path, base: Path) -> Path:
-    """A directory prepended to PATH with `curl` and `sudo` shims.
+def asset_dir(base: Path, version: str = "latest") -> Path:
+    """The directory under a `release()` root that holds the assets for
+    `version` ("latest" or a tag), matching install.sh's own RELEASE_PATH.
+    """
+    subpath = "latest/download" if version == "latest" else f"download/{version}"
+    return base / subpath
 
-    `curl` rewrites any https://github.com/... URL to the local `base`
-    fixture directory before delegating to the real curl, so install.sh's
-    hardcoded GitHub URL resolves to our fixtures without editing the
-    script. `sudo` just execs its argument list: everything install.sh
-    runs under sudo (mkdir -p, unzip, systemctl restart) is either
-    harmless or replaced by a fake below.
+
+def fake_bin(tmp_path: Path) -> Path:
+    """A directory prepended to PATH with `sudo` and `systemctl` shims.
+
+    `sudo` just execs its argument list: everything install.sh runs under
+    sudo (mkdir -p, rm -rf, unzip, systemctl restart) is either harmless or
+    replaced by a fake below. The real `curl` is used unmodified; the
+    fixture URL is supplied via MOONLIGHT_SYNC_BASE_URL instead.
     """
     directory = tmp_path / "fakebin"
     directory.mkdir(exist_ok=True)
-    real_curl = shutil.which("curl")
-    assert real_curl is not None
-    (directory / "curl").write_text(
-        "#!/bin/sh\n"
-        "args=\"\"\n"
-        "for a in \"$@\"; do\n"
-        "  case \"$a\" in\n"
-        f"    https://github.com/*) a=\"{base.as_uri()}/$(basename \"$a\")\" ;;\n"
-        "  esac\n"
-        "  args=\"$args '$a'\"\n"
-        "done\n"
-        f"eval \"exec {real_curl} $args\"\n"
-    )
     (directory / "sudo").write_text("#!/bin/sh\nexec \"$@\"\n")
     (directory / "systemctl").write_text("#!/bin/sh\necho fake-systemctl \"$@\"\n")
-    for name in ("curl", "sudo", "systemctl"):
+    for name in ("sudo", "systemctl"):
         (directory / name).chmod(0o755)
     return directory
 
 
-def run_install(tmp_path: Path, base: Path, plugin_dir: Path) -> subprocess.CompletedProcess[str]:
+def run_install(
+    tmp_path: Path,
+    base: Path,
+    plugin_dir: Path,
+    extra_env: dict[str, str] | None = None,
+    extra_path_dirs: tuple[Path, ...] = (),
+) -> subprocess.CompletedProcess[str]:
     env = dict(os.environ)
-    bindir = fake_bin(tmp_path, base)
-    env["PATH"] = f"{bindir}:{env['PATH']}"
+    bindir = fake_bin(tmp_path)
+    path_prefix = "".join(f"{d}:" for d in extra_path_dirs)
+    env["PATH"] = f"{path_prefix}{bindir}:{env['PATH']}"
     env["PLUGIN_DIR"] = str(plugin_dir)
+    env["MOONLIGHT_SYNC_BASE_URL"] = base.as_uri()
+    if extra_env:
+        env.update(extra_env)
     return subprocess.run(
         ["sh", str(ROOT / "install.sh")],
         capture_output=True,
@@ -113,7 +126,7 @@ def test_good_checksum_installs_and_restarts(tmp_path: Path) -> None:
 
 def test_wrong_checksum_fails_and_leaves_nothing(tmp_path: Path) -> None:
     base = release(tmp_path)
-    (base / f"{ASSET}.sha256").write_text(f"{'0' * 64}  {ASSET}\n")
+    (asset_dir(base) / f"{ASSET}.sha256").write_text(f"{'0' * 64}  {ASSET}\n")
     plugin_dir = tmp_path / "plugins"
     result = run_install(tmp_path, base, plugin_dir)
     assert result.returncode == 1
@@ -123,7 +136,7 @@ def test_wrong_checksum_fails_and_leaves_nothing(tmp_path: Path) -> None:
 
 def test_missing_asset_fails(tmp_path: Path) -> None:
     base = release(tmp_path)
-    (base / ASSET).unlink()
+    (asset_dir(base) / ASSET).unlink()
     plugin_dir = tmp_path / "plugins"
     result = run_install(tmp_path, base, plugin_dir)
     assert result.returncode != 0
@@ -132,17 +145,45 @@ def test_missing_asset_fails(tmp_path: Path) -> None:
 
 def test_missing_checksum_fails(tmp_path: Path) -> None:
     base = release(tmp_path)
-    (base / f"{ASSET}.sha256").unlink()
+    (asset_dir(base) / f"{ASSET}.sha256").unlink()
     plugin_dir = tmp_path / "plugins"
     result = run_install(tmp_path, base, plugin_dir)
     assert result.returncode != 0
     assert not plugin_dir.exists()
 
 
-def test_missing_required_command_fails(tmp_path: Path) -> None:
+def logging_curl_bin(tmp_path: Path) -> tuple[Path, Path]:
+    """A directory prepended to PATH with a `curl` that logs the URL it
+    was asked to fetch (one per line) to `log` before delegating to the
+    real curl, so a test can assert exactly which URL install.sh built.
+    """
+    directory = tmp_path / "curllog_bin"
+    directory.mkdir(exist_ok=True)
+    log = tmp_path / "curl.log"
+    real_curl = shutil.which("curl")
+    assert real_curl is not None
+    (directory / "curl").write_text(
+        "#!/bin/sh\n"
+        f'echo "$*" >> "{log}"\n'
+        f'exec {real_curl} "$@"\n'
+    )
+    (directory / "curl").chmod(0o755)
+    return directory, log
+
+
+def test_default_version_hits_the_latest_download_path(tmp_path: Path) -> None:
     base = release(tmp_path)
     plugin_dir = tmp_path / "plugins"
-    bindir = fake_bin(tmp_path, base)
+    curl_dir, log = logging_curl_bin(tmp_path)
+    result = run_install(tmp_path, base, plugin_dir, extra_path_dirs=(curl_dir,))
+    assert result.returncode == 0, result.stderr
+    logged = log.read_text()
+    assert "releases/latest/download/Moonlight-Sync.zip" in logged
+
+
+def test_missing_required_command_fails(tmp_path: Path) -> None:
+    plugin_dir = tmp_path / "plugins"
+    bindir = fake_bin(tmp_path)
     # A restricted PATH directory holding symlinks to just `sh` and the
     # commands install.sh needs before the one under test -- explicitly
     # never sha256sum or unzip -- so `require` rejects the run before any
@@ -171,24 +212,20 @@ def test_missing_required_command_fails(tmp_path: Path) -> None:
 
 
 def test_pinned_version_hits_the_download_tag_path(tmp_path: Path) -> None:
-    base = release(tmp_path)
+    base = release(tmp_path, version="v0.1.0")
     plugin_dir = tmp_path / "plugins"
-    env = dict(os.environ)
-    bindir = fake_bin(tmp_path, base)
-    env["PATH"] = f"{bindir}:{env['PATH']}"
-    env["PLUGIN_DIR"] = str(plugin_dir)
-    env["MOONLIGHT_SYNC_VERSION"] = "v0.1.0"
-    result = subprocess.run(
-        ["sh", str(ROOT / "install.sh")],
-        capture_output=True,
-        text=True,
-        env=env,
-        cwd=str(tmp_path),
-        timeout=60,
-        check=False,
+    curl_dir, log = logging_curl_bin(tmp_path)
+    result = run_install(
+        tmp_path,
+        base,
+        plugin_dir,
+        extra_env={"MOONLIGHT_SYNC_VERSION": "v0.1.0"},
+        extra_path_dirs=(curl_dir,),
     )
     assert result.returncode == 0, result.stderr
     assert "v0.1.0" in result.stdout
+    logged = log.read_text()
+    assert "releases/download/v0.1.0/Moonlight-Sync.zip" in logged
 
 
 def test_the_real_install_sh_is_syntactically_valid() -> None:

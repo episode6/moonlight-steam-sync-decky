@@ -11,11 +11,13 @@ section 5), not decided here.
 
 1. Get a build onto the Deck. Once `v0.1.0` is tagged: `curl -fsSL
    https://raw.githubusercontent.com/episode6/moonlight-steam-sync-decky/main/install.sh
-   | sh` (two `sudo` prompts, explained by the script). Until then: build
-   `out/Moonlight-Sync.zip` off-device (`pnpm install && pnpm run build &&
-   backend/entrypoint.sh && python3 scripts/package.py`, or take the
-   `Moonlight-Sync` artifact from a CI run) and install it by hand —
-   `README.md`'s "Manual install".
+   | sh` (two `sudo` prompts, explained by the script). Until then, the CLI
+   is unreleased so `backend/entrypoint.sh` fails (it is always strict);
+   build off-device with `pnpm install && pnpm run build &&
+   (backend/entrypoint.sh || true) && python3 scripts/package.py` (the zip
+   ships without `bin/moonlight-steam-sync.pyz`, so About will show
+   `bundled: null`), or take the `Moonlight-Sync` artifact from a CI run,
+   and install it by hand — `README.md`'s "Manual install".
 2. SSH into the Deck while it sits in Game Mode (`passwd` once in Desktop
    Mode, then `sudo systemctl enable --now sshd`; see `probes/PROBES.md`
    §1.1 for the full one-time setup, which the PR-0 probes below also
@@ -190,7 +192,7 @@ plugin is the fallback. Full procedure, venv setup and the exact commands:
 - [ ] **First press copies a community layout.** Pick a `workshop://`
       layout on the real game in Steam's controller settings, then press
       *Stream*. Expect the hidden shortcut to launch with the same layout,
-      and `cat "~/homebrew/settings/Moonlight Sync/layouts.json"` to show
+      and `cat ~/homebrew/settings/"Moonlight Sync"/layouts.json` to show
       that shortcut appid with result `"copied"` and the same `workshop://`
       URL; the Titles row reads "copied".
 - [ ] **A hand-picked layout on the hidden entry is never overwritten.**

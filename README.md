@@ -42,8 +42,10 @@ curl -fsSL https://raw.githubusercontent.com/episode6/moonlight-steam-sync-decky
 
 `install.sh` downloads the latest (or a `MOONLIGHT_SYNC_VERSION`-pinned)
 release's `Moonlight-Sync.zip` and its `.sha256`, verifies the checksum,
-unzips it into `~/homebrew/plugins/` and restarts `plugin_loader` so the
-new plugin loads. Both of those steps run through `sudo` (Decky's plugin
+removes any previous `Moonlight Sync/` install so files an older release
+shipped and the new one no longer does cannot linger, unzips the new one
+into `~/homebrew/plugins/` and restarts `plugin_loader` so the new plugin
+loads. Both the install and the restart run through `sudo` (Decky's plugin
 directory belongs to root on a stock install), so you will be asked for
 your password twice on the terminal; the script never runs `sudo`
 non-interactively. It is safe to re-run: it always re-downloads and
@@ -56,6 +58,7 @@ Download `Moonlight-Sync.zip` from a release, copy it to the Deck, and in a
 Desktop Mode terminal or over SSH:
 
 ```sh
+sudo rm -rf ~/homebrew/plugins/"Moonlight Sync"
 sudo unzip -o Moonlight-Sync.zip -d ~/homebrew/plugins/
 sudo systemctl restart plugin_loader
 ```

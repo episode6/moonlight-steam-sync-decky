@@ -121,11 +121,14 @@ src/components/             QuickAccess, SyncProgress, RestartModal, SettingsPag
                             streamMap has the appid), ArtworkPage, AdvancedPage, AboutPage
 src/test/fixtures.ts        loads tests/fixtures for vitest
 tests/                      pytest: fake_cli.py, fixtures/, conftest.py, test_*.py,
-                            test_install_sh.py (install.sh end to end, curl/sudo/systemctl
-                            shimmed on PATH against a file:// fixture)
+                            test_install_sh.py (install.sh end to end via
+                            MOONLIGHT_SYNC_BASE_URL against a file:// fixture,
+                            sudo/systemctl shimmed on PATH)
 .github/workflows/release.yml  on a v* tag: strict entrypoint.sh + package.py --require-cli,
                             Moonlight-Sync.zip + .sha256 attached to a GitHub release;
-                            build-and-package also runs on pull_request
+                            build-and-package also runs on pull_request, where the CLI
+                            fetch tolerates the release not existing yet (a ::warning::,
+                            like CI's package job) instead of failing the run
 ```
 
 PR-6 made `search` / `pin` / `unpin` / `set_ignored` real (the Titles page
@@ -285,7 +288,8 @@ On-device checks are not merge criteria; they are collected in
 ## CI and release outline
 
 - `.github/workflows/ci.yml` (push to `main`, every `pull_request`):
-  `shellcheck` (`sh -n install.sh` + shellcheck), `frontend` (pnpm 9, Node
+  `shellcheck` (`sh -n` on `install.sh` and `backend/entrypoint.sh`, then
+  `ludeeus/action-shellcheck` over the whole tree), `frontend` (pnpm 9, Node
   20: typecheck, lint, vitest, build, upload `dist`), `backend` (Python
   3.13.5: ruff, pytest), `probes` (guarded), `package` (HEAD-checks the
   pinned CLI's `.sha256` asset: absent → a
@@ -298,13 +302,18 @@ On-device checks are not merge criteria; they are collected in
   matching `install.sh`'s check) attached to the GitHub release via the
   CLI repo's idempotent `gh release view || create` / `upload --clobber`
   step. The build-and-package job also runs on `pull_request` and
-  `workflow_dispatch`, so it is exercised before the first tag; only the
+  `workflow_dispatch`, exactly like CI's `package` job (HEAD-check the
+  CLI's `.sha256` asset; absent → the same `::warning::` and no `bin/`;
+  present → `entrypoint.sh` strict), never strict on those triggers, so it
+  is exercised and green before the first tag; only the
   `github-release` job is tag-gated (`startsWith(github.ref,
   'refs/tags/')`).
 - `install.sh`: the end-user installer, mirroring the CLI repo's own (curl
-  the release zip + `.sha256`, verify, unzip into `~/homebrew/plugins/`,
-  restart `plugin_loader`); `tests/test_install_sh.py` runs it for real
-  against a `file://` fixture with `curl`/`sudo`/`systemctl` shimmed on
+  the release zip + `.sha256`, verify, remove any previous install, unzip
+  into `~/homebrew/plugins/`, restart `plugin_loader`); its
+  `MOONLIGHT_SYNC_BASE_URL` seam (mirroring `backend/entrypoint.sh`'s
+  `MSY_CLI_BASE_URL`) lets `tests/test_install_sh.py` point the real `curl`
+  at a `file://` fixture tree, with only `sudo`/`systemctl` shimmed on
   `PATH`, so no sudo and no network are ever touched by the test.
 - The plugin PRs are stacked (PR-0 → PR-5 → PR-6 → PR-7 → PR-8), each branch
   on the previous one; never push to `main`, force-push only with
@@ -313,10 +322,13 @@ On-device checks are not merge criteria; they are collected in
 ## Cutting a release
 
 **No agent pushes a tag or creates a release.** The user does this, and
-only once moonlight-steam-sync's own `v0.3.0` exists (`release.yml` fails
-hard on the missing CLI release, unlike CI's `package` job, which
-tolerates it with a warning). As of this writing `v0.3.0` has not been
-released, so `v0.1.0` of the plugin has not been cut either.
+only once moonlight-steam-sync's own `v0.3.0` exists: `release.yml`'s
+build job fails hard on the missing CLI release **only when it runs from
+a `v*` tag push**; its `pull_request` and `workflow_dispatch` runs tolerate
+the CLI not being released yet with the same `::warning::` CI's `package`
+job prints, so the workflow stays green on every PR in this stack. As of
+this writing `v0.3.0` has not been released, so `v0.1.0` of the plugin has
+not been cut either.
 
 Modelled on the CLI repo's own "Cutting a release", once `v0.3.0` exists
 and everything intended for `v0.1.0` has merged to `main`:
