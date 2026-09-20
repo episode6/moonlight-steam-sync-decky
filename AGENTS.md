@@ -339,9 +339,10 @@ only once moonlight-steam-sync's own `v0.3.0` exists: `release.yml`'s
 build job fails hard on the missing CLI release **only when it runs from
 a `v*` tag push**; its `pull_request` and `workflow_dispatch` runs tolerate
 the CLI not being released yet with the same `::warning::` CI's `package`
-job prints, so the workflow stays green on every PR in this stack. As of
-this writing `v0.3.0` has not been released, so `v0.1.0` of the plugin has
-not been cut either.
+job prints, so the workflow stays green on every PR in this stack. The
+CLI's `v0.3.0` was released on 2026-09-20 and the plugin's `v0.1.0`
+follows it; the lenient path only matters again when the pin moves to a
+CLI release that does not exist yet.
 
 Modelled on the CLI repo's own "Cutting a release", once `v0.3.0` exists
 and everything intended for `v0.1.0` has merged to `main`:
@@ -354,9 +355,10 @@ git checkout main && git pull
 #    "0.1.0" as of this PR, so this step is only needed for v0.2.0+.
 $EDITOR package.json
 
-# 2. Move the CHANGELOG's prepared v0.1.0 entry out of "not yet tagged"
-#    (this PR left it dated "not yet tagged"; give it today's date) and
-#    open a new empty [Unreleased] section above it.
+# 2. Move the CHANGELOG's [Unreleased] entries into a new dated
+#    [X.Y.Z] section and open a new empty [Unreleased] section above it
+#    (v0.1.0's entry is already dated, so this step too is only needed
+#    for v0.2.0+).
 $EDITOR CHANGELOG.md
 
 # 3. Commit the bump.
