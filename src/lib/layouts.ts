@@ -6,15 +6,19 @@
  *   Steam Input and set it on the hidden shortcut) and `picker` (no Steam
  *   Input calls; the Titles row's *Choose layout* is the only affordance).
  *   `settings.json`'s `layout_strategy` overrides it by hand on the device.
- *   The PR-0 probe V2 decides whether `copy` stands: flipping it is this
- *   constant plus the README's "Controller layouts" section.
+ *   The PR-0 probe V2 (2026-09-20) confirmed `copy`: a `workshop://` URL set
+ *   on a shortcut reads back, given the fifth `SetSelectedConfigForApp`
+ *   argument (`CONFIG_SELECTION_USER`). Flipping it would be this constant
+ *   plus the README's "Controller layouts" section.
  * - **`copyLayout`** is the rule of spec 3.10, exactly: copy only when the
  *   hidden shortcut has no explicit selection and the real game has one;
  *   never overwrite a selection somebody made on the hidden entry. It takes
  *   a `SteamInput` seam so it is unit-tested; `steam.ts` implements the seam
  *   over `SteamClient.Input`.
  * - The Deck's built-in controller index is found by type, never assumed to
- *   be 0 (spec 2.2).
+ *   be 0 (spec 2.2); a device without one (a SteamOS box with a separate
+ *   pad) falls back to the active or only connected controller
+ *   (`layoutControllerIndexFrom`).
  */
 
 import type { LayoutEntry, LayoutResult, LayoutStrategy, Settings } from "./cli";
@@ -22,7 +26,7 @@ import type { LayoutEntry, LayoutResult, LayoutStrategy, Settings } from "./cli"
 // ---------------------------------------------------------------------------
 // the strategy switch
 
-/** Flip this (and the README) once the PR-0 probes say whether the copy sticks. */
+/** `copy`, confirmed by PR-0 probe V2: the copy sticks. */
 export const DEFAULT_LAYOUT_STRATEGY: LayoutStrategy = "copy";
 
 export const LAYOUT_STRATEGIES: readonly LayoutStrategy[] = ["copy", "picker"];
@@ -45,15 +49,22 @@ export function copyEnabled(settings: Pick<Settings, "layout_strategy" | "copy_l
 export interface LayoutConfig {
   URL?: string;
   Title?: string;
+  /**
+   * `false` on a config Steam only *offers*: PR-0 probe V1 read a game whose
+   * controller settings were never opened as `template://…` with
+   * `bSelected: false`. (`eSelectionType` is not the signal: a layout edited
+   * in place is a user's choice and reads 0, like Steam's guess.)
+   */
+  bSelected?: boolean;
 }
 
 /** The three Steam Input touchpoints `copyLayout` needs; `steam.ts` implements them. */
 export interface SteamInput {
-  /** The Deck's built-in controller, by type; `null` when none is connected. */
-  deckControllerIndex(): number | null;
+  /** The controller whose layout is copied (`layoutControllerIndexFrom`); `null` when none is connected. */
+  controllerIndex(): number | null;
   /** `SteamClient.Input.GetConfigForAppAndController`. */
   getConfig(appid: number, controllerIndex: number): Promise<LayoutConfig | null>;
-  /** `SteamClient.Input.SetSelectedConfigForApp(appid, index, url, false)`. */
+  /** `SteamClient.Input.SetSelectedConfigForApp(appid, index, url, false, CONFIG_SELECTION_USER)`. */
   setConfig(appid: number, controllerIndex: number, url: string): Promise<void>;
 }
 
@@ -63,6 +74,15 @@ export const DEFAULT_URL_PREFIX = "default://";
 /** No selection: nothing chosen, or Steam's guess. */
 export function isDefaultUrl(url: string | null | undefined): boolean {
   return !url || url.startsWith(DEFAULT_URL_PREFIX);
+}
+
+/**
+ * Nobody chose this config: no URL, Steam's `default://` guess (which reads
+ * `bSelected: true`, so the prefix is still needed), or any URL Steam
+ * reports with `bSelected: false`. A missing `bSelected` decides nothing.
+ */
+export function isUnselected(config: LayoutConfig | null | undefined): boolean {
+  return isDefaultUrl(config?.URL) || config?.bSelected === false;
 }
 
 export interface LayoutOutcome {
@@ -79,7 +99,7 @@ export interface LayoutOutcome {
 /**
  * Copy the real game's layout to its hidden shortcut (spec 3.10):
  *
- * - no Deck controller → `unavailable`;
+ * - no controller to copy for → `unavailable`;
  * - the real game is on Steam's default → `kept` (nothing to copy);
  * - the shortcut already has its own choice → `kept` (never overwritten);
  * - otherwise set the real game's URL on the shortcut and read it back:
@@ -90,12 +110,17 @@ export interface LayoutOutcome {
  */
 export async function copyLayout(realAppid: number, shortcutAppid: number, input: SteamInput): Promise<LayoutOutcome> {
   try {
-    const idx = input.deckControllerIndex();
+    const idx = input.controllerIndex();
     if (idx === null) return { result: "unavailable", url: null };
     const real = await input.getConfig(realAppid, idx);
     const mine = await input.getConfig(shortcutAppid, idx);
-    if (isDefaultUrl(real?.URL)) return { result: "kept", url: mine?.URL ?? null };
-    if (!isDefaultUrl(mine?.URL)) return { result: "kept", url: mine!.URL! };
+    if (isUnselected(real)) {
+      // An offered-but-unselected URL on the shortcut is not its "own layout":
+      // record Steam's guess, or nothing, so the row reads "Steam default".
+      const offeredOnly = isUnselected(mine) && !isDefaultUrl(mine?.URL);
+      return { result: "kept", url: offeredOnly ? null : (mine?.URL ?? null) };
+    }
+    if (!isUnselected(mine)) return { result: "kept", url: mine!.URL! };
     const url = real!.URL!;
     await input.setConfig(shortcutAppid, idx, url);
     const after = await input.getConfig(shortcutAppid, idx);
@@ -110,10 +135,11 @@ export async function copyLayout(realAppid: number, shortcutAppid: number, input
 
 /**
  * `EControllerType.SteamControllerNeptune` (the Deck's built-in controller)
- * **[verify V1/V2]**: the enum value is unmeasured and is only the fallback
- * for a client whose `controllerStore` has no `GetControllerTypeString`;
- * the type string below is the path spec 2.2 sanctions. The PR-0 probe kit
- * dumps `controllerStore.GetControllers()`, which confirms or corrects it.
+ * **[verify V1/V2]**: the enum value is still unmeasured on a Deck (the PR-0
+ * probes ran on a SteamOS box with a separate Steam Controller: type 10,
+ * `controller_steamcontroller_triton`) and is only the fallback for a client
+ * whose `ControllerStore` has no `GetControllerTypeString`; the type string
+ * below is the path spec 2.2 sanctions.
  */
 export const DECK_CONTROLLER_TYPE = 4;
 
@@ -143,6 +169,36 @@ export function deckControllerIndexFrom(
     if (isDeck) return controller.nControllerIndex;
   }
   return null;
+}
+
+/**
+ * The fifth argument Steam's own configurator passes to
+ * `SetSelectedConfigForApp` for a layout the user picked (it reads back as
+ * `eSelectionType: 1`). Measured by PR-0 probe V2: without it the call
+ * returns normally and selects nothing.
+ */
+export const CONFIG_SELECTION_USER = 1;
+
+/**
+ * The controller whose layout `copyLayout` copies: the Deck's built-in one
+ * when it is listed (by type); on a device that has none (a SteamOS box with
+ * a separate pad, PR-0 probe V1) the active controller when it is listed,
+ * else the only listed one. `null` with nothing connected, or with several
+ * non-Deck controllers and no active one among them.
+ */
+export function layoutControllerIndexFrom(
+  controllers: readonly ControllerLike[] | null | undefined,
+  typeString?: (type: number) => string,
+  activeIndex?: number | null,
+): number | null {
+  const deck = deckControllerIndexFrom(controllers, typeString);
+  if (deck !== null) return deck;
+  if (!Array.isArray(controllers)) return null;
+  const indices = controllers
+    .filter((controller) => controller && typeof controller.nControllerIndex === "number")
+    .map((controller) => controller.nControllerIndex);
+  if (typeof activeIndex === "number" && indices.includes(activeIndex)) return activeIndex;
+  return indices.length === 1 ? indices[0] : null;
 }
 
 // ---------------------------------------------------------------------------

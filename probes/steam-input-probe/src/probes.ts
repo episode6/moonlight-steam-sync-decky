@@ -17,6 +17,9 @@ const SHORTCUT_APPID_MIN = 0x80000000;
 export const NEPTUNE_TYPE_STRING = "controller_steamcontroller_neptune";
 const NEPTUNE_ENUM = 4; // EControllerType.SteamControllerNeptune in @decky/ui 4.12
 const FALLBACK_INDEX = 15; // the Deck controller index deckyemu measured; used only when the type lookup fails
+// The fifth SetSelectedConfigForApp argument Steam's own configurator passes for a user
+// pick; with four arguments the call selects nothing (measured 2026-09-20).
+const SELECTION_USER = 1;
 
 const backendLog = callable<[line: string], { ok: boolean; path?: string; error?: string }>("log");
 const backendStartWatch = callable<
@@ -195,7 +198,8 @@ export interface ControllerScan {
 
 export async function findControllers(): Promise<ControllerScan> {
   const w = g();
-  const cs = w.controllerStore;
+  // `ControllerStore` on the client probed on 2026-09-20; `controllerStore` is the older spelling.
+  const cs = w.ControllerStore ?? w.controllerStore;
   const attempts: string[] = [];
   let list: any[] | null = null;
   if (!cs) {
@@ -433,11 +437,11 @@ export async function probeV2(appidText: string, url: string, indexOverrideText 
   }
   let setResult: unknown;
   try {
-    setResult = await input.SetSelectedConfigForApp(appid, deckIndex, url.trim(), false);
+    setResult = await input.SetSelectedConfigForApp(appid, deckIndex, url.trim(), false, SELECTION_USER);
   } catch (e) {
     setResult = { error: errText(e) };
   }
-  await plog(`V2 SetSelectedConfigForApp(${appid}, ${deckIndex}, "${url.trim()}", false) -> ${j(setResult)}`);
+  await plog(`V2 SetSelectedConfigForApp(${appid}, ${deckIndex}, "${url.trim()}", false, ${SELECTION_USER}) -> ${j(setResult)}`);
   await sleep(1000);
   const after = await getConfig(input, appid, deckIndex);
   const afterUrl = (after as Record<string, unknown> | null)?.URL;

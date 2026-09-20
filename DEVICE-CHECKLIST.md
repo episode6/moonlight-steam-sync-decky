@@ -261,12 +261,17 @@ to `~/homebrew/logs/steam-input-probe/steam-input-probe.log` (the loader's
       key and reload to return to `copy`.
 - [ ] **Controller index by type.** In the CEF console (or the PR-0 kit)
       with a Bluetooth pad also paired, run
-      `controllerStore.GetControllers().map(c => [c.nControllerIndex,
-      c.eControllerType, controllerStore.GetControllerTypeString?.(c.eControllerType)])`.
+      `ControllerStore.GetControllers().map(c => [c.nControllerIndex,
+      c.eControllerType, ControllerStore.GetControllerTypeString?.(c.eControllerType)])`
+      (the global is `ControllerStore`, capital C, on the client probed on
+      2026-09-20; the list is empty while no controller is connected).
       Expect the built-in controller not at index 0 when the pad connected
       first, its type string `"controller_steamcontroller_neptune"`, and
       `eControllerType` `4`; if not 4, correct `DECK_CONTROLLER_TYPE` in
-      `src/lib/layouts.ts`.
+      `src/lib/layouts.ts`. **Still open:** the first probe device was a
+      SteamOS box with a separate Steam Controller (index 0, type 10,
+      `"controller_steamcontroller_triton"`), so this has not been seen on
+      a Deck.
 
 ## 5. PR-8: this checklist and `install.sh`
 

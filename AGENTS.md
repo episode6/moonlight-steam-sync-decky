@@ -92,9 +92,12 @@ src/lib/                    pure modules (vitest)
                             pinTitle, setIgnored,
                             streamPress() (guard, copy, run), chooseLayout(), layoutWalk()
   layouts.ts                DEFAULT_LAYOUT_STRATEGY (the one switch), layoutStrategy(),
-                            copyEnabled(), the SteamInput seam, copyLayout() (the §3.10
+                            copyEnabled(), the SteamInput seam, isUnselected() (no URL,
+                            default://, or bSelected false), copyLayout() (the §3.10
                             rule), deckControllerIndexFrom() (by type: the type string when
                             the client has it -- final either way -- else the enum),
+                            layoutControllerIndexFrom() (the Deck's, else the active or
+                            only connected controller), CONFIG_SELECTION_USER,
                             the status texts,
                             walkPairs() and the walk's timings
   layouts.test.ts           copyLayout's seven cases + idempotence, the index by type,
@@ -109,8 +112,9 @@ src/lib/                    pure modules (vitest)
   format.ts                 relative times, the Last sync line
   steam.ts                  ownedApps(), currentSteamId3(), runShortcut(),
                             shutdownSteam(), watchRunningApps(), steamInput() over
-                            SteamClient.Input, deckControllerIndex() (controllerStore,
-                            else the RegisterForControllerListChanges watch),
+                            SteamClient.Input, controllerIndex() (ControllerStore or
+                            controllerStore, else the guarded list watch; plus the
+                            active-controller watch),
                             overviewLoaded(), showControllerConfigurator() (globals only)
 src/routes/libraryApp.tsx   the /library/app/:appid patch (routerHook.addPatch, afterPatch
                             on renderFunc, findInReactTree for the overview and the
@@ -141,10 +145,19 @@ spec's modal has no unpin action); the callable exists for the contract.
 probes ran. `DEFAULT_LAYOUT_STRATEGY = "copy"` in `src/lib/layouts.ts` is
 the one place the default lives; `settings.json`'s `layout_strategy`
 overrides it per device (no UI). Probe V2 (does `SetSelectedConfigForApp`
-with a `workshop://` id published for the real game stick on the hidden
-shortcut named like the game?) decides whether `copy` stands: if not, flip
-the constant to `"picker"` and rewrite the README's "Controller layouts"
-section, nothing else moves. Under `picker` no Steam Input call is made
+with a `workshop://` id published for the real game stick on a shortcut?)
+ran on 2026-09-20 and **confirmed `copy`** -- with one correction: the call
+takes five arguments, the last being the selection type
+(`CONFIG_SELECTION_USER = 1`, what Steam's own configurator passes); with
+four it returns normally and selects nothing. The same session found the
+store global is `ControllerStore` (not `controllerStore`), that
+`SteamClient.Input.RegisterForControllerListChanges` does not exist on that
+client (so `watchControllers()` guards every registration), and that the
+device had no Deck controller at all, which is why
+`layoutControllerIndexFrom()` falls back to the active or only connected
+controller. Should a later client break the copy, flip the constant to
+`"picker"` and rewrite the README's "Controller layouts" section; nothing
+else moves. Under `picker` no Steam Input call is made
 anywhere; *Choose layout* (`SteamClient.Apps.ShowControllerConfigurator`,
 hidden when absent) is the only layout affordance.
 

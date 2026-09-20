@@ -113,7 +113,7 @@ class FakeInput implements SteamInput {
   /** When set, `setConfig` "sticks" this URL instead of the requested one. */
   sticksAs: string | null = null;
   throwOnSet = false;
-  deckControllerIndex() {
+  controllerIndex() {
     return this.index;
   }
   async getConfig(appid: number) {

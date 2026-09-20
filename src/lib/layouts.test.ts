@@ -11,6 +11,8 @@ import {
   copyLayout,
   deckControllerIndexFrom,
   isDefaultUrl,
+  isUnselected,
+  layoutControllerIndexFrom,
   layoutKindText,
   layoutLine,
   layoutStatusText,
@@ -31,23 +33,26 @@ const DECK = 15; // deckyemu measured 15: never 0 (spec 2.2)
 class FakeInput implements SteamInput {
   index: number | null = DECK;
   urls = new Map<number, string>();
+  /** Appids whose config Steam only offers (`bSelected: false`), as probe V1 read an untouched game. */
+  unselected = new Set<number>();
   sets: [number, number, string][] = [];
   /** What the shortcut reads back after a set (default: what was set). */
   readBack: ((url: string) => string) | null = null;
   throwOnSet = false;
   throwOnGet = false;
-  deckControllerIndex() {
+  controllerIndex() {
     return this.index;
   }
   async getConfig(appid: number) {
     if (this.throwOnGet) throw new Error("no");
     const URL = this.urls.get(appid);
-    return URL === undefined ? null : { URL, Title: "x" };
+    return URL === undefined ? null : { URL, Title: "x", bSelected: !this.unselected.has(appid) };
   }
   async setConfig(appid: number, controllerIndex: number, url: string) {
     if (this.throwOnSet) throw new Error("SetSelectedConfigForApp failed");
     this.sets.push([appid, controllerIndex, url]);
     this.urls.set(appid, this.readBack ? this.readBack(url) : url);
+    this.unselected.delete(appid);
   }
 }
 
@@ -94,6 +99,36 @@ describe("copyLayout (spec 3.10)", () => {
     expect(none.sets).toEqual([]);
   });
 
+  it("treats a template:// Steam only offers (bSelected false) as no selection, on either side", async () => {
+    // PR-0 probe V1: a game whose controller settings were never opened.
+    const untouched = new FakeInput();
+    untouched.urls.set(REAL, "template://controller_neptune_gamepad_joystick.vdf");
+    untouched.unselected.add(REAL);
+    untouched.urls.set(SHORTCUT, "default://elden ring");
+    expect(await copyLayout(REAL, SHORTCUT, untouched)).toEqual({ result: "kept", url: "default://elden ring" });
+    expect(untouched.sets).toEqual([]);
+    // the same offer on the shortcut does not block a copy, and is not its "own layout"
+    const offered = new FakeInput();
+    offered.urls.set(REAL, "workshop://1");
+    offered.urls.set(SHORTCUT, "template://controller_neptune_gamepad_joystick.vdf");
+    offered.unselected.add(SHORTCUT);
+    expect(await copyLayout(REAL, SHORTCUT, offered)).toEqual({ result: "copied", url: "workshop://1" });
+    const both = new FakeInput();
+    both.urls.set(REAL, "template://a.vdf");
+    both.urls.set(SHORTCUT, "template://a.vdf");
+    both.unselected.add(REAL).add(SHORTCUT);
+    expect(await copyLayout(REAL, SHORTCUT, both)).toEqual({ result: "kept", url: null });
+  });
+
+  it("isUnselected: no URL, default://, or bSelected false; a missing bSelected decides nothing", () => {
+    expect(isUnselected(null)).toBe(true);
+    expect(isUnselected({ URL: "default://x", bSelected: true })).toBe(true);
+    expect(isUnselected({ URL: "template://a.vdf", bSelected: false })).toBe(true);
+    expect(isUnselected({ URL: "template://a.vdf" })).toBe(false);
+    // a layout edited in place is a choice, though its eSelectionType reads 0
+    expect(isUnselected({ URL: "autosave:///x/controller_neptune.vdf", bSelected: true })).toBe(false);
+  });
+
   it("is unavailable without a Deck controller, and makes no calls", async () => {
     const input = new FakeInput();
     input.index = null;
@@ -129,6 +164,21 @@ describe("copyLayout (spec 3.10)", () => {
     input.urls.set(SHORTCUT, "workshop://999");
     expect(await copyLayout(REAL, SHORTCUT, input)).toEqual({ result: "kept", url: "workshop://999" });
     expect(input.sets).toHaveLength(1);
+  });
+});
+
+describe("the controller to copy for (layoutControllerIndexFrom)", () => {
+  const deck = { nControllerIndex: DECK, eControllerType: DECK_CONTROLLER_TYPE };
+  const a = { nControllerIndex: 0, eControllerType: 10 };
+  const b = { nControllerIndex: 1, eControllerType: 45 };
+  it("prefers the Deck's, then the listed active one, then the only one", () => {
+    expect(layoutControllerIndexFrom([a, deck], undefined, 0)).toBe(DECK);
+    expect(layoutControllerIndexFrom([a, b], undefined, 1)).toBe(1);
+    expect(layoutControllerIndexFrom([a, b], undefined, 7)).toBeNull();
+    expect(layoutControllerIndexFrom([a, b])).toBeNull();
+    expect(layoutControllerIndexFrom([a])).toBe(0);
+    expect(layoutControllerIndexFrom([], undefined, 0)).toBeNull();
+    expect(layoutControllerIndexFrom(null, undefined, 0)).toBeNull();
   });
 });
 
