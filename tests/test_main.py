@@ -189,9 +189,26 @@ def test_every_frontend_callable_exists_on_the_plugin(plugin) -> None:
     source = (ROOT / "src" / "lib" / "cli.ts").read_text()
     block = source.split("const CALLABLES = [", 1)[1].split("]", 1)[0]
     names = [part.strip().strip('"') for part in block.split(",") if part.strip()]
-    assert {"search", "pin", "unpin", "set_ignored"} <= set(names)
+    assert {"search", "pin", "unpin", "set_ignored", "layouts", "record_layout"} <= set(names)
     missing = [name for name in names if not callable(getattr(instance, name, None))]
     assert missing == []
+
+
+def test_layouts_through_main_py(plugin) -> None:
+    instance, _, tmp_path = plugin
+
+    async def scenario():
+        before = await instance.layouts()
+        recorded = await instance.record_layout(0x80000000 + 7, 1245620, "copied", "workshop://1")
+        after = await instance.layouts()
+        return before, recorded, after
+
+    before, recorded, after = run(scenario())
+    assert before == {"ok": True, "version": 1, "entries": {}}
+    assert recorded["ok"] is True
+    assert after["entries"] == recorded["entries"]
+    assert list(after["entries"]) == [str(0x80000000 + 7)]
+    assert Path(tmp_path / "settings" / "layouts.json").exists()
 
 
 def test_pin_and_set_ignored_through_main_py(plugin) -> None:

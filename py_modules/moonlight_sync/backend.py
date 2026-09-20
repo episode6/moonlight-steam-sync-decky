@@ -56,8 +56,6 @@ LOG_MAX_BYTES = 5 * 1024 * 1024
 LOG_KEEP_BYTES = 1024 * 1024
 STDOUT_LINE_LIMIT = 4 * 1024 * 1024
 
-NOT_YET: Result = {"ok": False, "error": "bad-request", "message": "not yet"}
-
 
 def iso_now() -> str:
     """UTC, seconds, ``Z`` -- the form the CLI writes (``_iso()``)."""
@@ -1207,13 +1205,33 @@ class Backend:
         return {"ok": True, "ignored": names}
 
     # ------------------------------------------------------------------
-    # PR-7 stubs
+    # controller layouts (spec 3.10)
 
-    async def layouts(self, *args: Any) -> Result:
-        return dict(NOT_YET)
+    @guarded
+    async def layouts(self) -> Result:
+        """``layouts.json``: the last layout result per hidden shortcut."""
+        return {"ok": True, **self.store.layouts()}
 
-    async def record_layout(self, *args: Any) -> Result:
-        return dict(NOT_YET)
+    @guarded
+    async def record_layout(
+        self,
+        shortcut_appid: Any = None,
+        real_appid: Any = None,
+        result: Any = None,
+        url: Any = None,
+    ) -> Result:
+        """Upsert one shortcut's ``{real_appid, result, url, when}`` atomically.
+
+        ``result`` is ``copied`` / ``kept`` / ``unavailable`` (a Stream press
+        or the post-restart walk) or ``picker`` (*Choose layout*). No CLI
+        and no Steam file is involved: this only records what the frontend
+        did through Steam Input.
+        """
+        data = self.store.record_layout(shortcut_appid, real_appid, result, url, when=iso_now())
+        self._log(
+            f"layout {result} for shortcut {shortcut_appid} (Steam {real_appid}): {url or '-'}"
+        )
+        return {"ok": True, **data}
 
     # ------------------------------------------------------------------
     # long runs

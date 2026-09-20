@@ -1133,10 +1133,74 @@ def test_pending_and_clear_pending(backend) -> None:
     assert run(backend.clear_pending("everything"))["error"] == "bad-request"
 
 
-def test_pr7_stubs(backend) -> None:
-    not_yet = {"ok": False, "error": "bad-request", "message": "not yet"}
-    assert run(backend.layouts()) == not_yet
-    assert run(backend.record_layout(1, 2, "copied", None)) == not_yet
+SHORTCUT = 0x80000000 + 42
+REAL = 1245620
+
+
+def test_layouts_empty_then_record_upserts_atomically(backend) -> None:
+    """layouts() / record_layout() over layouts.json (spec 3.7, 3.10)."""
+    path = Path(backend.settings_dir) / "layouts.json"
+    assert run(backend.layouts()) == {"ok": True, "version": 1, "entries": {}}
+    assert not path.exists()  # reading never creates it
+
+    first = run(backend.record_layout(SHORTCUT, REAL, "copied", "workshop://2810081311"))
+    assert first["ok"] is True and first["version"] == 1
+    entry = first["entries"][str(SHORTCUT)]
+    assert entry["real_appid"] == REAL
+    assert entry["result"] == "copied"
+    assert entry["url"] == "workshop://2810081311"
+    assert entry["when"].endswith("Z") and "T" in entry["when"]
+    assert json.loads(path.read_text()) == {"version": 1, "entries": first["entries"]}
+    assert not (Path(backend.settings_dir) / "layouts.json.tmp").exists()
+
+    # a second record for the same shortcut replaces it; another shortcut is added
+    second = run(backend.record_layout(SHORTCUT, REAL, "kept", "template://x.vdf"))
+    other = run(backend.record_layout(SHORTCUT + 1, 620, "unavailable", None))
+    assert second["entries"][str(SHORTCUT)]["result"] == "kept"
+    assert set(other["entries"]) == {str(SHORTCUT), str(SHORTCUT + 1)}
+    assert other["entries"][str(SHORTCUT + 1)] == {
+        "real_appid": 620,
+        "result": "unavailable",
+        "url": None,
+        "when": other["entries"][str(SHORTCUT + 1)]["when"],
+    }
+    picker = run(backend.record_layout(SHORTCUT, REAL, "picker", ""))
+    assert picker["entries"][str(SHORTCUT)]["url"] is None  # an empty URL is null
+    assert run(backend.layouts())["entries"] == picker["entries"]
+
+
+def test_record_layout_refuses_bad_arguments(backend) -> None:
+    path = Path(backend.settings_dir) / "layouts.json"
+    for args in (
+        (REAL, REAL, "copied", None),  # a Steam appid is not a shortcut
+        ("x", REAL, "copied", None),
+        (True, REAL, "copied", None),
+        (SHORTCUT, SHORTCUT, "copied", None),  # a shortcut is not a Steam game
+        (SHORTCUT, 0, "copied", None),
+        (SHORTCUT, REAL, "mirrored", None),
+        (SHORTCUT, REAL, "copied", 5),
+        (None, None, None, None),
+    ):
+        result = run(backend.record_layout(*args))
+        assert result["ok"] is False and result["error"] == "bad-request", args
+    assert not path.exists()
+
+
+def test_layouts_tolerates_a_broken_file(backend) -> None:
+    path = Path(backend.settings_dir) / "layouts.json"
+    path.write_text("{not json")
+    assert run(backend.layouts()) == {"ok": True, "version": 1, "entries": {}}
+    path.write_text('{"version": 1, "entries": [1, 2]}')
+    assert run(backend.layouts())["entries"] == {}
+    recorded = run(backend.record_layout(SHORTCUT, REAL, "copied", "workshop://1"))
+    assert list(recorded["entries"]) == [str(SHORTCUT)]
+    assert json.loads(path.read_text())["entries"] == recorded["entries"]
+
+
+def test_record_layout_is_logged(backend) -> None:
+    run(backend.record_layout(SHORTCUT, REAL, "copied", "workshop://1"))
+    log = Path(backend.log_path).read_text()
+    assert f"layout copied for shortcut {SHORTCUT} (Steam {REAL}): workshop://1" in log
 
 
 def test_log_tail(backend) -> None:
