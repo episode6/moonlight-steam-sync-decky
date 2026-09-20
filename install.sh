@@ -27,7 +27,9 @@
 # both unzipping into it and restarting plugin_loader need sudo. This
 # script runs `sudo` exactly where those two steps need it, interactively:
 # it is never run with a cached/NOPASSWD assumption or any non-interactive
-# sudo flag, so you will be prompted for your password on the terminal.
+# sudo flag, so you will be prompted for your password on the terminal. A
+# stock Steam Deck ships with no password for the `deck` user, so if you
+# have never set one, run `passwd` in a Desktop Mode terminal first.
 #
 # This installs the plugin only. moonlight-steam-sync, the CLI it drives
 # (https://github.com/episode6/moonlight-steam-sync), has its own
@@ -66,8 +68,14 @@ TMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 echo "Downloading ${ASSET} (${VERSION}) from ${REPO}..."
-curl -fsSL "${BASE_URL}/${ASSET}" -o "${TMP_DIR}/${ASSET}"
-curl -fsSL "${BASE_URL}/${ASSET}.sha256" -o "${TMP_DIR}/${ASSET}.sha256"
+# curl exits 22 on a 404, which with -f prints nothing useful. Say which
+# URL failed and the likeliest reason, as backend/entrypoint.sh does.
+for asset in "${ASSET}" "${ASSET}.sha256"; do
+    if ! curl -fsSL "${BASE_URL}/${asset}" -o "${TMP_DIR}/${asset}"; then
+        echo "install.sh: could not download ${BASE_URL}/${asset} (is ${VERSION} released?)" >&2
+        exit 1
+    fi
+done
 
 echo "Verifying checksum..."
 # Compare hashes rather than `sha256sum -c` against the recorded filename:
@@ -98,6 +106,13 @@ echo
 echo "Restarting plugin_loader so Moonlight Sync loads (needs sudo again)."
 sudo systemctl restart plugin_loader
 
+# What landed, not what was asked for: with the default "latest" the tag
+# is not otherwise known here. package.json is in the zip and its
+# "version" is what decky-loader shows (DECKY_PLUGIN_VERSION).
+INSTALLED=$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' \
+    "${PLUGIN_DIR}/Moonlight Sync/package.json" 2>/dev/null | head -n 1)
+[ -n "$INSTALLED" ] || INSTALLED="$VERSION"
+
 echo
-echo "Installed Moonlight Sync ${VERSION} to ${PLUGIN_DIR}/Moonlight Sync."
+echo "Installed Moonlight Sync ${INSTALLED} to ${PLUGIN_DIR}/Moonlight Sync."
 echo "Look for it in the Quick Access menu's Decky tab."

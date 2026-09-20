@@ -39,7 +39,10 @@ section 5), not decided here.
 
 The primary path is the scripted runner; the throwaway `steam-input-probe`
 plugin is the fallback. Full procedure, venv setup and the exact commands:
-[`probes/PROBES.md`](probes/PROBES.md). In order:
+[`probes/PROBES.md`](probes/PROBES.md). The fallback button plugin logs
+to `~/homebrew/logs/steam-input-probe/steam-input-probe.log` (the loader's
+`DECKY_PLUGIN_LOG_DIR`; a loader old enough not to set it falls back to
+`~/homebrew/logs/steam-input-probe.log`). In order:
 
 - [ ] **Setup** (PROBES.md §1.1): SSH in, create the `~/.cache/msy-probes`
       venv, confirm the CEF DevTools port answers
@@ -73,7 +76,12 @@ plugin is the fallback. Full procedure, venv setup and the exact commands:
       around a `StartShutdown(false)` call, then reconnects to confirm
       Steam came back. Expect the log to show a clear gap between the
       client going away and coming back, confirming `StartShutdown(false)`
-      is the restart from Game Mode (spec §2.3).
+      is the restart from Game Mode (spec §2.3). **The measurement is
+      `gaps` (from the pgrep samples), not `back_after_ms`**: that field
+      is measured from the start of the watch and the reconnect only
+      begins after the baseline plus the whole `--duration`, so it is
+      bounded below by roughly 91 s whatever Steam does. Read it only as
+      "Steam came back: yes/no" (PROBES.md §1.3).
 - [ ] Run `run_probes.py all --appids … --shortcut <APPID> [--url … --yes]`
       once everything above passes individually, and paste
       `probe-results.json`'s `--markdown` table into
@@ -119,6 +127,15 @@ plugin is the fallback. Full procedure, venv setup and the exact commands:
 - [ ] **In-game guard.** While a game is running, expect no restart
       countdown and the text "A game is running. Restart Steam when you're
       done."
+- [ ] **In-game guard on the persistent row** (Decision 29). With a
+      pending "Restart Steam to apply" row (either kind: a pending write,
+      or artwork), launch a game and open the panel. Expect the row to be
+      disabled with the subtitle "A game is running; exit it first", and
+      pressing it to do nothing. Exit the game: expect the row to become
+      pressable again. Also press the row just before launching a game so
+      the re-run's `awaiting-steam-exit` lands while the game is up:
+      expect the restart modal (with its in-game text) rather than Steam
+      shutting down under the game.
 - [ ] **Later → the persistent row → immediate restart.** Press *Later* on
       the restart modal, expect the "Restart Steam to apply" row; press it,
       expect the sync to re-run with `immediate_restart: true` and shut
@@ -126,6 +143,13 @@ plugin is the fallback. Full procedure, venv setup and the exact commands:
 - [ ] **Art-only restart** (a run with only artwork filled, no shortcut
       writes) offers the same modal/row with "New artwork needs a Steam
       restart to show".
+- [ ] **Restart countdown slider.** Settings → Advanced: expect the
+      countdown to run 0-30 s and no further (Decision 30 — the CLI stops
+      waiting for Steam after 60 s, so a longer countdown would race it).
+      Set 0 and expect the modal to show buttons with no countdown; set 30
+      and expect it to count down from 30. A `settings.json` left over
+      from an older build with `"restart_countdown_s": 60` must read back
+      as 30, not break the settings page.
 - [ ] **Re-fetch all art with no `--commit` support.** Install (or
       hand-build) a CLI whose `art --help` lacks `--commit`. Expect
       *Re-fetch all art* to be disabled, and if pressed anyway from a stale
@@ -204,6 +228,13 @@ plugin is the fallback. Full procedure, venv setup and the exact commands:
 - [ ] **Steam default.** On a real game left on Steam's default layout,
       press *Stream*: expect `layouts.json` to record `"kept"`, the row to
       read "Steam default", and no layout set on the hidden shortcut.
+- [ ] **One row, however often the page is opened.** Open the same owned
+      game's library page several times, backing out to the library and in
+      again between each (and switch to another game's page and back).
+      Expect exactly one Stream row every time — never two stacked — and
+      no slowdown building up as the page is re-entered. The route patch
+      runs `afterPatch` on each render, so a duplicated or accumulating
+      row shows up here and nowhere else.
 - [ ] **Running-app guard.** Launch any game, then open another published
       game's library page and press *Stream*: expect only the toast
       "Something is already running", no launch, no `layouts.json` change.
@@ -240,11 +271,20 @@ plugin is the fallback. Full procedure, venv setup and the exact commands:
 ## 5. PR-8: this checklist and `install.sh`
 
 - [ ] **`install.sh` on a Deck** (once `v0.1.0` is tagged): run the
-      one-liner from a clean Deck (no plugin installed yet). Expect two
-      `sudo` password prompts (unzip into `~/homebrew/plugins/`, restart
-      `plugin_loader`), then Moonlight Sync appears in the Quick Access
-      menu's Decky tab. Re-run it; expect it to succeed again
-      (reinstall/overwrite) without asking anything unexpected.
+      one-liner from a clean Deck (no plugin installed yet). A stock Deck
+      has no password for the `deck` user, so run `passwd` in a Desktop
+      Mode terminal first if you never set one. Expect two `sudo` password
+      prompts (unzip into `~/homebrew/plugins/`, restart `plugin_loader`),
+      then Moonlight Sync appears in the Quick Access menu's Decky tab,
+      and a final line naming the version that actually landed (read from
+      the installed `package.json`, not the tag asked for). Re-run it;
+      expect it to succeed again (reinstall/overwrite) without asking
+      anything unexpected.
+- [ ] **A missing release is explained.** Run with
+      `MOONLIGHT_SYNC_VERSION=v9.9.9`; expect
+      `install.sh: could not download …/Moonlight-Sync.zip (is v9.9.9
+      released?)` on stderr, exit 1 and nothing written to
+      `~/homebrew/plugins/`.
 - [ ] **`MOONLIGHT_SYNC_VERSION` pinning.** Run with
       `MOONLIGHT_SYNC_VERSION=v0.1.0 sh install.sh` (or the exact tag);
       expect the version-specific download path, not `latest/download`.

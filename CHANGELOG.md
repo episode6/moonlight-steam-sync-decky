@@ -98,7 +98,12 @@ everything that needs a Steam Deck, including the PR-0 probes.
   `Moonlight Sync/` install (so a file an older release shipped and the
   new one no longer does cannot linger), unzips into
   `~/homebrew/plugins/`, then restarts `plugin_loader`, explaining the two
-  `sudo` prompts it needs along the way. `release.yml`: on a `v*` tag,
+  `sudo` prompts it needs along the way (and that a stock Deck has no
+  password for `deck`, so `passwd` may be needed first). A failed download
+  says which URL failed and whether that version is released, rather than
+  curl's silent exit 22, and the closing line names the version that
+  actually landed, read from the installed `package.json`.
+  `release.yml`: on a `v*` tag,
   builds and packages strictly (the CLI download and the packaging step
   both fail the run rather than warn when the pinned CLI release is
   missing) and attaches `Moonlight-Sync.zip` and `Moonlight-Sync.zip.sha256`

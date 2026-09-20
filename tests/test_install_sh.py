@@ -36,10 +36,16 @@ pytestmark = pytest.mark.skipif(
 ASSET = "Moonlight-Sync.zip"
 
 
-def _fake_zip_bytes() -> bytes:
+def _fake_zip_bytes(version: str = "0.1.0") -> bytes:
+    """The shape scripts/package.py produces: a "Moonlight Sync/" directory
+    with plugin.json and package.json at its root."""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as archive:
         archive.writestr("Moonlight Sync/plugin.json", '{"name": "Moonlight Sync"}\n')
+        archive.writestr(
+            "Moonlight Sync/package.json",
+            '{\n  "name": "moonlight-steam-sync-decky",\n  "version": "' + version + '"\n}\n',
+        )
     return buf.getvalue()
 
 
@@ -139,7 +145,11 @@ def test_missing_asset_fails(tmp_path: Path) -> None:
     (asset_dir(base) / ASSET).unlink()
     plugin_dir = tmp_path / "plugins"
     result = run_install(tmp_path, base, plugin_dir)
-    assert result.returncode != 0
+    assert result.returncode == 1
+    # curl -f prints nothing useful on a 404, so install.sh says which URL
+    # failed and why it probably did (as backend/entrypoint.sh does).
+    assert f"install.sh: could not download {base.as_uri()}" in result.stderr
+    assert f"{ASSET} (is latest released?)" in result.stderr
     assert not plugin_dir.exists()
 
 
@@ -148,8 +158,61 @@ def test_missing_checksum_fails(tmp_path: Path) -> None:
     (asset_dir(base) / f"{ASSET}.sha256").unlink()
     plugin_dir = tmp_path / "plugins"
     result = run_install(tmp_path, base, plugin_dir)
-    assert result.returncode != 0
+    assert result.returncode == 1
+    assert f"install.sh: could not download {base.as_uri()}" in result.stderr
+    assert f"{ASSET}.sha256 (is latest released?)" in result.stderr
     assert not plugin_dir.exists()
+
+
+def test_missing_pinned_release_names_the_version(tmp_path: Path) -> None:
+    base = release(tmp_path, version="v0.1.0")
+    plugin_dir = tmp_path / "plugins"
+    result = run_install(
+        tmp_path, base, plugin_dir, extra_env={"MOONLIGHT_SYNC_VERSION": "v9.9.9"}
+    )
+    assert result.returncode == 1
+    assert "(is v9.9.9 released?)" in result.stderr
+    assert not plugin_dir.exists()
+
+
+def test_reinstall_removes_files_the_new_release_no_longer_ships(tmp_path: Path) -> None:
+    """unzip -o only overwrites what the new zip ships, so install.sh removes
+    the plugin directory first; a module an older release dropped there must
+    not survive the reinstall."""
+    base = release(tmp_path)
+    plugin_dir = tmp_path / "plugins"
+    stale = plugin_dir / "Moonlight Sync" / "stale.py"
+    stale.parent.mkdir(parents=True)
+    stale.write_text("# shipped by an older release\n")
+    result = run_install(tmp_path, base, plugin_dir)
+    assert result.returncode == 0, result.stderr
+    assert not stale.exists()
+    assert (plugin_dir / "Moonlight Sync" / "plugin.json").exists()
+
+
+def test_the_final_line_reports_the_version_that_landed(tmp_path: Path) -> None:
+    """With the default "latest" the tag is unknown here, so the line reads
+    package.json out of what was just unzipped."""
+    base = release(tmp_path, payload=_fake_zip_bytes("0.4.2"))
+    plugin_dir = tmp_path / "plugins"
+    result = run_install(tmp_path, base, plugin_dir)
+    assert result.returncode == 0, result.stderr
+    assert "Installed Moonlight Sync 0.4.2 to" in result.stdout
+    assert "Installed Moonlight Sync latest" not in result.stdout
+
+
+def test_the_final_line_falls_back_to_the_requested_version(tmp_path: Path) -> None:
+    """A zip with no package.json (or an unreadable one) still gets a line."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as archive:
+        archive.writestr("Moonlight Sync/plugin.json", '{"name": "Moonlight Sync"}\n')
+    base = release(tmp_path, payload=buf.getvalue(), version="v0.1.0")
+    plugin_dir = tmp_path / "plugins"
+    result = run_install(
+        tmp_path, base, plugin_dir, extra_env={"MOONLIGHT_SYNC_VERSION": "v0.1.0"}
+    )
+    assert result.returncode == 0, result.stderr
+    assert "Installed Moonlight Sync v0.1.0 to" in result.stdout
 
 
 def logging_curl_bin(tmp_path: Path) -> tuple[Path, Path]:
