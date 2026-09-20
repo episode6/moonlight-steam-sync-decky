@@ -1,0 +1,18 @@
+2026-09-18T21:00:00.000-04:00 steam-watch start duration_s=90 interval_ms=100 uid=1000
+2026-09-18T21:00:00.001-04:00 steam-watch change sample t=0 rc=0 pids=1234,1240 (was pids=none) pgrep-a(rc=0)=[1234 ~/.local/share/Steam/ubuntu12_32/steam -gamepadui; 1240 steam] cmdline=[1234: ~/.local/share/Steam/ubuntu12_32/steam -gamepadui -steamos3; 1240: /bin/bash /usr/bin/steam -gamepadui]
+2026-09-18T21:00:00.102-04:00 steam-watch sample t=101 rc=0 pids=1234,1240
+2026-09-18T21:00:00.203-04:00 steam-watch sample t=202 rc=0 pids=1234,1240
+2026-09-18T21:00:01.004-04:00 steam-watch shutdown sent t=1003 reply={"called": true, "returned": null} note=
+2026-09-18T21:00:01.005-04:00 steam-watch sample t=1004 rc=0 pids=1234,1240
+2026-09-18T21:00:03.310-04:00 steam-watch change sample t=3309 rc=0 pids=1240 (was pids=1234,1240) pgrep-a(rc=0)=[1240 steam] cmdline=[1240: /bin/bash /usr/bin/steam -gamepadui]
+2026-09-18T21:00:03.411-04:00 steam-watch sample t=3410 rc=0 pids=1240
+2026-09-18T21:00:03.512-04:00 steam-watch change sample t=3511 rc=1 pids=- (was pids=1240) pgrep-a(rc=1)=[-] cmdline=[-]
+2026-09-18T21:00:03.613-04:00 steam-watch sample t=3612 rc=1 pids=-
+2026-09-18T21:00:03.714-04:00 steam-watch sample t=3713 rc=1 pids=-
+some unrelated line that must be ignored
+2026-09-18T21:00:07.020-04:00 steam-watch change sample t=7019 rc=0 pids=2001 (was pids=-) pgrep-a(rc=0)=[2001 /bin/bash /usr/bin/steam -gamepadui] cmdline=[2001: /bin/bash /usr/bin/steam -gamepadui]
+2026-09-18T21:00:07.121-04:00 steam-watch sample t=7120 rc=0 pids=2001
+2026-09-18T21:00:08.230-04:00 steam-watch change sample t=8229 rc=0 pids=2001,2050 (was pids=2001) pgrep-a(rc=0)=[2001 /bin/bash /usr/bin/steam -gamepadui; 2050 ~/.local/share/Steam/ubuntu12_32/steam -gamepadui] cmdline=[2001: /bin/bash /usr/bin/steam -gamepadui; 2050: ~/.local/share/Steam/ubuntu12_32/steam -gamepadui -steamos3]
+2026-09-18T21:00:09.240-04:00 steam-watch change sample t=9239 rc=1 pids=- (was pids=2001,2050) pgrep-a(rc=1)=[-] cmdline=[-]
+2026-09-18T21:00:09.341-04:00 steam-watch change sample t=9340 rc=0 pids=2050 (was pids=-) pgrep-a(rc=0)=[2050 steam] cmdline=[2050: ~/.local/share/Steam/ubuntu12_32/steam -gamepadui -steamos3]
+2026-09-18T21:01:30.001-04:00 steam-watch summary duration_ms=90001 samples=899 changes=6 gaps=2 max_poll_ms=104
