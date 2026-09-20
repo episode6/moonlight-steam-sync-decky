@@ -8,17 +8,13 @@ project uses [semantic versioning](https://semver.org/).
 
 Nothing yet.
 
-## [0.1.0] - not yet tagged
+## [0.1.0] - 2026-09-20
 
-Prepared for the first release (`package.json`'s `"version"` is already
-`0.1.0`), but **no `v0.1.0` tag has been pushed and no GitHub release
-exists yet** — no agent pushes a tag or creates a release (spec section 4
-PR-8; AGENTS.md "Cutting a release"). The user cuts it once
-moonlight-steam-sync's own `v0.3.0` is released, which this plugin's CI,
-packaging and `release.yml` all tolerate not existing yet in the meantime
-(a `::warning::` in place of `bin/moonlight-steam-sync.pyz`, rather than a
-failure). Built and tested off-device only; `DEVICE-CHECKLIST.md` collects
-everything that needs a Steam Deck, including the PR-0 probes.
+The first release. It bundles moonlight-steam-sync `v0.3.0` (released the
+same day) as `bin/moonlight-steam-sync.pyz` and installs it on first load.
+Built and tested off-device; the PR-0 probes have run on a generic SteamOS
+machine but nothing has run on a Steam Deck yet. `DEVICE-CHECKLIST.md`
+collects everything that still needs a device.
 
 ### Added
 

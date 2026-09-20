@@ -14,9 +14,9 @@ Nothing runs on the gaming PC: the plugin needs only a stock
 Sunshine / Apollo / GeForce host that the Deck's Moonlight client is paired
 with.
 
-**Status:** in development (plugin `0.1.0`, unreleased). Built and tested
-off-device only; it has **not been run on a Steam Deck yet**. It needs
-moonlight-steam-sync **0.3.0**, which is not released yet either.
+**Status:** first release (`v0.1.0`). Built and tested off-device only; it
+has **not been run on a Steam Deck yet** (`DEVICE-CHECKLIST.md`). It needs
+moonlight-steam-sync **0.3.0**, which it bundles.
 
 ## Requirements
 
@@ -29,12 +29,10 @@ moonlight-steam-sync **0.3.0**, which is not released yet either.
 
 ## Install
 
-There is no store listing yet. **No release has been tagged yet either**
-(the plugin waits on moonlight-steam-sync's own `v0.3.0`; see "The bundled
-CLI" below and `AGENTS.md`'s "Cutting a release"), so the one-liner and the
-manual steps below only work once the user has cut `v0.1.0`. Until then,
-build from source (see "Developing") or use the `Moonlight-Sync` artifact
-of a CI run as the manual zip.
+There is no store listing yet; install from the GitHub release with the
+one-liner below, or by hand ("Manual install"). To run something newer than
+the latest release, build from source (see "Developing") or use the
+`Moonlight-Sync` artifact of a CI run as the manual zip.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/episode6/moonlight-steam-sync-decky/main/install.sh | sh
