@@ -69,6 +69,10 @@ INTERRUPTED = False
 #: code and summary.stop_reason.
 RESUME_HINT = "interrupted; resume with the same command"
 
+#: Every flag 0.3.0 added. A pre-0.3.0 argparse rejects any of them with
+#: "unrecognized arguments". `match`'s own flags are listed too, for
+#: completeness -- in practice the subcommand is rejected first (`match` is
+#: in NEW_SUBCOMMANDS), exactly as real argparse would.
 NEW_FLAGS = (
     "--json",
     "--owned-apps",
@@ -77,6 +81,13 @@ NEW_FLAGS = (
     "--commit",
     "--park-unpublished",
     "--cached",
+    # match NAME <selector> [--defer-art] [--force-name]
+    "--steam",
+    "--sgdb",
+    "--none",
+    "--unpin",
+    "--defer-art",
+    "--force-name",
 )
 NEW_SUBCOMMANDS = ("host", "search", "match", "client")
 

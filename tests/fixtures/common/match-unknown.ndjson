@@ -1,0 +1,4 @@
+# match "Nope" --steam 1 --defer-art for a name the host does not publish and
+# no shortcut owns: a usage error, exit 1, nothing written (spec 3.4.4).
+{"event":"start","schema":1,"version":"0.3.0","command":"match"}
+{"event":"error","exit":1,"message":"match: unknown title \"Nope\": the host does not publish it and no shortcut owns it; pass --force-name to pin it anyway"}

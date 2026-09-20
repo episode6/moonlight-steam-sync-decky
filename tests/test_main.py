@@ -181,3 +181,37 @@ def test_class_state_does_not_leak_into_the_next_test(plugin_module) -> None:
     (freshly imported) class object."""
     main, _, _ = plugin_module
     assert main.Plugin._backend is None and main.Plugin._startup is None
+
+
+def test_every_frontend_callable_exists_on_the_plugin(plugin) -> None:
+    """src/lib/cli.ts's CALLABLES are the names @decky/api calls on main.Plugin."""
+    instance, _, _ = plugin
+    source = (ROOT / "src" / "lib" / "cli.ts").read_text()
+    block = source.split("const CALLABLES = [", 1)[1].split("]", 1)[0]
+    names = [part.strip().strip('"') for part in block.split(",") if part.strip()]
+    assert {"search", "pin", "unpin", "set_ignored"} <= set(names)
+    missing = [name for name in names if not callable(getattr(instance, name, None))]
+    assert missing == []
+
+
+def test_pin_and_set_ignored_through_main_py(plugin) -> None:
+    instance, _, tmp_path = plugin
+
+    async def scenario():
+        pinned = await instance.pin("Hades II", 1145350)
+        ignored = await instance.set_ignored("Desktop", True)
+        return pinned, ignored
+
+    pinned, ignored = run(scenario())
+    assert pinned["ok"] is True
+    assert pinned["pinned"]["steam_appid"] == 1145350
+    assert ignored == {"ok": True, "ignored": ["Desktop"]}
+    invocations = [json.loads(line) for line in (tmp_path / "argv.jsonl").read_text().splitlines()]
+    assert invocations[-1]["argv"] == [
+        "--json",
+        "match",
+        "Hades II",
+        "--steam",
+        "1145350",
+        "--defer-art",
+    ]

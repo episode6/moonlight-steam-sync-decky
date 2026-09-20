@@ -11,8 +11,11 @@ import {
   errorText,
   isFailure,
   isSteamUserMismatch,
+  type AppEvent,
   type Backend,
+  type EntryEvent,
   type Failure,
+  type PinnedEvent,
   type Result,
   type RunKind,
   type RunOpts,
@@ -20,6 +23,7 @@ import {
   type SyncDonePayload,
   type SyncEventPayload,
 } from "./cli";
+import type { PinChoice } from "./join";
 import { restartDecision, unwrittenMessage, type RestartDecision } from "./restart";
 import {
   applyRunDone,
@@ -61,6 +65,31 @@ export interface Timing {
   sleep(ms: number): Promise<void>;
   now(): number;
 }
+
+/** What the Titles page renders from (spec 3.8, PR-6's amendment). */
+export interface TitlesData {
+  /** `list`'s apps: live, or from the per-host cache when the host is unreachable. */
+  apps: AppEvent[];
+  /** `status`'s entries (empty when `status` failed; `statusError` says why). */
+  entries: EntryEvent[];
+  /** `ignore.json`. */
+  ignored: string[];
+  host: string;
+  /**
+   * `live` = a fresh `list`; `cached` = the per-host cache because the host
+   * is unreachable; `syncing` = the cache because a run is rewriting it.
+   */
+  source: "live" | "cached" | "syncing";
+  /** The cache's timestamp for a cached listing ("cached from <when>"). */
+  cachedWhen: string | null;
+  /** The CLI's message when the live listing failed with exit 3. */
+  unreachable: string | null;
+  statusError: string | null;
+}
+
+export type TitlesLoad =
+  | { ok: true; data: TitlesData }
+  | { ok: false; message: string; neverSynced: boolean };
 
 export const LIBRARY_POLL_MS = 500;
 export const LIBRARY_TIMEOUT_MS = 60_000;
@@ -185,11 +214,26 @@ export class Controller {
     return isFailure(result) ? result : null;
   }
 
+  /**
+   * One rewrite of owned-apps.json at a time: concurrent calls that all hit
+   * the same steamid3 mismatch share it instead of each writing the file.
+   */
+  private rewritingOwned: Promise<Failure | null> | null = null;
+
+  private rewriteOwnedApps(): Promise<Failure | null> {
+    if (!this.rewritingOwned) {
+      this.rewritingOwned = this.writeOwnedApps().finally(() => {
+        this.rewritingOwned = null;
+      });
+    }
+    return this.rewritingOwned;
+  }
+
   /** A collecting call, retried once after rewriting owned-apps.json on a steamid3 mismatch. */
   private async withOwnedRetry<T extends object>(call: () => Promise<Result<T>>): Promise<Result<T>> {
     const result = await call();
     if (isFailure(result) && isSteamUserMismatch(result)) {
-      const failed = await this.writeOwnedApps();
+      const failed = await this.rewriteOwnedApps();
       if (!failed) return call();
     }
     return result;
@@ -430,6 +474,112 @@ export class Controller {
   async forgetHost(name: string): Promise<Result<{ known: string[] }>> {
     const result = await this.backend.forget_host(name);
     await this.refreshHosts();
+    return result;
+  }
+
+  // -------------------------------------------------------------------------
+  // the Titles page (spec 3.8)
+
+  /** When a cached listing was taken, from its apps or from `host show`. */
+  private cachedStamp(active: string, apps: AppEvent[]): string | null {
+    return (
+      apps.find((app) => app.cached_when)?.cached_when ??
+      this.state.hosts?.cached_hosts.find((c) => c.name.toLowerCase() === active.toLowerCase())?.when ??
+      null
+    );
+  }
+
+  /**
+   * `list_apps()`, `status()` and `ignore.json` for the Titles page. When
+   * the live listing fails with exit 3 (host unreachable) the page reads
+   * `list_cached(active)` instead; exit 3 there means there is no cache for
+   * the host yet ("never synced").
+   *
+   * While a run is going the page reads `list_cached(active)` from the
+   * start (`source: "syncing"`): a live `list` would race the running CLI's
+   * own listing and cache write, and buys nothing because the page re-lists
+   * when the run finishes.
+   */
+  async loadTitles(): Promise<TitlesLoad> {
+    const active = this.state.hosts?.active;
+    if (!active) return { ok: false, message: "No host yet; add one on the Host page", neverSynced: false };
+    const running = !!this.state.run?.running;
+    const [listed, status, ignored] = await Promise.all([
+      running
+        ? this.withOwnedRetry(() => this.backend.list_cached(active))
+        : this.withOwnedRetry(() => this.backend.list_apps()),
+      this.withOwnedRetry(() => this.backend.status()),
+      this.backend.get_ignored(),
+    ]);
+    let apps: AppEvent[];
+    let source: TitlesData["source"] = running ? "syncing" : "live";
+    let cachedWhen: string | null = null;
+    let unreachable: string | null = null;
+    if (!isFailure(listed)) {
+      apps = listed.apps;
+      if (running) cachedWhen = this.cachedStamp(active, apps);
+    } else if (running) {
+      const neverSynced = listed.error === "cli-error" && listed.exit === 3;
+      const message = neverSynced
+        ? `${active} was never synced; this list fills in when the sync finishes`
+        : errorText(listed);
+      return { ok: false, message, neverSynced };
+    } else if (listed.error === "cli-error" && listed.exit === 3) {
+      unreachable = listed.message;
+      const cached = await this.withOwnedRetry(() => this.backend.list_cached(active));
+      if (isFailure(cached)) {
+        const neverSynced = cached.error === "cli-error" && cached.exit === 3;
+        return {
+          ok: false,
+          message: neverSynced ? `${active} is unreachable and was never synced` : errorText(cached),
+          neverSynced,
+        };
+      }
+      apps = cached.apps;
+      source = "cached";
+      cachedWhen = this.cachedStamp(active, apps);
+    } else {
+      return { ok: false, message: errorText(listed), neverSynced: false };
+    }
+    // Only fold status into the shared store when nothing is running: while
+    // a run is going the panel's counters and stream map belong to the run
+    // (the Titles page is reading the cache anyway), and a mid-run `status`
+    // snapshot would flicker them. The page still gets these entries below.
+    if (!isFailure(status) && !running) this.store.set((s) => withStatus(s, status.entries));
+    const ignoredNames = isFailure(ignored) ? [] : ignored.ignored;
+    if (!isFailure(ignored)) this.store.set({ ignoredCount: ignoredNames.length });
+    return {
+      ok: true,
+      data: {
+        apps,
+        entries: isFailure(status) ? [] : status.entries,
+        ignored: ignoredNames,
+        host: active,
+        source,
+        cachedWhen,
+        unreachable,
+        statusError: isFailure(status) ? errorText(status) : null,
+      },
+    };
+  }
+
+  /** *Use this* in the Change match modal: `pin` with `--defer-art` (Decision 8). */
+  pinTitle(name: string, choice: PinChoice): Promise<Result<{ pinned: PinnedEvent; notes: string[] }>> {
+    return this.backend.pin(name, choice.steam, choice.sgdb, choice.none);
+  }
+
+  /** *Ignore* / *Unignore*: `ignore.json` only; the next sync applies it. */
+  async setIgnored(name: string, ignored: boolean): Promise<Result<{ ignored: string[] }>> {
+    const result = await this.backend.set_ignored(name, ignored);
+    if (!isFailure(result)) {
+      // The panel's Ignored counter: check_host's count is stale now (the
+      // backend dropped its memo), so fall back to ignore.json's size.
+      const reach = this.state.reach;
+      this.store.set({
+        ignoredCount: result.ignored.length,
+        reach: reach?.reachable ? { ...reach, ignored: undefined } : reach,
+      });
+    }
     return result;
   }
 

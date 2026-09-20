@@ -10,8 +10,9 @@ to 3.13 are the plugin); this file is the day-to-day summary.
 [moonlight-steam-sync](https://github.com/episode6/moonlight-steam-sync) CLI
 from Game Mode: a Python backend that shells out to
 `~/.local/bin/moonlight-steam-sync --json …` and relays its NDJSON events,
-and a TypeScript frontend (Quick Access panel, settings route, restart
-prompt). The CLI is the product; the plugin is a thin UI over it.
+and a TypeScript frontend (Quick Access panel, settings route with the
+Titles page, restart prompt). The CLI is the product; the plugin is a thin
+UI over it.
 
 ## Hard rules
 
@@ -80,22 +81,35 @@ src/lib/                    pure modules (vitest)
                             errorText (the §3.8 strings)
   events.ts                 NDJSON parsing, lastOf/eventsOf
   state.ts                  AppState, Store, reducers (runs, counters, stream map)
-  controller.ts             load order, runs, restart flow, hosts, settings actions
+  controller.ts             load order, runs, restart flow, hosts, settings actions,
+                            loadTitles() (list -> list_cached fallback, and list_cached
+                            while a run is going; `status` only reaches the shared store
+                            when no run is going, the page always gets its entries),
+                            pinTitle, setIgnored
+  join.ts                   the Titles page: list + status joined by name into rows
+                            (badge, chips, match line, capsule), filters, Show parked,
+                            pages of 50, applyPin; the Change match rows (candidateRows,
+                            noMatchRow, matchSummary)
+  __tests__/join.test.ts    the join, every badge/chip, filters, sort, paging (fixtures)
   restart.ts                restartDecision() (the §3.9 table), modal text
   version.ts                version parsing, the CLI-missing / too-old row
   format.ts                 relative times, the Last sync line
   steam.ts                  ownedApps(), currentSteamId3(), runShortcut(),
                             shutdownSteam(), watchRunningApps() (globals only)
 src/components/             QuickAccess, SyncProgress, RestartModal, SettingsPage,
-                            HostPage, ArtworkPage, AdvancedPage, AboutPage
+                            HostPage, TitlesPage, ChangeMatchModal, Pill,
+                            ArtworkPage, AdvancedPage, AboutPage
 src/test/fixtures.ts        loads tests/fixtures for vitest
 tests/                      pytest: fake_cli.py, fixtures/, conftest.py, test_*.py
 ```
 
-PR-6 adds the Titles page and makes `search` / `pin` / `unpin` /
-`set_ignored` real; PR-7 adds the Stream button, the layout copy and
-`layouts` / `record_layout`. Until then those six callables are stubs
+PR-6 made `search` / `pin` / `unpin` / `set_ignored` real (the Titles page
+and the Change match modal); PR-7 adds the Stream button, the layout copy
+and `layouts` / `record_layout`. Until then those two callables are stubs
 returning `{"ok": false, "error": "bad-request", "message": "not yet"}`.
+The UI pins with `match … --defer-art` only (Decision 8) and uses no
+`unpin` yet (the spec's modal has no unpin action); the callable exists
+for the contract.
 
 ## Backend contract in one paragraph
 
@@ -125,8 +139,19 @@ row and let the next sync settle it as "same kind"). `last_summary` and
 `since` are the *Last sync* row and always describe the run that just
 finished. `restart_countdown_s` is 0-30 everywhere
 (Decision 30: the CLI's await-exit wait times out at 60 s); a larger value
-in an older `settings.json` is clamped on read, not rejected. `check_host`'s reachable result
-carries an additive `ignored` count for the panel's counter.
+in an older `settings.json` is clamped on read, not rejected. `check_host`'s
+reachable result carries an additive `ignored` count for the panel's
+counter. `pin` / `unpin` always pass `--defer-art` and share the long runs'
+busy guard, in both directions: a `match` writes the same `matches.json` a
+run is writing, so a pin is refused while a run is going *and* `start_sync`
+/ `start_art_refetch` / `start_remove_all` are refused while a `match`
+child is in flight. `busy`'s `kind` says which side is holding the guard
+(a run kind, or `"match"`), and `errorText` turns the two into different
+sentences.
+`search`, `pin` and `unpin` keep the spec's argv order (`match NAME --steam
+ID --defer-art`) except that a name or term starting with `-` goes last,
+behind `--`, so argparse never reads it as an option. `set_ignored` needs no
+CLI and drops the `check_host` memo.
 
 ## Commands
 
@@ -178,9 +203,12 @@ There is no Steam Deck during development; everything else is tested.
 - `tests/fixtures/<scenario>/<command>.ndjson` are hand-written from §3.4.6
   (`full-sync`, `art-only`, `nothing-to-do`, `unreachable`, `stopped`,
   `refused`, `common/`); `tests/test_fixtures.py` checks every event's key
-  set against the schema. The frontend's `events.test.ts`,
-  `restart.test.ts`, `state.test.ts` and `controller.test.ts` read the same
-  files, so the Python and TypeScript restart tables cannot drift.
+  set against the schema. `common/` also holds the alternates picked with
+  `FAKE_CLI_FIXTURE_MATCH` / `FAKE_CLI_FIXTURE_SEARCH` (`match-none`,
+  `match-sgdb`, `match-unknown`, `match-silent`, `search-empty`,
+  `search-no-key`). The frontend's `events.test.ts`, `restart.test.ts`,
+  `state.test.ts`, `controller.test.ts` and `__tests__/join.test.ts` read
+  the same files, so the Python and TypeScript sides cannot drift.
 - `tests/conftest.py`: `backend` / `make_backend` (a started Backend over
   the fake; `@pytest.mark.scenario("full-sync")` puts that scenario in front
   of `common/`), `steam_gone`, `install_env` (a `python3` shim that prints
@@ -219,6 +247,6 @@ On-device checks are not merge criteria; they are collected in
 
 ## Docs to keep current
 
-README (install, panel, restart, hosts, key, files, developing), this file
-(module map, harness), `CHANGELOG.md` `[Unreleased]`, and docstrings, in
-the same PR as the change.
+README (install, panel, restart, hosts, Titles page, key, files,
+developing), this file (module map, harness), `CHANGELOG.md`
+`[Unreleased]`, and docstrings, in the same PR as the change.

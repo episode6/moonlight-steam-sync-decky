@@ -1,0 +1,5 @@
+# match "Sea of Stars (GOG)" --sgdb 5322710 --defer-art: steam_appid filled
+# from SteamGridDB's platform data.
+{"event":"start","schema":1,"version":"0.3.0","command":"match"}
+{"event":"note","message":"art for Sea of Stars (GOG) will be re-fetched on the next sync"}
+{"event":"pinned","name":"Sea of Stars (GOG)","steam_appid":1244090,"sgdb_id":5322710,"override_line":"\"Sea of Stars (GOG)\" = { sgdb = 5322710 }"}

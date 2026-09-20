@@ -53,6 +53,12 @@ describe("makeBackend", () => {
     const backend = makeBackend(callable);
     expect(await backend.check_host("OFFICE-PC", true)).toEqual({ ok: true, name: "check_host" });
     expect(calls[0]).toEqual(["check_host", ["OFFICE-PC", true]]);
+    await backend.pin("Hades II", 1145350, null, false);
+    await backend.set_ignored("Desktop", true);
+    expect(calls.slice(1)).toEqual([
+      ["pin", ["Hades II", 1145350, null, false]],
+      ["set_ignored", ["Desktop", true]],
+    ]);
     const stopped = await backend.stop_sync();
     expect(stopped.ok).toBe(false);
     expect(stopped.ok === false && stopped.error).toBe("io");

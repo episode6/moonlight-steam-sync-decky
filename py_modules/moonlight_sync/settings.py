@@ -159,6 +159,22 @@ class Store:
             return []
         return sorted(str(name) for name in data)
 
+    def set_ignored(self, name: str, ignored: bool) -> list[str]:
+        """Add or remove one exact Moonlight name; the file stays sorted and unique.
+
+        Idempotent: ignoring an ignored name or unignoring one that is not
+        in the list leaves the list as it was (the file is only rewritten
+        when its contents are not already that sorted list). Only
+        ``ignore.json`` is touched; a name ignored in the CLI's
+        ``config.toml`` stays ignored (the tool never writes that file).
+        """
+        current = set(self.ignored())
+        wanted = sorted(current | {name} if ignored else current - {name})
+        path = self.path(IGNORE_FILE)
+        if not os.path.exists(path) or read_json(path, []) != wanted:
+            write_json_atomic(path, wanted)
+        return wanted
+
     # -- owned-apps.json -------------------------------------------------
 
     def owned_apps_exists(self) -> bool:

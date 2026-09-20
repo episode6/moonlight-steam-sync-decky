@@ -7,7 +7,9 @@ what your Moonlight host publishes, adds a dressed Steam shortcut (with
 artwork from Steam's CDN and SteamGridDB) for each title, and restarts Steam
 once so the library shows them. Games your Deck's Steam account already owns
 get a hidden shortcut instead of a second tile; the **Stream** button that
-puts on the game's own library page comes in a later release.
+puts on the game's own library page comes in a later release. A **Titles**
+page lists every title with what it was matched to, and is where a wrong
+match gets fixed.
 
 Nothing runs on the gaming PC: the plugin needs only a stock
 Sunshine / Apollo / GeForce host that the Deck's Moonlight client is paired
@@ -121,6 +123,68 @@ count and when it was last seen, the active one marked:
 - **Forget**: removes a host from the list (not the active one). Its parked
   tiles stay until you remove everything.
 
+## The Titles page
+
+The list button in the panel's header (or Settings → **Titles**) opens
+every title the active host publishes, sorted by name, with what the next
+sync does with it. Each row has Steam's library capsule when the title is
+matched to a Steam game (a striped placeholder otherwise), the name, the
+match line (`Balatro · Steam 2379780`, `Sea of Stars · SGDB 5322710`, or
+`no match`) and one badge:
+
+- **stream button**: matched to a game this Steam account owns; a hidden
+  shortcut named after the game, whose library page gets the Stream button.
+- **shortcut**: a visible shortcut with artwork, as today.
+- **unmatched**: a shortcut without a Steam or SteamGridDB match.
+- **ignored**: nothing is created for it.
+- **duplicate**: matched to the same owned game as another title (the line
+  reads "same game as …"); the first title gets the hidden entry and this
+  one gets no tile at all. It is almost always a wrong match: change it, or
+  pin it to *No match* to give it its own tile.
+- **parked**: a title only another host publishes, hidden in place with its
+  art kept. Parked titles are left out until you press **Show parked**, and
+  then listed under *All*.
+
+Chips flag what is worth a look: **fuzzy** (matched by a fuzzy title
+search, which never makes a Stream button), **pinned** (you chose the
+match), **same game on OFFICE-PC as "…"** (the other host publishes this
+game under a different name; align the names on the host side or pin one),
+and **art refreshes on next sync** (after a pin). The filters are *All*,
+*Stream buttons*, *Shortcuts*, *Unmatched* and *Ignored*; rows render 50 at
+a time with a "Show 50 more" row at the end, so a 500-title host stays
+quick to scroll with the D-pad. When the host is unreachable the page shows
+the last listing it cached ("titles cached from <when>"), or says it was
+never synced. While a sync is running it shows that cached listing too
+("refreshes when the sync finishes") instead of asking the host again in
+the middle of the run, and re-lists on its own as soon as the run ends.
+
+**Change match** searches Steam's store and SteamGridDB (prefilled with
+the title's name; edit it and **Search** again) and shows the results as
+one list, Steam first, then SteamGridDB, each with what it would make of
+the title: **becomes stream button** for a game this account owns,
+**shortcut** otherwise. The current match is marked, and the last row is
+**No match** (a plain shortcut with art found by name on SteamGridDB).
+Pressing a row pins it; **Cancel** (B) changes nothing. Changing a match is
+disabled while a sync runs.
+
+**How a pin becomes a Stream button.** A pin is written to the CLI's own
+match cache (`how: "pinned"`, the same `matches.json` a terminal run
+uses) and nothing else changes yet ("Pinned; sync to apply"): no Steam
+restart per pin. On the next **Sync now** the CLI sees the pin, and a pin
+counts as an exact match, so a title pinned to a game you own becomes a
+**stream button**: its visible shortcut is replaced by a hidden one named
+after the Steam game, the art is fetched again from the new match, and the
+usual one restart shows the result. Pinning anything else, or *No match*,
+keeps the title a shortcut with art from the new match. Pins survive
+**Re-fetch all art** and **Retry missing art**; an `[overrides]` entry in
+`config.toml` still wins over a pin (the modal says so when one applies).
+
+**Ignore** adds the title to the plugin's ignore list (`ignore.json`,
+passed to the CLI as `--ignore-file`) and **Unignore** takes it out; the
+next sync applies it. A title ignored in the CLI's `config.toml` reads
+"Ignored in config.toml" and can only be unignored there, since the plugin
+never writes that file.
+
 ## SteamGridDB key
 
 Settings → **Artwork** has the SteamGridDB API key field (get a key at
@@ -147,7 +211,8 @@ pins and ignored titles are kept; Steam restarts once).
 Everything the plugin writes lives in its own directories, never under
 Steam's:
 
-- `~/homebrew/settings/Moonlight Sync/`: `settings.json`, `ignore.json`,
+- `~/homebrew/settings/Moonlight Sync/`: `settings.json`, `ignore.json`
+  (the Titles page's ignore list, a sorted JSON list of names),
   `owned-apps.json` (the owned games, rewritten before every sync),
   `pending.json` (a restart that is still pending), `layouts.json`.
 - `~/homebrew/logs/Moonlight Sync/moonlight-sync.log`: every CLI call with
@@ -159,6 +224,11 @@ Steam's:
 `settings.json` also carries `layout_strategy` (`"copy"` or `"picker"`),
 which has no UI and is only for testing the controller-layout behaviour of a
 later release by hand.
+
+A pin from the Titles page is written by the CLI itself (`moonlight-steam-sync
+match … --defer-art`) into its own match cache,
+`~/.cache/moonlight-steam-sync/matches.json`, where a terminal run sees it
+too.
 
 What the plugin never does: write `shortcuts.vdf`, anything under Steam's
 `userdata/` or `grid/`, or controller config files (the CLI is the one

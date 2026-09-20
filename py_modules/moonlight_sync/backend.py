@@ -176,6 +176,10 @@ class Backend:
         self._started = False
         self._run: RunState | None = None
         self._last_run: RunState | None = None
+        #: In-flight `match` children. The busy guard is symmetric: a match
+        #: writes the same matches.json a long run writes, so neither may
+        #: start while the other is going.
+        self._matching = 0
         self._host_memo: dict[str, tuple[float, Result]] = {}
         self._procs: set[asyncio.subprocess.Process] = set()
 
@@ -535,7 +539,17 @@ class Backend:
         return ["--ignore-file", self.store.path("ignore.json")]
 
     def _classify(self, result: RunResult, timeout: float | None) -> Result | None:
-        """``None`` for a clean run, else the failure result for it."""
+        """``None`` for a clean run, else the failure result for it.
+
+        The failure is scrubbed of the SteamGridDB key as a whole (hard
+        rule 4): its ``events`` list reaches the frontend too, not just
+        ``message``/``stderr``, so every collecting callable and every
+        long run's failure is covered here once.
+        """
+        found = self._classify_raw(result, timeout)
+        return None if found is None else self._scrub(found, self._effective_key())
+
+    def _classify_raw(self, result: RunResult, timeout: float | None) -> Result | None:
         if result.timed_out:
             return failure("timeout", f"timed out after {timeout:g} s", timeout_s=timeout)
         if not any(e.get("event") == "start" for e in result.events):
@@ -1032,19 +1046,157 @@ class Backend:
         return failure("cli-error", self._redact(message), exit=result.exit, events=result.events)
 
     # ------------------------------------------------------------------
-    # PR-6 / PR-7 stubs
+    # matching and ignoring (the Titles page)
 
-    async def search(self, *args: Any) -> Result:
-        return dict(NOT_YET)
+    @staticmethod
+    def _positional(value: str, options: list[str]) -> list[str]:
+        """``[value, *options]``, the spec's argv order.
 
-    async def pin(self, *args: Any) -> Result:
-        return dict(NOT_YET)
+        A value that starts with ``-`` would be read by argparse as an
+        option, so it goes last behind ``--`` instead: ``[*options, "--",
+        value]`` (the same arguments to argparse).
+        """
+        if value.startswith("-"):
+            return [*options, "--", value]
+        return [value, *options]
 
-    async def unpin(self, *args: Any) -> Result:
-        return dict(NOT_YET)
+    @staticmethod
+    def _title_name(name: Any) -> str | None:
+        """``name`` when it is a usable Moonlight name, else ``None``."""
+        if not isinstance(name, str) or not name.strip():
+            return None
+        if "\n" in name or "\x00" in name:
+            return None
+        return name
 
-    async def set_ignored(self, *args: Any) -> Result:
-        return dict(NOT_YET)
+    @guarded
+    async def search(self, term: Any = None) -> Result:
+        """``--json search "term" [--owned-apps …]`` -> the ``candidate`` events.
+
+        ``--owned-apps`` is passed only when the file exists (spec 3.7), so
+        a search still works before the library has loaded (every
+        candidate then reads ``owned: false``). Candidates keep the CLI's
+        order; the Change match modal groups them (Steam first).
+        """
+        term = self._title_name(term)
+        if term is None:
+            return failure("bad-request", "a search term is required")
+        options = self._owned_args() if self.store.owned_apps_exists() else []
+        result, fail = await self._collect(
+            "search", self._positional(term.strip(), options), timeout=self.TIMEOUT_LONG
+        )
+        if fail is not None:
+            return fail
+        assert result is not None
+        found = {
+            "ok": True,
+            "candidates": self._of(result, "candidate"),
+            "notes": self._notes(result),
+        }
+        return self._scrub(found, self._effective_key())
+
+    async def _match(self, name: str, selector: list[str]) -> Result:
+        """``--json match NAME <selector> --defer-art`` -> the ``pinned`` event.
+
+        ``--defer-art`` always (Decision 8): the pin is written to
+        ``matches.json`` only, marked ``stale_art``, and the next sync
+        replaces the entry and re-fetches its art in its one restart.
+
+        Shares the long runs' busy guard, in both directions: a ``match``
+        writes ``matches.json``, which a running ``sync`` / ``art`` /
+        ``remove`` child is writing too -- so a match is refused while a run
+        is going, and a run is refused while a match is in flight.
+        """
+        busy = self._busy()
+        if busy is not None:
+            return busy
+        self._matching += 1
+        try:
+            result, fail = await self._collect(
+                "match",
+                self._positional(name, [*selector, "--defer-art"]),
+                timeout=self.TIMEOUT_SHORT,
+            )
+        finally:
+            self._matching -= 1
+        if fail is not None:
+            return fail
+        assert result is not None
+        pinned = ev.last_of(result.events, "pinned")
+        if pinned is None:
+            unconfirmed = failure(
+                "cli-error",
+                "the CLI did not confirm the pin (no pinned event)",
+                exit=result.exit,
+                events=result.events,
+            )
+            return self._scrub(unconfirmed, self._effective_key())
+        self._log(f"match: {selector[0]} for {name!r}")
+        confirmed = {"ok": True, "pinned": pinned, "notes": self._notes(result)}
+        return self._scrub(confirmed, self._effective_key())
+
+    @staticmethod
+    def _appid(value: Any) -> int | None:
+        """A positive integer id, else ``None`` (``bool`` is not an id)."""
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            return None
+        return value
+
+    @guarded
+    async def pin(
+        self, name: Any = None, steam: Any = None, sgdb: Any = None, none: Any = False
+    ) -> Result:
+        """Pin exactly one of ``--steam APPID``, ``--sgdb ID`` or ``--none``."""
+        name = self._title_name(name)
+        if name is None:
+            return failure("bad-request", "a title name is required")
+        chosen: list[list[str]] = []
+        if steam is not None:
+            appid = self._appid(steam)
+            if appid is None:
+                return failure("bad-request", "steam must be a positive Steam appid")
+            chosen.append(["--steam", str(appid)])
+        if sgdb is not None:
+            game = self._appid(sgdb)
+            if game is None:
+                return failure("bad-request", "sgdb must be a positive SteamGridDB id")
+            chosen.append(["--sgdb", str(game)])
+        if none is not False and none is not None:
+            if none is not True:
+                return failure("bad-request", "none must be true or false")
+            chosen.append(["--none"])
+        if len(chosen) != 1:
+            return failure("bad-request", "pin needs exactly one of steam, sgdb or none")
+        return await self._match(name, chosen[0])
+
+    @guarded
+    async def unpin(self, name: Any = None) -> Result:
+        """``match NAME --unpin --defer-art``: the next run re-resolves the title."""
+        name = self._title_name(name)
+        if name is None:
+            return failure("bad-request", "a title name is required")
+        return await self._match(name, ["--unpin"])
+
+    @guarded
+    async def set_ignored(self, name: Any = None, ignored: Any = None) -> Result:
+        """Add ``name`` to ``ignore.json`` (or remove it); sorted, idempotent.
+
+        Takes effect on the next ``sync`` / ``list`` through
+        ``--ignore-file``. The ``check_host`` memo is dropped because its
+        ``ignored`` count is now stale.
+        """
+        name = self._title_name(name)
+        if name is None:
+            return failure("bad-request", "a title name is required")
+        if not isinstance(ignored, bool):
+            return failure("bad-request", "ignored must be true or false")
+        names = self.store.set_ignored(name, ignored)
+        self._host_memo.clear()
+        self._log(f"{'ignored' if ignored else 'unignored'} {name!r}")
+        return {"ok": True, "ignored": names}
+
+    # ------------------------------------------------------------------
+    # PR-7 stubs
 
     async def layouts(self, *args: Any) -> Result:
         return dict(NOT_YET)
@@ -1056,8 +1208,17 @@ class Backend:
     # long runs
 
     def _busy(self) -> Result | None:
+        """The one busy guard, shared by the long runs and by ``match``.
+
+        ``kind`` says which side is holding it: a run kind (``sync`` /
+        ``art`` / ``remove``) or ``"match"`` for a pin or unpin still being
+        written. The frontend turns the two into different sentences
+        (``errorText``).
+        """
         if self._run is not None and self._run.running:
             return failure("busy", "A sync is already running", kind=self._run.kind)
+        if self._matching:
+            return failure("busy", "A match change is still being saved", kind="match")
         return None
 
     @staticmethod

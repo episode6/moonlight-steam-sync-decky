@@ -1,10 +1,10 @@
 import { addEventListener, definePlugin, removeEventListener, routerHook } from "@decky/api";
 import { DialogButton, Navigation, Router, staticClasses } from "@decky/ui";
-import { FaCog, FaMoon } from "react-icons/fa";
+import { FaCog, FaListUl, FaMoon } from "react-icons/fa";
 
 import { QuickAccess } from "./components/QuickAccess";
 import { SettingsPage } from "./components/SettingsPage";
-import { SETTINGS_ROUTE, controller } from "./instance";
+import { SETTINGS_ROUTE, TITLES_ROUTE, controller } from "./instance";
 import type { SyncDonePayload, SyncEventPayload } from "./lib/cli";
 import { watchRunningApps } from "./lib/steam";
 
@@ -17,17 +17,22 @@ function runningAppids(): number[] {
   }
 }
 
+function open(route: string) {
+  Navigation.Navigate(route);
+  Navigation.CloseSideMenus();
+}
+
+const HEADER_BUTTON = { height: 28, width: 40, minWidth: 0, padding: "10px 12px" };
+
+/** The panel's header: the Titles page (spec 3.8, "opened from the panel's header") and Settings. */
 function TitleView() {
   return (
-    <div className={staticClasses.Title} style={{ display: "flex", alignItems: "center", width: "100%" }}>
+    <div className={staticClasses.Title} style={{ display: "flex", alignItems: "center", width: "100%", gap: 6 }}>
       <div style={{ flexGrow: 1 }}>Moonlight Sync</div>
-      <DialogButton
-        style={{ height: 28, width: 40, minWidth: 0, padding: "10px 12px" }}
-        onClick={() => {
-          Navigation.Navigate(SETTINGS_ROUTE);
-          Navigation.CloseSideMenus();
-        }}
-      >
+      <DialogButton style={HEADER_BUTTON} onClick={() => open(TITLES_ROUTE)} onOKActionDescription="Titles">
+        <FaListUl style={{ marginTop: -4 }} />
+      </DialogButton>
+      <DialogButton style={HEADER_BUTTON} onClick={() => open(SETTINGS_ROUTE)} onOKActionDescription="Settings">
         <FaCog style={{ marginTop: -4 }} />
       </DialogButton>
     </div>

@@ -144,7 +144,7 @@ class Plugin:
     async def sync_state(self):
         return await (await self._ready()).sync_state()
 
-    # -- matching (PR-6) -------------------------------------------------
+    # -- matching (the Titles page) -------------------------------------
     async def search(self, term):
         return await (await self._ready()).search(term)
 
