@@ -16,11 +16,29 @@ project uses [semantic versioning](https://semver.org/).
   `sync_event` / `sync_done`, one sync at a time, timeouts, SIGINT on stop
   and on unload (a child whose output pipes stay open, or whose output
   cannot be read, is still killed and reaped), and the plugin's own `settings.json`, `ignore.json`,
-  `owned-apps.json` and `pending.json`. `layouts` and `record_layout`
-  answer "not yet".
+  `owned-apps.json`, `pending.json` and `layouts.json`.
 - The busy guard is symmetric: a `sync`, `art` or `remove` run is refused
   while a `match` (a pin or unpin) is still being written, as well as the
   other way round, since both write `matches.json`.
+- The Stream button: every owned game the active host publishes gets a
+  **Stream** row on its library page (a patch of the `/library/app/:appid`
+  route written from Decky's primitives) that runs the hidden shortcut
+  through Steam; only a toast while a game is already running.
+- Controller-layout copy: on each Stream press and once after a sync's
+  restart (over every Stream button, once Steam has loaded the shortcut
+  list), the real game's `workshop://` / `template://` selection is set on
+  its hidden shortcut through Steam Input when the shortcut has no
+  selection of its own, never overwriting one; the Deck's controller is
+  found by type. Results (`copied` / `kept` / `unavailable`) are recorded
+  in `layouts.json` (`layouts` / `record_layout`) and shown on the Titles
+  row as copied / own layout / Steam default / unavailable, and next to the
+  button. The Advanced toggle turns the copy off.
+- **Choose layout** on a Stream button's Titles row opens Steam's own
+  layout picker for the hidden shortcut (hidden when the client lacks it).
+- The layout strategy switch: `DEFAULT_LAYOUT_STRATEGY` (`copy`) in
+  `src/lib/layouts.ts`, overridable per device by `layout_strategy` in
+  `settings.json`; `picker` makes no Steam Input calls and leaves Choose
+  layout as the only layout affordance. Pending the PR-0 probes.
 - The Titles page (Settings → Titles, also opened from the panel's
   header): every title the active host publishes, joined from `list` and
   `status`, with Steam's capsule, the match line, a badge (stream button,

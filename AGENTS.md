@@ -85,7 +85,14 @@ src/lib/                    pure modules (vitest)
                             loadTitles() (list -> list_cached fallback, and list_cached
                             while a run is going; `status` only reaches the shared store
                             when no run is going, the page always gets its entries),
-                            pinTitle, setIgnored
+                            pinTitle, setIgnored,
+                            streamPress() (guard, copy, run), chooseLayout(), layoutWalk()
+  layouts.ts                DEFAULT_LAYOUT_STRATEGY (the one switch), layoutStrategy(),
+                            copyEnabled(), the SteamInput seam, copyLayout() (the §3.10
+                            rule), deckControllerIndexFrom() (by type), the status texts,
+                            walkPairs() and the walk's timings
+  layouts.test.ts           copyLayout's seven cases + idempotence, the index by type,
+                            the strategy switch, the stream-map derivation
   join.ts                   the Titles page: list + status joined by name into rows
                             (badge, chips, match line, capsule), filters, Show parked,
                             pages of 50, applyPin; the Change match rows (candidateRows,
@@ -95,21 +102,37 @@ src/lib/                    pure modules (vitest)
   version.ts                version parsing, the CLI-missing / too-old row
   format.ts                 relative times, the Last sync line
   steam.ts                  ownedApps(), currentSteamId3(), runShortcut(),
-                            shutdownSteam(), watchRunningApps() (globals only)
+                            shutdownSteam(), watchRunningApps(), steamInput() over
+                            SteamClient.Input, deckControllerIndex() (controllerStore,
+                            else the RegisterForControllerListChanges watch),
+                            overviewLoaded(), showControllerConfigurator() (globals only)
+src/routes/libraryApp.tsx   the /library/app/:appid patch (routerHook.addPatch, afterPatch
+                            on renderFunc, findInReactTree for the overview and the
+                            InnerContainer), written fresh; injects StreamButton
 src/components/             QuickAccess, SyncProgress, RestartModal, SettingsPage,
-                            HostPage, TitlesPage, ChangeMatchModal, Pill,
-                            ArtworkPage, AdvancedPage, AboutPage
+                            HostPage, TitlesPage (layout text, Choose layout),
+                            ChangeMatchModal, Pill, StreamButton (renders only when
+                            streamMap has the appid), ArtworkPage, AdvancedPage, AboutPage
 src/test/fixtures.ts        loads tests/fixtures for vitest
 tests/                      pytest: fake_cli.py, fixtures/, conftest.py, test_*.py
 ```
 
 PR-6 made `search` / `pin` / `unpin` / `set_ignored` real (the Titles page
-and the Change match modal); PR-7 adds the Stream button, the layout copy
-and `layouts` / `record_layout`. Until then those two callables are stubs
-returning `{"ok": false, "error": "bad-request", "message": "not yet"}`.
-The UI pins with `match … --defer-art` only (Decision 8) and uses no
-`unpin` yet (the spec's modal has no unpin action); the callable exists
-for the contract.
+and the Change match modal); PR-7 added the Stream button, the layout copy
+and `layouts` / `record_layout`, so every callable is real. The UI pins
+with `match … --defer-art` only (Decision 8) and uses no `unpin` yet (the
+spec's modal has no unpin action); the callable exists for the contract.
+
+**The layout strategy switch (spec §3.10).** PR-7 was built before the PR-0
+probes ran. `DEFAULT_LAYOUT_STRATEGY = "copy"` in `src/lib/layouts.ts` is
+the one place the default lives; `settings.json`'s `layout_strategy`
+overrides it per device (no UI). Probe V2 (does `SetSelectedConfigForApp`
+with a `workshop://` id published for the real game stick on the hidden
+shortcut named like the game?) decides whether `copy` stands: if not, flip
+the constant to `"picker"` and rewrite the README's "Controller layouts"
+section, nothing else moves. Under `picker` no Steam Input call is made
+anywhere; *Choose layout* (`SteamClient.Apps.ShowControllerConfigurator`,
+hidden when absent) is the only layout affordance.
 
 ## Backend contract in one paragraph
 
@@ -151,7 +174,12 @@ sentences.
 `search`, `pin` and `unpin` keep the spec's argv order (`match NAME --steam
 ID --defer-art`) except that a name or term starting with `-` goes last,
 behind `--`, so argparse never reads it as an option. `set_ignored` needs no
-CLI and drops the `check_host` memo.
+CLI and drops the `check_host` memo. `layouts()` / `record_layout(
+shortcut_appid, real_appid, result, url)` need no CLI either: they read and
+upsert `layouts.json` (`{version: 1, entries: {<shortcut appid>:
+{real_appid, result, url, when}}}`, `result` one of `copied` / `kept` /
+`unavailable` / `picker`; a broken file reads as empty), and
+`start_remove_all` deletes the file on `commit.written`.
 `stop_sync` and `unload` also cover the moment between the busy guard and
 the spawn: they flag the run, the SIGINT goes out as soon as its child
 exists, and a run the signal killed before the CLI printed anything is
@@ -218,8 +246,12 @@ There is no Steam Deck during development; everything else is tested.
   `FAKE_CLI_FIXTURE_MATCH` / `FAKE_CLI_FIXTURE_SEARCH` (`match-none`,
   `match-sgdb`, `match-unknown`, `match-silent`, `search-empty`,
   `search-no-key`). The frontend's `events.test.ts`, `restart.test.ts`,
-  `state.test.ts`, `controller.test.ts` and `__tests__/join.test.ts` read
-  the same files, so the Python and TypeScript sides cannot drift.
+  `state.test.ts`, `controller.test.ts`, `layouts.test.ts` and
+  `__tests__/join.test.ts` read the same files, so the Python and
+  TypeScript sides cannot drift. `copyLayout` and the Stream press / walk
+  run over a scripted `SteamInput` (`layouts.test.ts`, `controller.test.ts`)
+  and `steam.test.ts` drives the real seam over stubbed globals; the route
+  patch and the button itself are device checks, not unit tests.
 - `tests/conftest.py`: `backend` / `make_backend` (a started Backend over
   the fake; `@pytest.mark.scenario("full-sync")` puts that scenario in front
   of `common/`), `steam_gone`, `install_env` (a `python3` shim that prints
