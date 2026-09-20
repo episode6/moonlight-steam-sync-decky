@@ -116,4 +116,4 @@ def test_missing_pin_fails(sandbox: Path, tmp_path: Path) -> None:
 
 def test_the_real_package_json_carries_the_pin() -> None:
     text = (ROOT / "package.json").read_text()
-    assert '"moonlightSteamSync": "0.3.0"' in text
+    assert '"moonlightSteamSync": "0.3.1"' in text

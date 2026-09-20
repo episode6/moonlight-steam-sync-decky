@@ -86,7 +86,7 @@ def test_main_py_end_to_end(plugin) -> None:
 
     version, owned, status, started = run(scenario())
     assert version["installed"] == "0.3.0"
-    assert version["pinned"] == "0.3.0"
+    assert version["pinned"] == "0.3.1"
     assert version["plugin_version"] == "0.1.0"
     assert owned == {"ok": True, "count": 1}
     assert status["ok"] is True and len(status["entries"]) == 6

@@ -16,7 +16,7 @@ section 5), not decided here.
    run build && backend/entrypoint.sh && python3 scripts/package.py`, or
    take the `Moonlight-Sync` artifact from a CI run, and install it by
    hand — `README.md`'s "Manual install". Either way Settings → About
-   should show the bundled and installed CLI both at `0.3.0`; the plugin
+   should show the bundled and installed CLI both at `0.3.1`; the plugin
    installs or upgrades `~/.local/bin/moonlight-steam-sync` on first load.
 2. SSH into the Deck while it sits in Game Mode (`passwd` once in Desktop
    Mode, then `sudo systemctl enable --now sshd`; see `probes/PROBES.md`
@@ -34,6 +34,24 @@ section 5), not decided here.
    `~/homebrew/settings/Moonlight Sync/settings.json` to `"copy"` or
    `"picker"` (removing the key restores the default, currently `"copy"`),
    then reload.
+5. The CLI must work *from the plugin*, not only from SSH: plugin_loader
+   is a PyInstaller binary whose `LD_LIBRARY_PATH=/tmp/_MEI…` once broke
+   the CLI's `flatpak` call ("moonlight CLI not found") and its `import
+   ssl` ("5 consecutive network failures"). With Moonlight installed as
+   the Flathub flatpak, pick a host in the panel and search for a title in
+   the match fixer; then `grep -n "not found\|network failures"
+   "$HOME/homebrew/logs/Moonlight Sync/moonlight-sync.log"` must find
+   nothing newer than the install. To reproduce the loader's environment
+   from SSH, while plugin_loader is running (its unpack directory goes
+   when it exits): `env -i HOME=$HOME PATH=/usr/bin LD_LIBRARY_PATH=$(ls
+   -dt /tmp/_MEI* | head -1) python3 ~/.local/bin/moonlight-steam-sync
+   doctor` — the `moonlight:` line must name the flatpak (CLI 0.3.1 or
+   newer; 0.3.0 prints `not found` there, which the plugin's cleaned
+   environment hides). `ls -dt` takes the newest `_MEI*` directory; if
+   another PyInstaller program is running too, check that the one picked
+   holds a `libssl.so.3`. The loader's own `/proc/<pid>/environ` is not
+   the shortcut it looks like: the service runs as root, so reading it
+   needs `sudo`, and even the backend's deck-owned process refuses.
 
 ## 1. PR-0: device probes
 

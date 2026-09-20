@@ -8,6 +8,32 @@ project uses [semantic versioning](https://semver.org/).
 
 Nothing yet.
 
+## [0.1.1] - 2026-09-20
+
+A patch release from the first device run. It bundles moonlight-steam-sync
+`v0.3.1` (the `package.json` pin moved from `0.3.0`), which carries the
+same library-path fix on the CLI side; `MIN_CLI_VERSION` stays `0.3.0`,
+since the plugin's own fix below does not depend on it.
+
+### Fixed
+
+- **"moonlight CLI not found" and search/artwork stopping on "5 consecutive
+  network failures", on every device.** Decky's plugin_loader is a
+  PyInstaller-frozen binary that exports `LD_LIBRARY_PATH=/tmp/_MEI…` (its
+  own bundled, older OpenSSL), and the backend passed its environment
+  straight to the CLI. Under it the CLI's `flatpak list` died in the
+  dynamic linker, which read as "Moonlight is not installed", and its own
+  `import ssl` failed, so no HTTPS call ever succeeded. The backend now
+  gives every CLI child the original library path back
+  (`LD_LIBRARY_PATH_ORIG`, or `LD_LIBRARY_PATH` minus its `_MEI*` entries).
+  Found on the first device run.
+- **The SteamGridDB key test no longer blames the key for a network
+  failure.** The test runs the CLI's `search`; when that ends in the CLI's
+  network hard stop (exit 4, anything but an HTTP 401) the message is now
+  "Could not reach SteamGridDB (network), so the key was not tested: …"
+  instead of the bare CLI error, which read as a rejected key. A 401 still
+  says "SteamGridDB rejected the key".
+
 ## [0.1.0] - 2026-09-20
 
 The first release. It bundles moonlight-steam-sync `v0.3.0` (released the

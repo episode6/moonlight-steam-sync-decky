@@ -14,7 +14,8 @@ Conventions (spec 3.7, amended):
 - Argv is always ``[python3, <installed cli>, "--json", <subcommand>, ...]``
   except ``doctor``, ``--version`` and ``art --help``. The child runs with
   ``cwd=<home>`` and ``env`` = the backend's plus
-  ``MOONLIGHT_STEAM_SYNC_FROM_PLUGIN=1`` and ``HOME=<home>``.
+  ``MOONLIGHT_STEAM_SYNC_FROM_PLUGIN=1`` and ``HOME=<home>``, minus
+  plugin_loader's PyInstaller ``LD_LIBRARY_PATH`` (``_child_env``).
 - Collecting runs wait for the child, time out (30 s / 90 s: SIGINT, then
   SIGKILL 3 s later) and return the events; pipes a grandchild keeps open
   are closed 3 s after the child exits. Long runs (``start_sync``,
@@ -259,6 +260,25 @@ class Backend:
 
     def _child_env(self) -> dict[str, str]:
         env = dict(self.env)
+        # plugin_loader is a PyInstaller-frozen binary: it exports
+        # LD_LIBRARY_PATH=/tmp/_MEIxxxxxx (its bundled, older libssl among
+        # others), under which the CLI's `flatpak` call and its own
+        # `import ssl` both die in the dynamic linker -- "moonlight CLI not
+        # found" and "5 consecutive network failures" on the first device
+        # run. PyInstaller saves the value it replaced in
+        # LD_LIBRARY_PATH_ORIG, but only when there was one; under the
+        # systemd service there is not, so drop its `_MEI*` entries instead.
+        orig = env.pop("LD_LIBRARY_PATH_ORIG", None)
+        if orig is None:
+            orig = os.pathsep.join(
+                entry
+                for entry in env.get("LD_LIBRARY_PATH", "").split(os.pathsep)
+                if entry and not os.path.basename(entry.rstrip(os.sep)).startswith("_MEI")
+            )
+        if orig:
+            env["LD_LIBRARY_PATH"] = orig
+        else:
+            env.pop("LD_LIBRARY_PATH", None)
         env["MOONLIGHT_STEAM_SYNC_FROM_PLUGIN"] = "1"
         env["HOME"] = self.home
         return env
@@ -1049,6 +1069,13 @@ class Backend:
         if fail is not None:
             if fail.get("error") == "cli-error" and "401" in str(fail.get("message", "")):
                 fail["message"] = "SteamGridDB rejected the key"
+            elif fail.get("error") == "cli-error" and fail.get("exit") == 4:
+                # The CLI's network hard stop: the key was never judged, so
+                # do not let the failure read as a verdict on it.
+                fail["message"] = (
+                    "Could not reach SteamGridDB (network), so the key was not "
+                    f"tested: {fail.get('message', '')}"
+                )
             return fail
         assert result is not None
         if any(c.get("source") == "sgdb" for c in self._of(result, "candidate")):

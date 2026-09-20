@@ -169,7 +169,11 @@ Every callable returns `{"ok": true, …}` or `{"ok": false, "error": <code>,
 `bad-request`, `io`) and never raises. Argv is `[python3, <installed cli>,
 "--json", <subcommand>, …]` (`doctor`, `--version` and `art --help` have no
 `--json`), `cwd` and `HOME` are the deck user's home, and the child gets
-`MOONLIGHT_STEAM_SYNC_FROM_PLUGIN=1`. Long runs (`start_sync`,
+`MOONLIGHT_STEAM_SYNC_FROM_PLUGIN=1`. The child never inherits
+plugin_loader's PyInstaller `LD_LIBRARY_PATH` (`/tmp/_MEI…`, an older
+bundled OpenSSL that breaks both `flatpak` and the CLI's `import ssl`):
+`Backend._child_env()` restores `LD_LIBRARY_PATH_ORIG` or drops the `_MEI*`
+entries, and any new subprocess the backend spawns must go through it. Long runs (`start_sync`,
 `start_art_refetch`, `start_remove_all`) share one busy guard and emit
 `sync_event {kind, event}` per stdout line and `sync_done {kind, exit,
 pending, summary, commit, failure}` at the end. `pending.json` says
@@ -334,8 +338,10 @@ On-device checks are not merge criteria; they are collected in
 
 ## Cutting a release
 
-**No agent pushes a tag or creates a release.** The user does this, and
-only once moonlight-steam-sync's own `v0.3.0` exists: `release.yml`'s
+**No agent pushes a tag or creates a release** unless the user asks for
+that release explicitly (they did for `v0.1.1`, 2026-09-20, which moved the
+pin to the CLI's `v0.3.1`). It happens only once the pinned
+moonlight-steam-sync release exists: `release.yml`'s
 build job fails hard on the missing CLI release **only when it runs from
 a `v*` tag push**; its `pull_request` and `workflow_dispatch` runs tolerate
 the CLI not being released yet with the same `::warning::` CI's `package`
