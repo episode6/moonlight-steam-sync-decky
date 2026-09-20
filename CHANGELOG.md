@@ -6,7 +6,12 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **Change match lists the games you own first.** Search results that this
+  account owns (the ones a pin turns into a Stream button) now sit at the
+  top of the list, ahead of the other Steam and SteamGridDB results, so
+  the likeliest pick no longer hides below unowned store hits.
 
 ## [0.1.1] - 2026-09-20
 

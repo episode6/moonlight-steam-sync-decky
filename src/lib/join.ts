@@ -8,8 +8,9 @@
  * - `filterRows` / `pageOf` are the five filters, the *Show parked* chip and
  *   the pages of 50.
  * - `candidateRows` / `noMatchRow` / `matchSummary` are the Change match
- *   modal: one list, Steam first then SteamGridDB, each with the outcome a
- *   pin would produce, the current match marked, and a final *No match*.
+ *   modal: one list, owned games first, then Steam before SteamGridDB, each
+ *   with the outcome a pin would produce, the current match marked, and a
+ *   final *No match*.
  */
 
 import type { AppEvent, CandidateEvent, EntryEvent, LayoutEntry, Match, PinnedEvent, SameGameAs } from "./cli";
@@ -415,12 +416,17 @@ function candidateDetail(candidate: CandidateEvent, current: boolean): string {
   return parts.join(" · ");
 }
 
-/** `search`'s candidates as one list, Steam first, then SteamGridDB (each in the CLI's order). */
+/**
+ * `search`'s candidates as one list: the games owned on this account first
+ * (the ones a pin turns into a Stream button), then the rest; within each
+ * group Steam first, then SteamGridDB, each in the CLI's order.
+ */
 export function candidateRows(candidates: readonly CandidateEvent[], current: Match | null): CandidateRow[] {
-  const ordered = [
+  const bySource = [
     ...candidates.filter((c) => c.source === "steam"),
     ...candidates.filter((c) => c.source === "sgdb"),
   ];
+  const ordered = [...bySource.filter((c) => c.owned), ...bySource.filter((c) => !c.owned)];
   const currentKey = currentCandidateKey(candidates, current);
   return ordered.map((candidate) => {
     const isCurrent = candidateKey(candidate) === currentKey;
