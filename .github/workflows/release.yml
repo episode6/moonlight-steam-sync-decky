@@ -1,0 +1,110 @@
+# Release for the Moonlight Sync Decky plugin (spec 3.6.2, section 4 PR-8).
+#
+# Builds the same Docker-free artifact ci.yml's `package` job does --
+# out/Moonlight-Sync.zip via scripts/package.py -- but strict: the CLI
+# download (backend/entrypoint.sh) and the packaging step
+# (scripts/package.py --require-cli) both fail the run instead of warning
+# when the pinned CLI release does not exist, because a plugin release
+# never ships without its CLI. That build-and-package job also runs on
+# pull_request and workflow_dispatch, not just on a v* tag, so it is
+# exercised by ordinary CI and does not sit untested until the first tag;
+# only the final "create the release and attach the assets" job is
+# tag-only. See AGENTS.md "Cutting a release" for the command sequence
+# that pushes a v* tag -- no agent runs it.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and package (strict)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13.5"
+
+      - name: Fetch the pinned CLI (strict; a release never ships without it)
+        run: backend/entrypoint.sh
+
+      - name: Package the zip
+        run: python3 scripts/package.py --require-cli
+
+      - name: Checksum
+        # Record the checksum against the bare filename, not the build
+        # path (out/Moonlight-Sync.zip), so `sha256sum -c` against the two
+        # downloaded release assets -- both in the same directory, with no
+        # `out/` prefix -- verifies cleanly instead of failing on the
+        # recorded name not matching the download layout (mirrors the CLI
+        # repo's release.yml).
+        run: |
+          cd out
+          sha256sum Moonlight-Sync.zip | tee Moonlight-Sync.zip.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Moonlight-Sync
+          path: |
+            out/Moonlight-Sync.zip
+            out/Moonlight-Sync.zip.sha256
+          if-no-files-found: error
+
+  github-release:
+    name: Create the release and attach the zip
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Moonlight-Sync
+          path: out
+
+      - name: Create the release and attach the zip and its checksum
+        # Idempotent on purpose, exactly like the CLI repo's release.yml:
+        # the tag can reach GitHub either by a plain `git push` (no
+        # release exists yet, so this creates one) or via `gh release
+        # create` from a workstation (the release already exists and only
+        # the assets are missing). Re-running a failed release run lands
+        # in the second case too, so: try to create, and fall back to
+        # uploading into the existing release.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          assets="out/Moonlight-Sync.zip out/Moonlight-Sync.zip.sha256"
+          if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "Release ${GITHUB_REF_NAME} already exists; uploading assets into it."
+            gh release upload "${GITHUB_REF_NAME}" $assets \
+              --repo "${GITHUB_REPOSITORY}" \
+              --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" $assets \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "${GITHUB_REF_NAME}" \
+              --generate-notes
+          fi
