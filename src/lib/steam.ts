@@ -2,18 +2,24 @@
  * The Steam-client touchpoints (spec 3.9, 3.10): the owned-apps map, the
  * current user's steamid3, running a shortcut, shutting Steam down, the
  * running-app watch, and the Steam Input seam for the layout copy (read a
- * selection, set a selection, the Deck controller's index by type) plus
+ * selection, set a selection, the index of the controller to copy for) plus
  * Steam's layout picker. Nothing here writes a Steam file: the plugin never
  * calls AddShortcut, RemoveShortcut, SetShortcutName, SetAppLaunchOptions,
  * SetAppHiddenState or SetCustomArtworkForApp.
  *
  * Only globals are used here (`SteamClient`, `collectionStore`, `appStore`,
- * `controllerStore`, `App`), so this module imports nothing from `@decky/*`;
+ * `ControllerStore`, `App`), so this module imports nothing from `@decky/*`;
  * the pure helpers (`buildOwnedMap`, `steamId3FromSteam64`, and
- * `layouts.ts`'s `copyLayout` / `deckControllerIndexFrom`) are unit-tested.
+ * `layouts.ts`'s `copyLayout` / `layoutControllerIndexFrom`) are unit-tested.
  */
 
-import { deckControllerIndexFrom, type ControllerLike, type LayoutConfig, type SteamInput } from "./layouts";
+import {
+  CONFIG_SELECTION_USER,
+  layoutControllerIndexFrom,
+  type ControllerLike,
+  type LayoutConfig,
+  type SteamInput,
+} from "./layouts";
 
 /** The steam64 of account id 0 (`steam64 - this = steamid3`). */
 export const STEAM64_BASE = 76561197960265728n;
@@ -138,24 +144,57 @@ interface ControllerStoreLike {
   GetControllerTypeString?(type: number): string;
 }
 
-/** The last list `RegisterForControllerListChanges` delivered (the fallback when `controllerStore` is not a global). */
+/** The last list `RegisterForControllerListChanges` delivered (the fallback when the store is not a global). */
 let lastControllers: ControllerLike[] | null = null;
+/** The last `nActiveController` `RegisterForActiveControllerChanges` delivered. */
+let activeController: number | null = null;
 
-/**
- * Keep `lastControllers` current from `SteamClient.Input.RegisterForControllerListChanges`,
- * so the Deck controller can be found even when `controllerStore` is not
- * exposed as a global. Returns the unregister function.
- */
-export function watchControllers(): () => void {
-  const registration = SteamClient.Input.RegisterForControllerListChanges((controllers) => {
-    lastControllers = Array.isArray(controllers) ? (controllers as ControllerLike[]) : null;
-  });
-  return () => registration.unregister();
+interface Unregisterable {
+  unregister(): void;
 }
 
-/** The Deck's built-in controller index, by type (spec 2.2; it is not 0), or `null`. */
-export function deckControllerIndex(): number | null {
-  const store = globals().controllerStore as ControllerStoreLike | undefined;
+/**
+ * Keep `lastControllers` and `activeController` current from
+ * `SteamClient.Input`. Either registration may be missing: the client the
+ * PR-0 probes ran on has no `RegisterForControllerListChanges` at all, and
+ * calling it unguarded would throw while the plugin loads. Returns the
+ * unregister function.
+ */
+export function watchControllers(): () => void {
+  const input = SteamClient.Input as unknown as Record<string, unknown>;
+  const registrations: Unregisterable[] = [];
+  const register = (name: string, callback: (message: unknown) => void) => {
+    const fn = input[name];
+    if (typeof fn !== "function") return;
+    try {
+      registrations.push((fn as (cb: (message: unknown) => void) => Unregisterable).call(input, callback));
+    } catch {
+      // a client that has the name but refuses the call: the store is still there
+    }
+  };
+  register("RegisterForControllerListChanges", (controllers) => {
+    lastControllers = Array.isArray(controllers) ? (controllers as ControllerLike[]) : null;
+  });
+  register("RegisterForActiveControllerChanges", (message) => {
+    const index = (message as { nActiveController?: unknown } | null)?.nActiveController;
+    activeController = typeof index === "number" ? index : null;
+  });
+  return () => {
+    for (const registration of registrations) registration.unregister();
+    lastControllers = null;
+    activeController = null;
+  };
+}
+
+/**
+ * The controller whose layout is copied (`layoutControllerIndexFrom`): the
+ * Deck's built-in one by type (spec 2.2; it is not 0), else the active or
+ * only connected one; `null` with none. The store global is `ControllerStore`
+ * on the client the PR-0 probes measured; `controllerStore` is the older
+ * spelling.
+ */
+export function controllerIndex(): number | null {
+  const store = (globals().ControllerStore ?? globals().controllerStore) as ControllerStoreLike | undefined;
   let listed: ControllerLike[] | null = null;
   try {
     listed = store?.GetControllers?.() ?? null;
@@ -164,22 +203,21 @@ export function deckControllerIndex(): number | null {
   }
   // Prefer a list that has something in it: `GetControllers()` can be empty
   // for a moment while the client rebuilds it (a dock, a client start), and
-  // the watched list still names the Deck controller then.
+  // the watched list still names the controller then.
   const controllers = listed && listed.length ? listed : (lastControllers ?? listed);
   const typeString =
     typeof store?.GetControllerTypeString === "function" ? store.GetControllerTypeString.bind(store) : undefined;
   // The eControllerType fallback is for a client that has no
   // GetControllerTypeString at all (see DECK_CONTROLLER_TYPE). When the
-  // client *does* have it, its answer is final: falling back on a miss
-  // would let an unrelated controller whose enum value happens to be 4 be
-  // taken for the Deck's, and the layout copied onto the wrong index.
-  return deckControllerIndexFrom(controllers, typeString);
+  // client *does* have it, its answer is final: an unrelated controller
+  // whose enum value happens to be 4 is never taken for the Deck's.
+  return layoutControllerIndexFrom(controllers, typeString, activeController);
 }
 
 /** The Steam Input seam of `layouts.ts`, over `SteamClient.Input`. */
 export function steamInput(): SteamInput {
   return {
-    deckControllerIndex,
+    controllerIndex,
     async getConfig(appid, controllerIndex) {
       const config = (await SteamClient.Input.GetConfigForAppAndController(appid, controllerIndex)) as
         | LayoutConfig
@@ -188,7 +226,17 @@ export function steamInput(): SteamInput {
       return config ?? null;
     },
     async setConfig(appid, controllerIndex, url) {
-      await SteamClient.Input.SetSelectedConfigForApp(appid, controllerIndex, url, false);
+      // Five arguments, as Steam's own configurator calls it: with four the
+      // call returns normally and selects nothing (PR-0 probe V2). @decky/ui
+      // still types the four-argument form.
+      const set = SteamClient.Input.SetSelectedConfigForApp as unknown as (
+        appid: number,
+        controllerIndex: number,
+        url: string,
+        unknown: boolean,
+        selectionType: number,
+      ) => Promise<void>;
+      await set.call(SteamClient.Input, appid, controllerIndex, url, false, CONFIG_SELECTION_USER);
     },
   };
 }

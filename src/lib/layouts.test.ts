@@ -36,7 +36,7 @@ class FakeInput implements SteamInput {
   readBack: ((url: string) => string) | null = null;
   throwOnSet = false;
   throwOnGet = false;
-  deckControllerIndex() {
+  controllerIndex() {
     return this.index;
   }
   async getConfig(appid: number) {

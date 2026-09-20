@@ -66,8 +66,12 @@ subcommand and works without the venv.
 
 ### 1.2 Pick the test games and make the throwaway shortcuts
 
-Do this in Game Mode on the Deck, before running anything. You need four
-Steam games you own and have installed, one per V1 case, plus two shortcuts.
+Do this in Game Mode on the Deck, before running anything, **with the
+controller you play with switched on** (Steam lists no controllers while none
+is connected, and every probe that needs an index then has nothing to go on).
+You need four Steam games you own, one per V1 case, plus two shortcuts. The
+games do not have to be installed: Steam Input answers for an uninstalled
+game too (measured 2026-09-20), which is the case the plugin actually meets.
 
 | case | what to set up | how (Game Mode) |
 |---|---|---|
@@ -259,7 +263,7 @@ V2, blank = found by type) and one button per probe:
   (or 15 when none is listed) and tags those lines `[index not confirmed by
   type]`, so the answers are in the log without another build.
 - **V2 set workshop URL** — config before, `SetSelectedConfigForApp(appid,
-  idx, url, false)`, read back after 1 s. Refuses an appid below `0x80000000`
+  idx, url, false, 1)`, read back after 1 s. Refuses an appid below `0x80000000`
   and a URL that is not `workshop://<id>`. Uses the confirmed Deck index, the
   override, or (tagged unconfirmed) the first listed index / 15. The plugin
   does not restore the previous selection; pick it again in the layout
@@ -289,7 +293,7 @@ the log without another build.
 | probe | question | gates |
 |---|---|---|
 | V1 | What does `GetConfigForAppAndController(appid, deckIndex)` return for a game on (a) a community Workshop layout, (b) a personal layout saved to the cloud, (c) an edited-in-place (autosaved) layout, (d) a game never touched? Which controller index is the Deck's built-in controller, found by type? What does the candidate stream look like? | §3.10 `copyLayout()` (PR-7): which URL kinds copy and which must be re-picked; the on-disk follow-up in §7 |
-| V2 | Does `SetSelectedConfigForApp(shortcutAppid, idx, "workshop://<id published for the real game>", false)` stick on a hidden shortcut named exactly like the game, and on one named differently? | **Decision 3 / §3.3 naming** (hidden entries named with the owned game's display name for Steam Input identity), §3.10; if it sticks for neither, PR-7 downgrades the copy to *Choose layout* via `ShowControllerConfigurator` |
+| V2 | Does `SetSelectedConfigForApp(shortcutAppid, idx, "workshop://<id published for the real game>", false, 1)` stick on a hidden shortcut named exactly like the game, and on one named differently? | **Decision 3 / §3.3 naming** (hidden entries named with the owned game's display name for Steam Input identity), §3.10; if it sticks for neither, PR-7 downgrades the copy to *Choose layout* via `ShowControllerConfigurator` |
 | V3 | Between `StartShutdown(false)` and the new client, does `pgrep -x steam` go empty, for how long, and does a wrapper script named `steam` ever match on its own? Does Steam come back? | **§3.5 `--commit await-exit`** (PR-4): the CLI polls every 100 ms and writes in that gap, so the gap must comfortably exceed **500 ms**; under that, escalate (backend `steam -shutdown` fallback, Decision 9); §2.3 |
 | V4 | Is `collectionStore.allAppsCollection.allApps` the owned-apps source (`appid`, `display_name`, `app_type`), and is steamid3 = `App.m_CurrentUser.strSteamID` − 76561197960265728? | **§3.9 owned map** and `write_owned_apps(steamid3, …)` (PR-5); the CLI's `--owned-apps` steamid3 check (§3.4.1) |
 | V5 | Is `appStore.GetAppOverviewByAppID(appid).gameid` the value `SteamClient.Apps.RunGame(gameid, "", -1, 100)` wants, and does it launch a shortcut from Game Mode? | **§3.9 Stream button** `runShortcut()` (PR-7) and *Open Moonlight* (PR-5) |

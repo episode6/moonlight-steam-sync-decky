@@ -279,8 +279,8 @@ apply to it by itself. The plugin copies it over where Steam allows:
   from the Steam game* turns both off.
 - **What you see.** Each Stream button's row on the Titles page shows the
   last result: **copied**, **own layout** (the hidden entry has its own
-  choice), **Steam default**, **unavailable** (no Deck controller was
-  found, or the selection did not stick when read back) or **picker
+  choice), **Steam default**, **unavailable** (no controller to copy for
+  was found, or the selection did not stick when read back) or **picker
   opened**. The library page's note shows the same next to the button. The
   results live in `layouts.json` in the plugin's settings directory; the
   plugin never writes Steam's controller config files, only asks Steam
@@ -289,19 +289,28 @@ apply to it by itself. The plugin copies it over where Steam allows:
   never assumed to be index 0 (a paired pad can take that slot). The
   sanctioned way is Steam's own type string
   (`controller_steamcontroller_neptune` from
-  `controllerStore.GetControllerTypeString`); *only* on a client without
+  `ControllerStore.GetControllerTypeString`); *only* on a client without
   that function does the plugin fall back to the enum value `4`
-  (`DECK_CONTROLLER_TYPE` in `src/lib/layouts.ts`), which is unverified
-  until the PR-0 probe kit's `controllerStore.GetControllers()` dump
-  confirms it. When the client has the type string its answer is final: no
-  Deck controller listed means no copy, rather than guessing by an enum
-  value another pad might share.
+  (`DECK_CONTROLLER_TYPE` in `src/lib/layouts.ts`), which is still
+  unverified on a Deck. When the client has the type string its answer is
+  final: another pad is never taken for the Deck's because it shares an
+  enum value. On a device with no built-in controller (a SteamOS box with
+  a separate pad) the plugin copies for the active controller, or the only
+  connected one; with several pads and none active, or none connected,
+  there is no copy. Layouts are per controller, so a copy made with one
+  pad does not carry over to another.
 
-**This is pending the PR-0 device probes.** The plugin has not been run on
-a Steam Deck yet. Whether `SetSelectedConfigForApp` accepts a Workshop
-layout published for another appid on the hidden shortcut is probe V2's
-question, and probe V1 says what each layout kind reads back as. Until
-they have run, the copy is the default and a fallback is built in:
+**The PR-0 device probes ran on 2026-09-20**, on a SteamOS machine with a
+separate Steam Controller rather than a Deck. Probe V2 confirmed the copy:
+a Workshop layout published for the real game, set on a shortcut through
+`SetSelectedConfigForApp`, reads back -- provided the call carries the
+fifth, selection-type argument Steam's own configurator passes (with four
+it returns normally and does nothing). Probe V1 found a community layout
+and an exported personal layout both read back as `workshop://…`, a
+layout edited in place as `autosave:///…` (a file path; whether that one
+copies is untested), and an untouched game as an unselected `template://…`;
+all of it for games that are not installed. A Deck itself is still
+untested. The fallback stays built in:
 
 - `layout_strategy` in `settings.json` (`"copy"`, the default, or
   `"picker"`; no UI, edit the file by hand) switches the behaviour on a

@@ -43,7 +43,13 @@ everything that needs a Steam Deck, including the PR-0 probes.
   list), the real game's `workshop://` / `template://` selection is set on
   its hidden shortcut through Steam Input when the shortcut has no
   selection of its own, never overwriting one; the Deck's controller is
-  found by type. Results (`copied` / `kept` / `unavailable`) are recorded
+  found by type, and a device without one copies for the active or only
+  connected controller. The first device probes (2026-09-20) corrected
+  three things here before any release: `SetSelectedConfigForApp` needs its
+  fifth, selection-type argument or it silently selects nothing; the
+  controller store global is `ControllerStore`; and
+  `RegisterForControllerListChanges` may not exist, so the controller
+  watch no longer throws at load without it. Results (`copied` / `kept` / `unavailable`) are recorded
   in `layouts.json` (`layouts` / `record_layout`) and shown on the Titles
   row as copied / own layout / Steam default / unavailable, and next to the
   button. The Advanced toggle turns the copy off. The post-restart walk
@@ -54,7 +60,7 @@ everything that needs a Steam Deck, including the PR-0 probes.
 - The layout strategy switch: `DEFAULT_LAYOUT_STRATEGY` (`copy`) in
   `src/lib/layouts.ts`, overridable per device by `layout_strategy` in
   `settings.json`; `picker` makes no Steam Input calls and leaves Choose
-  layout as the only layout affordance. Pending the PR-0 probes.
+  layout as the only layout affordance. Probe V2 confirmed `copy`.
 - The Titles page (Settings → Titles, also opened from the panel's
   header): every title the active host publishes, joined from `list` and
   `status`, with Steam's capsule, the match line, a badge (stream button,

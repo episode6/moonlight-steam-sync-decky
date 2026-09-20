@@ -4,7 +4,7 @@ import {
   buildOwnedMap,
   controllerConfiguratorAvailable,
   currentSteamId3,
-  deckControllerIndex,
+  controllerIndex,
   overviewLoaded,
   ownedApps,
   showControllerConfigurator,
@@ -80,12 +80,15 @@ describe("the layout seam over the globals (spec 3.10)", () => {
   const deck = { nControllerIndex: 15, eControllerType: 4 };
   const xbox = { nControllerIndex: 0, eControllerType: 30 };
   let sets: unknown[][];
+  const ps5 = { nControllerIndex: 1, eControllerType: 45 };
   let listCallback: ((controllers: unknown[]) => void) | null;
+  let activeCallback: ((message: unknown) => void) | null;
   let unregistered: number;
 
   beforeEach(() => {
     sets = [];
     listCallback = null;
+    activeCallback = null;
     unregistered = 0;
     g.SteamClient = {
       Input: {
@@ -98,6 +101,10 @@ describe("the layout seam over the globals (spec 3.10)", () => {
           listCallback = cb;
           return { unregister: () => unregistered++ };
         },
+        RegisterForActiveControllerChanges: (cb: (message: unknown) => void) => {
+          activeCallback = cb;
+          return { unregister: () => unregistered++ };
+        },
       },
       Apps: { ShowControllerConfigurator: (appid: number) => sets.push(["configurator", appid]) },
     };
@@ -105,59 +112,101 @@ describe("the layout seam over the globals (spec 3.10)", () => {
   afterEach(() => {
     delete g.SteamClient;
     delete g.controllerStore;
+    delete g.ControllerStore;
     delete g.appStore;
   });
 
   it("finds the Deck controller through controllerStore, by type, else through the list watch", () => {
-    expect(deckControllerIndex()).toBeNull();
+    expect(controllerIndex()).toBeNull();
     g.controllerStore = { GetControllers: () => [xbox, deck] };
-    expect(deckControllerIndex()).toBe(15);
+    expect(controllerIndex()).toBe(15);
     g.controllerStore = {
       GetControllers: () => [xbox, deck],
       GetControllerTypeString: (t: number) => (t === 4 ? "controller_steamcontroller_neptune" : "controller_xbox360"),
     };
-    expect(deckControllerIndex()).toBe(15);
-    g.controllerStore = { GetControllers: () => [xbox] };
-    expect(deckControllerIndex()).toBeNull();
+    expect(controllerIndex()).toBe(15);
+    g.controllerStore = { GetControllers: () => [xbox, ps5] };
+    expect(controllerIndex()).toBeNull();
     delete g.controllerStore;
     const stop = watchControllers();
     listCallback!([xbox, deck]);
-    expect(deckControllerIndex()).toBe(15);
+    expect(controllerIndex()).toBe(15);
     // an empty store list (the client rebuilding it) yields to the watched one
     g.controllerStore = { GetControllers: () => [] };
-    expect(deckControllerIndex()).toBe(15);
+    expect(controllerIndex()).toBe(15);
     g.controllerStore = { GetControllers: () => { throw new Error("no store"); } };
-    expect(deckControllerIndex()).toBe(15);
+    expect(controllerIndex()).toBe(15);
     delete g.controllerStore;
-    listCallback!([xbox]);
-    expect(deckControllerIndex()).toBeNull();
+    listCallback!([xbox, ps5]);
+    expect(controllerIndex()).toBeNull();
     stop();
-    expect(unregistered).toBe(1);
+    expect(unregistered).toBe(2);
+  });
+
+  it("reads the store under the ControllerStore spelling the probed client uses", () => {
+    g.ControllerStore = { GetControllers: () => [xbox, deck] };
+    expect(controllerIndex()).toBe(15);
+  });
+
+  it("without a Deck controller, copies for the only connected one, else the active one", () => {
+    // PR-0 probe V1: a SteamOS box with one separate Steam Controller at index 0.
+    const triton = { nControllerIndex: 0, eControllerType: 10 };
+    g.ControllerStore = {
+      GetControllers: () => [triton],
+      GetControllerTypeString: () => "controller_steamcontroller_triton",
+    };
+    expect(controllerIndex()).toBe(0);
+    g.ControllerStore = { GetControllers: () => [xbox, ps5] };
+    expect(controllerIndex()).toBeNull();
+    const stop = watchControllers();
+    activeCallback!({ nActiveController: 1 });
+    expect(controllerIndex()).toBe(1);
+    // an active index that is not in the list (a stale one, nothing connected) is not used
+    activeCallback!({ nActiveController: 7 });
+    expect(controllerIndex()).toBeNull();
+    // the Deck's own controller still wins over the active one
+    activeCallback!({ nActiveController: 1 });
+    g.ControllerStore = { GetControllers: () => [xbox, ps5, deck] };
+    expect(controllerIndex()).toBe(15);
+    stop();
+    g.ControllerStore = { GetControllers: () => [xbox, ps5] };
+    expect(controllerIndex()).toBeNull();
+  });
+
+  it("watchControllers tolerates a client without either registration", () => {
+    // The probed client has no RegisterForControllerListChanges; calling it
+    // unguarded would throw while the plugin loads.
+    (g.SteamClient as { Input: Record<string, unknown> }).Input = {};
+    const stop = watchControllers();
+    expect(controllerIndex()).toBeNull();
+    stop();
+    expect(unregistered).toBe(0);
   });
 
   it("trusts GetControllerTypeString when the client has it, with no enum fallback", () => {
     // A controller that is not a Deck but whose eControllerType happens to be
     // 4. The enum fallback exists only for a client with no type-string call;
-    // using it here would copy the layout onto the wrong controller index.
+    // using it here would take an unrelated controller for the Deck's.
     const impostor = { nControllerIndex: 3, eControllerType: 4 };
     g.controllerStore = {
-      GetControllers: () => [impostor],
+      GetControllers: () => [impostor, ps5],
       GetControllerTypeString: () => "controller_ps5",
     };
-    expect(deckControllerIndex()).toBeNull();
+    expect(controllerIndex()).toBeNull();
     // the same list, on a client without the call, still falls back by enum
-    g.controllerStore = { GetControllers: () => [impostor] };
-    expect(deckControllerIndex()).toBe(3);
+    g.controllerStore = { GetControllers: () => [impostor, ps5] };
+    expect(controllerIndex()).toBe(3);
   });
 
-  it("reads and sets selections through SteamClient.Input with the Deck index and the false flag", async () => {
+  it("reads and sets selections through SteamClient.Input with the index and all five arguments", async () => {
     g.controllerStore = { GetControllers: () => [deck] };
     const input = steamInput();
-    expect(input.deckControllerIndex()).toBe(15);
+    expect(input.controllerIndex()).toBe(15);
     expect(await input.getConfig(620, 15)).toEqual({ URL: "workshop://620", Title: "x" });
     expect(await input.getConfig(0x80000001, 15)).toBeNull();
     await input.setConfig(0x80000001, 15, "workshop://620");
-    expect(sets).toEqual([[0x80000001, 15, "workshop://620", false]]);
+    // the fifth argument is what makes the selection stick (PR-0 probe V2)
+    expect(sets).toEqual([[0x80000001, 15, "workshop://620", false, 1]]);
   });
 
   it("overviewLoaded asks appStore for the shortcut's overview", () => {

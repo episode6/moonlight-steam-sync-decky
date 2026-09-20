@@ -115,6 +115,10 @@ JS_PRELUDE = r"""
 const G = globalThis;
 const NEPTUNE = "controller_steamcontroller_neptune";
 const NEPTUNE_ENUM = 4; // EControllerType.SteamControllerNeptune in @decky/ui 4.12
+// The fifth SetSelectedConfigForApp argument Steam's own configurator passes for a
+// user pick (reads back as eSelectionType 1). Measured 2026-09-20: with four
+// arguments the call returns normally and selects nothing.
+const SELECTION_USER = 1;
 const FALLBACK_INDEX = 15; // the Deck controller index deckyemu measured; used only when the type lookup fails
 const errText = (e) => (e && e.message) ? (e.name + ": " + e.message) : String(e);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -193,12 +197,13 @@ function asList(v) {
   return null;
 }
 function findControllers() {
-  const cs = G.controllerStore;
+  // `ControllerStore` on the client probed on 2026-09-20; `controllerStore` is the older spelling.
+  const cs = G.ControllerStore || G.controllerStore;
   const attempts = [];
   const out = { controllers: [], deckIndex: null, source: "none", attempts, controllerStoreShape: null };
   let list = null;
   if (!cs) {
-    out.error = "controllerStore is " + typeof cs;
+    out.error = "ControllerStore / controllerStore is " + typeof cs;
     out.shape = { globalsMatchingController: globalsMatching(/controller/i) };
   } else {
     out.controllerStoreShape = shape(cs, /controller|type/i);
@@ -359,7 +364,7 @@ if (typeof si.input.SetSelectedConfigForApp !== "function") {
   result.shape = shape(si.input, /Selected|Config/i);
   return result;
 }
-try { result.setReturned = ret(await si.input.SetSelectedConfigForApp(appid, idx, url, false)); }
+try { result.setReturned = ret(await si.input.SetSelectedConfigForApp(appid, idx, url, false, SELECTION_USER)); }
 catch (e) { result.setError = errText(e); }
 await sleep(PARAMS.readback_wait_ms);
 result.after = await getConfig(si.input, appid, idx);
@@ -367,7 +372,7 @@ result.stuck = !!(result.after && result.after.URL === url);
 if (PARAMS.restore) {
   const prev = result.before && result.before.URL;
   if (typeof prev === "string" && prev) {
-    try { result.restoreReturned = ret(await si.input.SetSelectedConfigForApp(appid, idx, prev, false)); }
+    try { result.restoreReturned = ret(await si.input.SetSelectedConfigForApp(appid, idx, prev, false, SELECTION_USER)); }
     catch (e) { result.restoreError = errText(e); }
     await sleep(PARAMS.readback_wait_ms);
     result.afterRestore = await getConfig(si.input, appid, idx);
