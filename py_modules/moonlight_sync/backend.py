@@ -99,6 +99,9 @@ class RunState:
     started: str
     running: bool = True
     awaiting_exit: bool = False
+    #: ``stop_sync`` / ``unload`` asked for it; honoured as soon as the child
+    #: exists, so the window between ``_start_run`` and the spawn is covered.
+    stop_requested: bool = False
     plan: dict[str, Any] | None = None
     events: list[dict[str, Any]] = field(default_factory=list)
     recent: collections.deque = field(default_factory=lambda: collections.deque(maxlen=200))
@@ -321,15 +324,23 @@ class Backend:
             self._started = True
 
     async def unload(self) -> None:
-        """SIGINT a running child, wait up to 10 s, then kill whatever is left."""
+        """SIGINT a running child, wait up to 10 s, then kill whatever is left.
+
+        A run that has been registered but whose child is not spawned yet is
+        flagged instead; :meth:`_run_started` interrupts it the moment it
+        exists, so unloading can never leave an orphan behind.
+        """
         run = self._run
-        if run is not None and run.running and run.proc is not None:
+        if run is not None and run.running:
             self._log("unload: interrupting the running child")
-            self._interrupt(run.proc)
+            run.stop_requested = True
+            if run.proc is not None:
+                self._interrupt(run.proc)
             if run.task is not None:
                 done, _ = await asyncio.wait({run.task}, timeout=self.UNLOAD_WAIT)
                 if not done:
-                    self._kill(run.proc)
+                    if run.proc is not None:
+                        self._kill(run.proc)
                     await asyncio.wait({run.task}, timeout=self.KILL_GRACE)
         for proc in list(self._procs):
             self._kill(proc)
@@ -1349,6 +1360,13 @@ class Backend:
             )
         await self._emit("sync_event", {"kind": run.kind, "event": self._scrub(event, key)})
 
+    def _run_started(self, run: RunState, proc: asyncio.subprocess.Process) -> None:
+        """The run's child exists; honour a stop that arrived before it did."""
+        run.proc = proc
+        if run.stop_requested:
+            self._log(f"stop: SIGINT to the {run.kind} run (asked for before it started)")
+            self._interrupt(proc)
+
     async def _drive(self, run: RunState, argv: list[str]) -> None:
         key = self._effective_key()
         exit_code: int
@@ -1357,7 +1375,7 @@ class Backend:
                 argv,
                 timeout=None,
                 on_event=lambda event: self._on_run_event(run, event, key),
-                on_proc=lambda proc: setattr(run, "proc", proc),
+                on_proc=lambda proc: self._run_started(run, proc),
             )
             exit_code = result.exit
             run.failure = self._classify(result, None)
@@ -1373,6 +1391,13 @@ class Backend:
             self._log(f"{run.kind} failed:\n{traceback.format_exc()}")
             exit_code = 1
             run.failure = failure("bad-request", "the run failed; see the log")
+        if run.stop_requested and exit_code != 0 and not ev.saw(run.events, "start"):
+            # The stop landed before the CLI could install its SIGINT handler,
+            # so the signal killed it outright (exit -2) with nothing printed.
+            # That is still a clean stop, not a protocol error.
+            self._log(f"{run.kind}: stopped before the CLI printed anything (exit {exit_code})")
+            exit_code = 130
+            run.failure = None
         run.exit = exit_code
         try:
             pending = ev.next_pending(
@@ -1410,8 +1435,14 @@ class Backend:
     @guarded
     async def stop_sync(self) -> Result:
         run = self._run
-        if run is None or not run.running or run.proc is None:
+        if run is None or not run.running:
             return {"ok": True, "running": False}
+        run.stop_requested = True
+        if run.proc is None:
+            # Registered (the busy guard says "running") but not spawned yet:
+            # _run_started sends the signal as soon as the child exists.
+            self._log(f"stop: the {run.kind} run has not spawned yet; it will be interrupted")
+            return {"ok": True, "running": True}
         self._log(f"stop: SIGINT to the {run.kind} run")
         self._interrupt(run.proc)
         return {"ok": True, "running": True}

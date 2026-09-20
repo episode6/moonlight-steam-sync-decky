@@ -152,6 +152,10 @@ sentences.
 ID --defer-art`) except that a name or term starting with `-` goes last,
 behind `--`, so argparse never reads it as an option. `set_ignored` needs no
 CLI and drops the `check_host` memo.
+`stop_sync` and `unload` also cover the moment between the busy guard and
+the spawn: they flag the run, the SIGINT goes out as soon as its child
+exists, and a run the signal killed before the CLI printed anything is
+reported as exit 130 rather than as a protocol error.
 
 ## Commands
 
@@ -178,7 +182,10 @@ Run long commands through `tee` to a log file, never `tail`.
   `pnpm install` inside `probes/steam-input-probe` resolves to the root
   workspace and installs the root instead of the probe (tested), which
   would break `probe.yml`. Without one the root is a single package and the
-  probe's own `package.json` / lockfile are never touched.
+  probe's own `package.json` / lockfile are never touched. `.gitignore`
+  lists the file so a pnpm prompt that writes one cannot get it committed
+  again; pnpm 9 also refuses to run *any* script when it is there
+  (`ERROR packages field missing or empty`).
 - `ruff.toml` `extend-exclude = ["probes", …]`; `pyproject.toml`
   `testpaths = ["tests"]` and `norecursedirs` include `probes`.
 - CI's `probes` job runs `pytest probes/tests` only when that directory
@@ -200,6 +207,10 @@ There is no Steam Deck during development; everything else is tested.
   grandchild that keeps the pipes open after the fake exits),
   `FAKE_CLI_FIXTURE_<SUB>[_<ACTION>]` (another fixture basename, e.g.
   `FAKE_CLI_FIXTURE_HOST_SHOW=host-none`). A missing fixture exits 99.
+  On SIGINT it prints the fixture's summary with `stopped_early` and, unless
+  it had already printed `commit written:true`, `added`/`replaced`/`removed`
+  zeroed (nothing reached `shortcuts.vdf`; `filled` stands, art files are
+  written as the run goes), then `error` exit 130.
 - `tests/fixtures/<scenario>/<command>.ndjson` are hand-written from §3.4.6
   (`full-sync`, `art-only`, `nothing-to-do`, `unreachable`, `stopped`,
   `refused`, `common/`); `tests/test_fixtures.py` checks every event's key

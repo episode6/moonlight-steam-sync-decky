@@ -410,6 +410,12 @@ def test_stop_during_the_wait_under_both_sigint_modes(make_backend, mode) -> Non
     assert done["exit"] == (130 if mode == "immediate" else 2)
     assert done["commit"] is None  # nothing was written
     assert done["pending"]["restart_needed"] == "write"
+    if mode == "immediate":
+        # The interrupt landed before the write, so nothing was added: the
+        # *Last sync* row must not claim shortcuts that do not exist.
+        assert done["summary"]["added"] == 0
+        assert done["summary"]["replaced"] == 0
+        assert done["pending"]["last_summary"]["added"] == 0
     state = run(backend.sync_state())
     assert state["running"] is False
     assert state["awaiting_exit"] is False
@@ -431,6 +437,7 @@ def test_stop_outside_the_wait_ends_in_130(make_backend) -> None:
     done = backend.emitted.of("sync_done")[0]
     assert done["exit"] == 130
     assert done["summary"]["stop_reason"] == "interrupted"
+    assert done["summary"]["added"] == 0  # nothing reached shortcuts.vdf
     assert backend.emitted.relayed()[-1] == {
         "event": "error",
         "exit": 130,
@@ -438,6 +445,50 @@ def test_stop_outside_the_wait_ends_in_130(make_backend) -> None:
         "message": "interrupted; resume with the same command",
     }
     assert run(backend.stop_sync()) == {"ok": True, "running": False}
+
+
+@pytest.mark.scenario("full-sync")
+def test_stop_before_the_child_is_spawned(make_backend) -> None:
+    """The run is registered before its child exists; a stop there still stops it."""
+    backend = make_backend(env={"FAKE_CLI_SLEEP_MS": "300"})
+    owned(backend)
+
+    async def scenario() -> dict[str, Any]:
+        await backend.start_sync()
+        # stop_sync() never awaits anything, so _drive has not run yet: the
+        # run is "running" for the busy guard but run.proc is still None.
+        assert backend._run is not None and backend._run.proc is None
+        stopped = await backend.stop_sync()
+        await backend.wait_for_run()
+        return stopped
+
+    stopped = run(scenario())
+    assert stopped == {"ok": True, "running": True}
+    done = backend.emitted.of("sync_done")[0]
+    # 130 either way: the CLI handled the signal, or died from it before it
+    # could (no summary then) and the backend reported the stop honestly.
+    assert done["exit"] == 130
+    summary = done["summary"]
+    assert summary is None or summary["stop_reason"] == "interrupted"
+    assert done["pending"]["restart_needed"] == "none"  # nothing was written
+    assert run(backend.sync_state())["running"] is False
+
+
+@pytest.mark.scenario("full-sync")
+def test_unload_before_the_child_is_spawned(make_backend) -> None:
+    """Unloading in the same window leaves no orphan behind."""
+    backend = make_backend(env={"FAKE_CLI_SLEEP_MS": "300"})
+    owned(backend)
+
+    async def scenario() -> None:
+        await backend.start_sync()
+        assert backend._run is not None and backend._run.proc is None
+        await backend.unload()
+
+    run(scenario())
+    assert backend._run is not None
+    assert backend._run.running is False
+    assert backend._run.exit == 130
 
 
 @pytest.mark.scenario("full-sync")
