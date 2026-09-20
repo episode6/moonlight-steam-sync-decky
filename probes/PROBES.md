@@ -34,16 +34,17 @@ second client).
 3. Note the Deck's IP (Settings → Internet, or `ip -4 addr` in Konsole) and
    check the login from your PC: `ssh deck@<deck-ip>`.
 4. Get this directory onto the Deck (SteamOS has `git` and Python 3.13.5;
-   the runner needs nothing from the plugin build). **Check out the branch
-   the probe kit is on** — until the plugin stack merges that is
-   `pr0-steam-input-probe`, not `main`, which does not carry `probes/` yet:
+   the runner needs nothing from the plugin build). The kit is on `main`,
+   and the repo is public, so an https clone needs no ssh key or login:
    ```sh
-   git clone --branch pr0-steam-input-probe \
-     https://github.com/episode6/moonlight-steam-sync-decky ~/moonlight-steam-sync-decky
+   git clone https://github.com/episode6/moonlight-steam-sync-decky ~/moonlight-steam-sync-decky
    # already cloned, from ~/moonlight-steam-sync-decky:
-   #   git fetch origin && git checkout pr0-steam-input-probe
+   #   git checkout main && git pull
    # or, from the PC:  scp -r probes deck@<deck-ip>:~/probes
    ```
+   GitHub's *Download ZIP* of `main` works just as well: `run_probes.py` is
+   one self-contained file, and it writes `probe-results.json` next to
+   itself wherever it is unpacked (`--results` moves it).
 5. Create the venv with the runner's one dependency (the shipped CLI stays
    dependency-free; this is throwaway tooling):
    ```sh
