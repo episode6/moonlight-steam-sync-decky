@@ -42,11 +42,16 @@ section 5), not decided here.
    the match fixer; then `grep -n "not found\|network failures"
    "$HOME/homebrew/logs/Moonlight Sync/moonlight-sync.log"` must find
    nothing newer than the install. To reproduce the loader's environment
-   from SSH: `env -i HOME=$HOME PATH=/usr/bin LD_LIBRARY_PATH=$(ls -d
-   /tmp/_MEI* | head -1) python3 ~/.local/bin/moonlight-steam-sync doctor`
-   — the `moonlight:` line must name the flatpak (CLI 0.3.1 or newer;
-   0.3.0 prints `not found` there, which the plugin's cleaned environment
-   hides).
+   from SSH, while plugin_loader is running (its unpack directory goes
+   when it exits): `env -i HOME=$HOME PATH=/usr/bin LD_LIBRARY_PATH=$(ls
+   -dt /tmp/_MEI* | head -1) python3 ~/.local/bin/moonlight-steam-sync
+   doctor` — the `moonlight:` line must name the flatpak (CLI 0.3.1 or
+   newer; 0.3.0 prints `not found` there, which the plugin's cleaned
+   environment hides). `ls -dt` takes the newest `_MEI*` directory; if
+   another PyInstaller program is running too, check that the one picked
+   holds a `libssl.so.3`. The loader's own `/proc/<pid>/environ` is not
+   the shortcut it looks like: the service runs as root, so reading it
+   needs `sudo`, and even the backend's deck-owned process refuses.
 
 ## 1. PR-0: device probes
 

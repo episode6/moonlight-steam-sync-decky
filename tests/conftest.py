@@ -72,10 +72,13 @@ class Recorder:
 
 
 def base_env(tmp_path: Path, scenario: str | None) -> dict[str, str]:
+    # The host's own library path stays out, so the tests that set one (the
+    # plugin_loader cases) do not depend on the shell pytest was run from.
+    dropped = {"SGDB_API_KEY", "LD_LIBRARY_PATH", "LD_LIBRARY_PATH_ORIG"}
     env = {
         key: value
         for key, value in os.environ.items()
-        if not key.startswith("FAKE_CLI_") and key != "SGDB_API_KEY"
+        if not key.startswith("FAKE_CLI_") and key not in dropped
     }
     dirs = [str(FIXTURES / scenario)] if scenario else []
     dirs.append(str(FIXTURES / "common"))
