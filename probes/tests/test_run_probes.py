@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import shutil
 import socket
 import subprocess
@@ -502,6 +503,34 @@ def test_v3_records_the_gaps_even_when_the_reconnect_wait_is_interrupted(tmp_pat
     assert len(saved[0]["result"]["gaps"]) == 1 and saved[0]["result"]["gaps"][0]["back_at_ms"] is None
     assert saved[0]["result"]["steam_back"] is False
     assert saved[0]["result"]["reconnect_last_error"].startswith("interrupted: KeyboardInterrupt")
+
+
+def test_v3_log_keeps_lines_whole_and_drops_writes_after_it_closes(tmp_path):
+    """v3 writes this file from the main thread and the sampler thread, and
+    parse_watch_log reads the gaps back out of it, so lines must stay whole.
+    v3 also joins the sampler with a timeout before closing the file, so a
+    sampler that outlived the join must be dropped, not raise on a closed
+    file (the shutdown is irreversible; the record still has to be written).
+    """
+    log = run_probes.V3Log(tmp_path / "sub" / "v3.log")  # its directory is made for it
+
+    def writer(name):
+        for i in range(200):
+            log(f"{name} sample t={i} rc=0 pids=10")
+
+    threads = [threading.Thread(target=writer, args=(f"w{n}",)) for n in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    log.close()
+    log("straggler sample t=999 rc=0 pids=10")  # no ValueError on a closed file
+    log.close()  # idempotent
+
+    lines = (tmp_path / "sub" / "v3.log").read_text().splitlines()
+    assert len(lines) == 800
+    assert all(re.fullmatch(r"\S+ w\d sample t=\d+ rc=0 pids=10", line) for line in lines)
+    assert "straggler" not in "\n".join(lines)
 
 
 def test_v3_records_the_samples_when_the_baseline_sleep_is_interrupted(tmp_path):

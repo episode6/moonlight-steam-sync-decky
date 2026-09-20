@@ -951,6 +951,43 @@ def render_markdown(results: list[dict[str, Any]]) -> str:
 # ---------------------------------------------------------------------------
 
 
+class V3Log:
+    """The v3 pgrep log: one line at a time, from either thread.
+
+    ``Runner.v3`` writes from the main thread while the sampler thread
+    writes every sample, to one ``TextIOWrapper``. This file is the raw
+    data :func:`parse_watch_log` recovers the V3 gaps from, so whole lines
+    matter more than a lock costs.
+
+    Writing is also a no-op once :meth:`close` has run: ``v3`` joins the
+    sampler with a timeout and then closes the file, so a sampler that
+    outlived the join must not raise ``ValueError: I/O operation on closed
+    file`` -- an irreversible shutdown has already happened and the record
+    still has to be written.
+    """
+
+    def __init__(self, path: Path) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self.path = path
+        self._fh = open(path, "a", encoding="utf-8")  # noqa: SIM115 - closed by close()
+        self._lock = threading.Lock()
+        self._closed = False
+
+    def __call__(self, line: str) -> None:
+        stamped = f"{now_iso()} {line}"
+        with self._lock:
+            if self._closed:
+                return
+            self._fh.write(stamped + "\n")
+            self._fh.flush()
+
+    def close(self) -> None:
+        """Idempotent; after it, writes are dropped instead of raising."""
+        with self._lock:
+            self._closed = True
+            self._fh.close()
+
+
 class Runner:
     def __init__(
         self,
@@ -1061,12 +1098,7 @@ class Runner:
         """
         self.confirm_v3(yes)
         self.devtools.shared_js_context()  # fail early (port closed / no target) before touching anything
-        self.v3_log_path.parent.mkdir(parents=True, exist_ok=True)
-        fh = open(self.v3_log_path, "a", encoding="utf-8")  # noqa: SIM115 - closed below
-
-        def log(line: str) -> None:
-            fh.write(f"{now_iso()} {line}\n")
-            fh.flush()
+        log = V3Log(self.v3_log_path)
 
         watch: dict[str, Any] = {}
         stop = threading.Event()
@@ -1151,7 +1183,7 @@ class Runner:
             result["gaps"] = watch.get("gaps", [])
             if not result["gaps"]:
                 result["note"] = "pgrep -x steam never came back empty during the watch; see the log"
-            fh.close()
+            log.close()
             entry = self.record("v3", {"duration_s": duration_s, "interval_ms": interval_ms}, result)
         return entry
 
