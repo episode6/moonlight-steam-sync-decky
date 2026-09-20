@@ -338,8 +338,10 @@ On-device checks are not merge criteria; they are collected in
 
 ## Cutting a release
 
-**No agent pushes a tag or creates a release.** The user does this, and
-only once moonlight-steam-sync's own `v0.3.0` exists: `release.yml`'s
+**No agent pushes a tag or creates a release** unless the user asks for
+that release explicitly (they did for `v0.1.1`, 2026-09-20, which moved the
+pin to the CLI's `v0.3.1`). It happens only once the pinned
+moonlight-steam-sync release exists: `release.yml`'s
 build job fails hard on the missing CLI release **only when it runs from
 a `v*` tag push**; its `pull_request` and `workflow_dispatch` runs tolerate
 the CLI not being released yet with the same `::warning::` CI's `package`

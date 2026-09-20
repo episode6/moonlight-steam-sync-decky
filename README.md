@@ -14,9 +14,10 @@ Nothing runs on the gaming PC: the plugin needs only a stock
 Sunshine / Apollo / GeForce host that the Deck's Moonlight client is paired
 with.
 
-**Status:** first release (`v0.1.0`). Built and tested off-device only; it
-has **not been run on a Steam Deck yet** (`DEVICE-CHECKLIST.md`). It needs
-moonlight-steam-sync **0.3.0**, which it bundles.
+**Status:** released through `v0.1.1`. Its first device run (a generic
+SteamOS machine) produced the `v0.1.1` fixes; it has **not been run on a
+Steam Deck yet** (`DEVICE-CHECKLIST.md`). It bundles moonlight-steam-sync
+**0.3.1** and needs 0.3.0 or newer.
 
 ## Requirements
 

@@ -6,11 +6,14 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
-Prepared for the patch release after `0.1.0`. At release time, once
-moonlight-steam-sync `v0.3.1` exists, move `package.json`'s
-`"moonlightSteamSync"` pin to `0.3.1` (it carries the same fix on the CLI
-side); `MIN_CLI_VERSION` stays `0.3.0`, since the fix below does not depend
-on it.
+Nothing yet.
+
+## [0.1.1] - 2026-09-20
+
+A patch release from the first device run. It bundles moonlight-steam-sync
+`v0.3.1` (the `package.json` pin moved from `0.3.0`), which carries the
+same library-path fix on the CLI side; `MIN_CLI_VERSION` stays `0.3.0`,
+since the plugin's own fix below does not depend on it.
 
 ### Fixed
 
