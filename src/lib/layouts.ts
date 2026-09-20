@@ -108,10 +108,16 @@ export async function copyLayout(realAppid: number, shortcutAppid: number, input
 // ---------------------------------------------------------------------------
 // the Deck controller, by type (spec 2.2: its index is not 0)
 
-/** `EControllerType.SteamControllerNeptune` (the Deck's built-in controller). */
+/**
+ * `EControllerType.SteamControllerNeptune` (the Deck's built-in controller)
+ * **[verify V1/V2]**: the enum value is unmeasured and is only the fallback
+ * for a client whose `controllerStore` has no `GetControllerTypeString`;
+ * the type string below is the path spec 2.2 sanctions. The PR-0 probe kit
+ * dumps `controllerStore.GetControllers()`, which confirms or corrects it.
+ */
 export const DECK_CONTROLLER_TYPE = 4;
 
-/** The type string Steam's own code uses for it. */
+/** The type string Steam's own code uses for it (the sanctioned way to find the controller). */
 export const DECK_CONTROLLER_TYPE_STRING = "controller_steamcontroller_neptune";
 
 export interface ControllerLike {

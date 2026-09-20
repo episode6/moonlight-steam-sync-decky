@@ -241,6 +241,15 @@ apply to it by itself. The plugin copies it over where Steam allows:
   results live in `layouts.json` in the plugin's settings directory; the
   plugin never writes Steam's controller config files, only asks Steam
   Input to select a layout.
+- **Which controller.** The Deck's built-in controller is found by type,
+  never assumed to be index 0 (a paired pad can take that slot). The
+  sanctioned way is Steam's own type string
+  (`controller_steamcontroller_neptune` from
+  `controllerStore.GetControllerTypeString`); on a client without that
+  function the plugin falls back to the enum value `4`
+  (`DECK_CONTROLLER_TYPE` in `src/lib/layouts.ts`), which is unverified
+  until the PR-0 probe kit's `controllerStore.GetControllers()` dump
+  confirms it.
 
 **This is pending the PR-0 device probes.** The plugin has not been run on
 a Steam Deck yet. Whether `SetSelectedConfigForApp` accepts a Workshop

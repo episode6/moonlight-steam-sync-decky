@@ -162,7 +162,10 @@ export function deckControllerIndex(): number | null {
   } catch {
     listed = null;
   }
-  const controllers = listed ?? lastControllers;
+  // Prefer a list that has something in it: `GetControllers()` can be empty
+  // for a moment while the client rebuilds it (a dock, a client start), and
+  // the watched list still names the Deck controller then.
+  const controllers = listed && listed.length ? listed : (lastControllers ?? listed);
   const typeString = typeof store?.GetControllerTypeString === "function" ? store.GetControllerTypeString.bind(store) : undefined;
   return deckControllerIndexFrom(controllers, typeString) ?? deckControllerIndexFrom(controllers);
 }

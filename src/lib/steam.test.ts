@@ -123,6 +123,12 @@ describe("the layout seam over the globals (spec 3.10)", () => {
     const stop = watchControllers();
     listCallback!([xbox, deck]);
     expect(deckControllerIndex()).toBe(15);
+    // an empty store list (the client rebuilding it) yields to the watched one
+    g.controllerStore = { GetControllers: () => [] };
+    expect(deckControllerIndex()).toBe(15);
+    g.controllerStore = { GetControllers: () => { throw new Error("no store"); } };
+    expect(deckControllerIndex()).toBe(15);
+    delete g.controllerStore;
     listCallback!([xbox]);
     expect(deckControllerIndex()).toBeNull();
     stop();
