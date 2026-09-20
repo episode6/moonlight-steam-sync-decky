@@ -117,7 +117,13 @@ there is nothing left to write *of its own kind*, so it clears a pending
 write of the same kind -- and a `sync` also clears one left by an `art` run,
 since a sync patches icons too -- to `"art"` when it saved images, else
 `"none"`. A pending `remove` is only ever cleared by another `remove`, and a
-non-zero exit clears nothing. `restart_countdown_s` is 0-30 everywhere
+non-zero exit clears nothing. `last_kind` / `last_plan` name the run that
+*owns* the current `restart_needed`, not the last run: they only move when a
+run sets or settles it, so a `sync` that found nothing to do cannot rename a
+pending `remove`'s write (which would re-run the wrong kind from the restart
+row and let the next sync settle it as "same kind"). `last_summary` and
+`since` are the *Last sync* row and always describe the run that just
+finished. `restart_countdown_s` is 0-30 everywhere
 (Decision 30: the CLI's await-exit wait times out at 60 s); a larger value
 in an older `settings.json` is clamped on read, not rejected. `check_host`'s reachable result
 carries an additive `ignored` count for the panel's counter.

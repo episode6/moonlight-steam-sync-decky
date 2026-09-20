@@ -369,7 +369,10 @@ describe("runs and the restart flow (spec 3.9)", () => {
     ui.prompts[0].onLater();
     await Promise.resolve();
     expect(names()).toContain("stop_sync");
-    const stopped = [...events, { event: "error", exit: 130, message: "sync: interrupted" } as CliEvent];
+    const stopped = [
+      ...events,
+      { event: "error", exit: 130, message: "interrupted; resume with the same command" } as CliEvent,
+    ];
     await controller.onSyncDone(done("sync", stopped, 130, { restart_needed: "write", last_kind: "sync" }));
     expect(controller.state.pending?.restart_needed).toBe("write");
     expect(controller.state.message).toBeNull();

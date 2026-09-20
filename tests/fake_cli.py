@@ -63,6 +63,12 @@ import time
 
 INTERRUPTED = False
 
+#: What the CLI's `error` event says when a sync / art / remove is
+#: interrupted (sync.RESUME_HINT; spec 3.4.6). Unprefixed, and the same
+#: for every subcommand. The plugin never parses it: it goes by the exit
+#: code and summary.stop_reason.
+RESUME_HINT = "interrupted; resume with the same command"
+
 NEW_FLAGS = (
     "--json",
     "--owned-apps",
@@ -227,8 +233,10 @@ def _interrupted(subcommand: str, events: list[dict]) -> int:
     else:
         fields.pop("added_by_kind", None)
     _out(json.dumps(fields))
-    _out(json.dumps({"event": "error", "exit": 130, "message": f"{subcommand}: interrupted"}))
-    _err(f"{subcommand}: interrupted")
+    # The real CLI's resume hint (sync.RESUME_HINT, spec 3.4.6's `error`
+    # bullet): unprefixed, and the same text for sync, art and remove.
+    _out(json.dumps({"event": "error", "exit": 130, "message": RESUME_HINT}))
+    _err(RESUME_HINT)
     return 130
 
 

@@ -13,9 +13,7 @@ about the Steam client that the plugin depends on -- which app types
 count as owned, how a steamid3 is derived from a steam64, the launch
 source `RunGame` takes -- are recorded in that spec
 (`~/specs/moonlight-steam-sync/decky-plugin.md`, sections 2.1 and 3.9),
-which is what this repository's code is written from. Facts about an
-undocumented API are not copyrightable expression; the expression here is
-this repository's own.
+which is what this repository's code is written from.
 
 ## decky-plugin-template
 

@@ -301,7 +301,9 @@ def test_a_clean_sync_clears_a_pending_art_write_down_to_art(backend) -> None:
 @pytest.mark.scenario("nothing-to-do")
 def test_a_sync_never_clears_a_pending_remove(backend) -> None:
     """Only another remove can settle a pending remove: a sync never planned
-    those removals, so it proves nothing about them."""
+    those removals, so it proves nothing about them -- and it must not take
+    the pending write's name either, or the restart row would re-run
+    start_sync and the sync after that would settle it as "same kind"."""
     owned(backend)
     (Path(backend.settings_dir) / "pending.json").write_text(
         json.dumps({"restart_needed": "write", "layout_walk": False, "last_kind": "remove"})
@@ -310,7 +312,8 @@ def test_a_sync_never_clears_a_pending_remove(backend) -> None:
     done = backend.emitted.of("sync_done")[0]
     assert done["exit"] == 0
     assert done["pending"]["restart_needed"] == "write"
-    assert done["pending"]["last_kind"] == "sync"  # the Last sync row still moves
+    assert done["pending"]["last_kind"] == "remove"  # still owned by the remove
+    assert done["pending"]["last_summary"]["filled"] == 0  # Last sync row still moves
 
 
 @pytest.mark.scenario("unreachable")
@@ -431,7 +434,8 @@ def test_stop_outside_the_wait_ends_in_130(make_backend) -> None:
     assert backend.emitted.relayed()[-1] == {
         "event": "error",
         "exit": 130,
-        "message": "sync: interrupted",
+        # unprefixed, and the same for art and remove (spec 3.4.6)
+        "message": "interrupted; resume with the same command",
     }
     assert run(backend.stop_sync()) == {"ok": True, "running": False}
 
@@ -956,6 +960,70 @@ def test_doctor_parses_labels(backend) -> None:
     assert result["lines"]["sgdb api key"] == "present"
     assert result["lines"]["session"].startswith("gamescope")
     assert result["raw"].startswith("python:")
+
+
+def _pending_after(previous, kind, events, exit_code, now="2026-09-20T12:00:00Z"):
+    return ev.next_pending(previous, kind=kind, events=events, exit_code=exit_code, now=now)
+
+
+def test_a_pending_remove_write_keeps_its_name_across_syncs() -> None:
+    """Decision 31, the sequence the per-run tests cannot show: `last_kind`
+    and `last_plan` name the run that owns the pending write, so no number
+    of syncs can rename -- and then settle -- a remove's write."""
+    nothing = load_fixture("nothing-to-do/sync.ndjson")
+    remove_plan = {"event": "plan", "to_remove": 6}
+    pending = {
+        "restart_needed": "write",
+        "layout_walk": False,
+        "since": "2026-09-20T10:00:00Z",
+        "last_summary": None,
+        "last_plan": remove_plan,
+        "last_kind": "remove",
+    }
+
+    after_one = _pending_after(pending, "sync", nothing, 0)
+    assert after_one["restart_needed"] == "write"
+    assert after_one["last_kind"] == "remove"
+    assert after_one["last_plan"] == remove_plan
+    assert after_one["last_summary"] == ev.last_of(nothing, "summary")  # Last sync moved
+
+    after_two = _pending_after(after_one, "sync", nothing, 0)
+    assert after_two["restart_needed"] == "write"
+    assert after_two["last_kind"] == "remove"
+    assert after_two["last_plan"] == remove_plan
+
+    # only a remove settles it, and then it owns the state
+    settled = _pending_after(
+        after_two,
+        "remove",
+        [{"event": "start"}, {"event": "summary", "filled": 0, "removed": 0}],
+        0,
+    )
+    assert settled["restart_needed"] == "none"
+    assert settled["last_kind"] == "remove"
+    assert settled["last_plan"] is None  # that remove had nothing to plan
+
+
+def test_a_run_that_sets_or_settles_the_write_does_take_its_name() -> None:
+    """The other half of the rule: last_kind moves whenever restart_needed
+    does."""
+    full = load_fixture("full-sync/sync.ndjson")
+    refused = load_fixture("refused/sync.ndjson")
+    empty = {"restart_needed": "none", "layout_walk": False, "last_kind": None, "last_plan": None}
+
+    awaiting = _pending_after(empty, "sync", refused, 130)
+    assert awaiting["restart_needed"] == "write"
+    assert awaiting["last_kind"] == "sync"
+    assert awaiting["last_plan"] == ev.last_of(refused, "plan")
+
+    written = _pending_after(awaiting, "sync", full, 0)
+    assert written["restart_needed"] == "none"
+    assert written["layout_walk"] is True
+    assert written["last_kind"] == "sync"
+
+    art = _pending_after(empty, "art", load_fixture("art-only/sync.ndjson"), 0)
+    assert art["restart_needed"] == "art"
+    assert art["last_kind"] == "art"
 
 
 # ----------------------------------------------------------------------

@@ -115,39 +115,51 @@ def next_pending(
     images, else to ``"none"``. A run that does not cover the pending kind,
     or that exited non-zero, leaves it exactly as it was.
 
-    A run that got as far as a ``summary`` also records it (and its ``plan``)
-    as ``last_summary`` / ``last_plan`` / ``last_kind``, which feed the
-    panel's *Last sync* row; ``since`` is when that happened.
+    ``last_summary`` and ``since`` are the panel's *Last sync* row and always
+    describe the run that just finished. ``last_kind`` and ``last_plan``
+    describe the run that **owns** the current ``restart_needed`` instead, so
+    they only move when a run sets or settles it: while a pending ``"write"``
+    stands, whatever left it keeps naming itself. Otherwise a `sync` that
+    found nothing to do would rename a pending `remove`'s write to
+    ``"sync"`` -- which would make the restart row re-run `start_sync`, and
+    make the sync after that settle the write as "same kind", clearing a
+    pending remove with two syncs (exactly what Decision 31 forbids).
+    Nothing reads ``last_kind`` as "the kind of the last summary":
+    `Controller.restartRow()` uses it for the row's re-run and the *Last
+    sync* row is built from ``since`` + ``last_summary``.
     """
     pending = dict(previous)
     was_pending = previous.get("restart_needed", "none")
     was_kind = previous.get("last_kind")
     summary = last_of(events, "summary")
     plan = last_of(events, "plan")
+
+    def owns() -> None:
+        """This run set or settled ``restart_needed``: it owns the state now."""
+        pending["last_kind"] = kind
+        pending["last_plan"] = plan
+
     if summary is not None:
-        pending.update(last_summary=summary, last_plan=plan, last_kind=kind, since=now)
+        pending.update(last_summary=summary, since=now)
     if committed(events):
-        pending.update(
-            restart_needed="none",
-            layout_walk=kind != "remove",
-            since=now,
-            last_kind=kind,
-        )
+        owns()
+        pending.update(restart_needed="none", layout_walk=kind != "remove", since=now)
         return pending
     decision = restart_decision(events, exit_code)
     if decision == "write":
-        pending.update(restart_needed="write", last_kind=kind)
-        if plan is not None:
-            pending["last_plan"] = plan
+        owns()
+        pending["restart_needed"] = "write"
         return pending
     # Decision 31: only a run that covers the pending write may lower it.
     may_lower = was_pending != "write" or (
         exit_code == 0 and settles_pending_write(kind, was_kind)
     )
     if not may_lower:
-        return pending
+        return pending  # last_kind / last_plan still name the run that owns it
     if decision == "art":
-        pending.update(restart_needed="art", last_kind=kind, since=now)
+        owns()
+        pending.update(restart_needed="art", since=now)
     elif was_pending == "write":
-        pending.update(restart_needed="none", last_kind=kind, since=now)
+        owns()
+        pending.update(restart_needed="none", since=now)
     return pending
