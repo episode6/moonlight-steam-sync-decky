@@ -18,6 +18,17 @@ permissions:
   contents: read
 
 jobs:
+  shellcheck:
+    name: Lint shell scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sh -n install.sh
+      - run: sh -n backend/entrypoint.sh
+      - uses: ludeeus/action-shellcheck@2.0.0
+        with:
+          scandir: .
+
   frontend:
     name: Frontend (typecheck, lint, vitest, build)
     runs-on: ubuntu-latest

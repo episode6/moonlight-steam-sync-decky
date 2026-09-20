@@ -1,0 +1,136 @@
+# Release for the Moonlight Sync Decky plugin (spec 3.6.2, section 4 PR-8).
+#
+# Builds the same Docker-free artifact ci.yml's `package` job does --
+# out/Moonlight-Sync.zip via scripts/package.py. On a v* tag push the CLI
+# fetch (backend/entrypoint.sh) and the packaging step
+# (scripts/package.py --require-cli) are both strict: a plugin release
+# never ships without its CLI, so a missing or broken CLI release fails
+# the run. On pull_request and workflow_dispatch runs (no tag) the CLI
+# fetch is conditional, exactly like ci.yml's `package` job: when the
+# pinned CLI release does not exist yet, the step prints the same
+# ::warning:: and packaging falls back to `scripts/package.py` (without
+# --require-cli), so the workflow stays green either way and is exercised
+# by ordinary CI rather than sitting untested until the first tag. Only
+# the final "create the release and attach the assets" job is tag-only.
+# See AGENTS.md "Cutting a release" for the command sequence that pushes
+# a v* tag -- no agent runs it.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and package (strict on a tag)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13.5"
+
+      - name: Fetch the pinned CLI (strict on a tag; warns otherwise)
+        # A tag push (a real release) never ships without the CLI, so it
+        # fails hard on a missing/broken release. A pull_request or
+        # workflow_dispatch run (this `if` is false) tolerates the CLI not
+        # being released yet, the same way ci.yml's `package` job does, so
+        # this workflow is exercised (and green) before v0.3.0 exists.
+        if: startsWith(github.ref, 'refs/tags/')
+        run: backend/entrypoint.sh
+
+      - name: Fetch the pinned CLI if released (non-tag runs only)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        run: |
+          set -eu
+          pin=$(python3 -c 'import json; print(json.load(open("package.json"))["moonlightSteamSync"])')
+          url="https://github.com/episode6/moonlight-steam-sync/releases/download/v$pin/moonlight-steam-sync.pyz.sha256"
+          if curl -fsSLI -o /dev/null "$url"; then
+            backend/entrypoint.sh
+          else
+            echo "::warning title=CLI v$pin not released::moonlight-steam-sync v$pin has no GitHub release yet; packaging without bin/moonlight-steam-sync.pyz"
+          fi
+
+      - name: Package the zip (strict on a tag; warns without bin/ otherwise)
+        if: startsWith(github.ref, 'refs/tags/')
+        run: python3 scripts/package.py --require-cli
+
+      - name: Package the zip (non-tag runs only)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        run: python3 scripts/package.py --list
+
+      - name: Checksum
+        # Record the checksum against the bare filename, not the build
+        # path (out/Moonlight-Sync.zip), so `sha256sum -c` against the two
+        # downloaded release assets -- both in the same directory, with no
+        # `out/` prefix -- verifies cleanly instead of failing on the
+        # recorded name not matching the download layout (mirrors the CLI
+        # repo's release.yml).
+        run: |
+          cd out
+          sha256sum Moonlight-Sync.zip | tee Moonlight-Sync.zip.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Moonlight-Sync
+          path: |
+            out/Moonlight-Sync.zip
+            out/Moonlight-Sync.zip.sha256
+          if-no-files-found: error
+
+  github-release:
+    name: Create the release and attach the zip
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Moonlight-Sync
+          path: out
+
+      - name: Create the release and attach the zip and its checksum
+        # Idempotent on purpose, exactly like the CLI repo's release.yml:
+        # the tag can reach GitHub either by a plain `git push` (no
+        # release exists yet, so this creates one) or via `gh release
+        # create` from a workstation (the release already exists and only
+        # the assets are missing). Re-running a failed release run lands
+        # in the second case too, so: try to create, and fall back to
+        # uploading into the existing release.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          assets="out/Moonlight-Sync.zip out/Moonlight-Sync.zip.sha256"
+          if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "Release ${GITHUB_REF_NAME} already exists; uploading assets into it."
+            gh release upload "${GITHUB_REF_NAME}" $assets \
+              --repo "${GITHUB_REPOSITORY}" \
+              --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" $assets \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "${GITHUB_REF_NAME}" \
+              --generate-notes
+          fi

@@ -55,6 +55,10 @@ Breaking any of these is a blocker, not a judgement call.
 ```
 plugin.json                 name "Moonlight Sync", flags []
 package.json                scripts, deps, the CLI pin ("moonlightSteamSync")
+install.sh                  the end-user installer: curl the latest (or pinned) release
+                            zip + .sha256, verify, unzip into ~/homebrew/plugins/, restart
+                            plugin_loader (two explained sudo prompts, never non-interactive)
+DEVICE-CHECKLIST.md         every on-device check (PR-0 probes, PR-5/6/7/8 items), in order
 main.py                     thin decky Plugin: builds Backend, one line per callable;
                             no __init__ and `_backend` / `_startup` as class attributes, with
                             `_get` / `_ready` as classmethods, so it is correct whether the
@@ -116,7 +120,15 @@ src/components/             QuickAccess, SyncProgress, RestartModal, SettingsPag
                             ChangeMatchModal, Pill, StreamButton (renders only when
                             streamMap has the appid), ArtworkPage, AdvancedPage, AboutPage
 src/test/fixtures.ts        loads tests/fixtures for vitest
-tests/                      pytest: fake_cli.py, fixtures/, conftest.py, test_*.py
+tests/                      pytest: fake_cli.py, fixtures/, conftest.py, test_*.py,
+                            test_install_sh.py (install.sh end to end via
+                            MOONLIGHT_SYNC_BASE_URL against a file:// fixture,
+                            sudo/systemctl shimmed on PATH)
+.github/workflows/release.yml  on a v* tag: strict entrypoint.sh + package.py --require-cli,
+                            Moonlight-Sync.zip + .sha256 attached to a GitHub release;
+                            build-and-package also runs on pull_request, where the CLI
+                            fetch tolerates the release not existing yet (a ::warning::,
+                            like CI's package job) instead of failing the run
 ```
 
 PR-6 made `search` / `pin` / `unpin` / `set_ignored` real (the Titles page
@@ -276,22 +288,92 @@ On-device checks are not merge criteria; they are collected in
 ## CI and release outline
 
 - `.github/workflows/ci.yml` (push to `main`, every `pull_request`):
-  `frontend` (pnpm 9, Node 20: typecheck, lint, vitest, build, upload
-  `dist`), `backend` (Python 3.13.5: ruff, pytest), `probes` (guarded),
-  `package` (HEAD-checks the pinned CLI's `.sha256` asset: absent → a
+  `shellcheck` (`sh -n` on `install.sh` and `backend/entrypoint.sh`, then
+  `ludeeus/action-shellcheck` over the whole tree), `frontend` (pnpm 9, Node
+  20: typecheck, lint, vitest, build, upload `dist`), `backend` (Python
+  3.13.5: ruff, pytest), `probes` (guarded), `package` (HEAD-checks the
+  pinned CLI's `.sha256` asset: absent → a
   `::warning title=CLI v<pin> not released::` and no `bin/`; present →
   `backend/entrypoint.sh` strict; then `scripts/package.py` and the
   `Moonlight-Sync` artifact).
-- `release.yml` (PR-8): on a `v*` tag, strict `entrypoint.sh`,
-  `package.py --require-cli`, `Moonlight-Sync.zip` + `.sha256` attached to
-  the GitHub release. **No agent pushes a tag or creates a release**; the
-  user cuts `v0.1.0` after the CLI's `v0.3.0` exists.
+- `.github/workflows/release.yml`: on a `v*` tag, the same frontend build
+  then strict `entrypoint.sh`, `package.py --require-cli`,
+  `Moonlight-Sync.zip` + `.sha256` (`sha256sum` against the bare filename,
+  matching `install.sh`'s check) attached to the GitHub release via the
+  CLI repo's idempotent `gh release view || create` / `upload --clobber`
+  step. The build-and-package job also runs on `pull_request` and
+  `workflow_dispatch`, exactly like CI's `package` job (HEAD-check the
+  CLI's `.sha256` asset; absent → the same `::warning::` and no `bin/`;
+  present → `entrypoint.sh` strict), never strict on those triggers, so it
+  is exercised and green before the first tag; only the
+  `github-release` job is tag-gated (`startsWith(github.ref,
+  'refs/tags/')`).
+- `install.sh`: the end-user installer, mirroring the CLI repo's own (curl
+  the release zip + `.sha256`, verify, remove any previous install, unzip
+  into `~/homebrew/plugins/`, restart `plugin_loader`); its
+  `MOONLIGHT_SYNC_BASE_URL` seam (mirroring `backend/entrypoint.sh`'s
+  `MSY_CLI_BASE_URL`) lets `tests/test_install_sh.py` point the real `curl`
+  at a `file://` fixture tree, with only `sudo`/`systemctl` shimmed on
+  `PATH`, so no sudo and no network are ever touched by the test.
 - The plugin PRs are stacked (PR-0 → PR-5 → PR-6 → PR-7 → PR-8), each branch
   on the previous one; never push to `main`, force-push only with
   `--force-with-lease` on this stack's own branches.
 
+## Cutting a release
+
+**No agent pushes a tag or creates a release.** The user does this, and
+only once moonlight-steam-sync's own `v0.3.0` exists: `release.yml`'s
+build job fails hard on the missing CLI release **only when it runs from
+a `v*` tag push**; its `pull_request` and `workflow_dispatch` runs tolerate
+the CLI not being released yet with the same `::warning::` CI's `package`
+job prints, so the workflow stays green on every PR in this stack. As of
+this writing `v0.3.0` has not been released, so `v0.1.0` of the plugin has
+not been cut either.
+
+Modelled on the CLI repo's own "Cutting a release", once `v0.3.0` exists
+and everything intended for `v0.1.0` has merged to `main`:
+
+```sh
+git checkout main && git pull
+
+# 1. package.json's "version" is the single source of truth
+#    (decky-loader exports it as DECKY_PLUGIN_VERSION); it is already
+#    "0.1.0" as of this PR, so this step is only needed for v0.2.0+.
+$EDITOR package.json
+
+# 2. Move the CHANGELOG's prepared v0.1.0 entry out of "not yet tagged"
+#    (this PR left it dated "not yet tagged"; give it today's date) and
+#    open a new empty [Unreleased] section above it.
+$EDITOR CHANGELOG.md
+
+# 3. Commit the bump.
+git add package.json CHANGELOG.md
+git commit -m "Release v0.1.0"
+
+# 4. Push, then create the release. `gh release create` makes the tag and
+#    the release page in one step; the tag reaching GitHub triggers
+#    release.yml's github-release job, which builds the zip and uploads it
+#    into the release that now already exists (idempotent, see the
+#    comment on that step).
+git push origin main
+gh release create v0.1.0 --target main --title v0.1.0 --generate-notes
+```
+
+Pushing a plain `git tag` works too and takes the same path; the workflow
+creates the release itself in that case. After the push, watch the
+`Release` workflow to completion and confirm the release page has
+`Moonlight-Sync.zip` and `Moonlight-Sync.zip.sha256` attached, then
+sanity-check the install path end to end on a Deck:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/episode6/moonlight-steam-sync-decky/main/install.sh | sh
+```
+
+Then walk `DEVICE-CHECKLIST.md` from the top.
+
 ## Docs to keep current
 
 README (install, panel, restart, hosts, Titles page, key, files,
-developing), this file (module map, harness), `CHANGELOG.md`
-`[Unreleased]`, and docstrings, in the same PR as the change.
+developing), this file (module map, harness, release), `CHANGELOG.md`
+`[Unreleased]`, `DEVICE-CHECKLIST.md`, and docstrings, in the same PR as
+the change.

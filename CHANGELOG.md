@@ -6,6 +6,20 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.1.0] - not yet tagged
+
+Prepared for the first release (`package.json`'s `"version"` is already
+`0.1.0`), but **no `v0.1.0` tag has been pushed and no GitHub release
+exists yet** — no agent pushes a tag or creates a release (spec section 4
+PR-8; AGENTS.md "Cutting a release"). The user cuts it once
+moonlight-steam-sync's own `v0.3.0` is released, which this plugin's CI,
+packaging and `release.yml` all tolerate not existing yet in the meantime
+(a `::warning::` in place of `bin/moonlight-steam-sync.pyz`, rather than a
+failure). Built and tested off-device only; `DEVICE-CHECKLIST.md` collects
+everything that needs a Steam Deck, including the PR-0 probes.
+
 ### Added
 
 - The Moonlight Sync Decky plugin, scaffolded from the Decky plugin
@@ -79,5 +93,31 @@ project uses [semantic versioning](https://semver.org/).
 - Docker-free packaging (`scripts/package.py`) and the strict CLI
   downloader (`backend/entrypoint.sh`); CI with frontend, backend, probe-kit
   and package jobs.
+- `install.sh`: downloads the latest (or a pinned) release's
+  `Moonlight-Sync.zip`, verifies its checksum, removes any previous
+  `Moonlight Sync/` install (so a file an older release shipped and the
+  new one no longer does cannot linger), unzips into
+  `~/homebrew/plugins/`, then restarts `plugin_loader`, explaining the two
+  `sudo` prompts it needs along the way (and that a stock Deck has no
+  password for `deck`, so `passwd` may be needed first). A failed download
+  says which URL failed and whether that version is released, rather than
+  curl's silent exit 22, and the closing line names the version that
+  actually landed, read from the installed `package.json`.
+  `release.yml`: on a `v*` tag,
+  builds and packages strictly (the CLI download and the packaging step
+  both fail the run rather than warn when the pinned CLI release is
+  missing) and attaches `Moonlight-Sync.zip` and `Moonlight-Sync.zip.sha256`
+  to a GitHub release; its build-and-package job also runs on every pull
+  request and `workflow_dispatch`, where it tolerates the CLI release not
+  existing yet with the same `::warning::` CI's `package` job prints
+  (never strict off a tag), so the workflow is exercised and green before
+  the first tag.
+- `DEVICE-CHECKLIST.md`: every on-device check from the PR-0 probes and the
+  PR-5/6/7/8 amendments, in the order they need a Deck.
+- A `shellcheck` CI job linting `install.sh` and `backend/entrypoint.sh`.
 - Tests: pytest against a fake CLI replaying hand-written NDJSON fixtures,
-  and vitest over the frontend's pure modules reading the same fixtures.
+  and vitest over the frontend's pure modules reading the same fixtures;
+  `tests/test_install_sh.py` drives the real `install.sh` end to end
+  against a `file://` fixture (via `MOONLIGHT_SYNC_BASE_URL`) with `sudo`
+  and `systemctl` shimmed
+  on `PATH`.
