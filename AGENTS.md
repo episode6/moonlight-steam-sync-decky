@@ -355,9 +355,10 @@ git checkout main && git pull
 #    "0.1.0" as of this PR, so this step is only needed for v0.2.0+.
 $EDITOR package.json
 
-# 2. Move the CHANGELOG's prepared v0.1.0 entry out of "not yet tagged"
-#    (this PR left it dated "not yet tagged"; give it today's date) and
-#    open a new empty [Unreleased] section above it.
+# 2. Move the CHANGELOG's [Unreleased] entries into a new dated
+#    [X.Y.Z] section and open a new empty [Unreleased] section above it
+#    (v0.1.0's entry is already dated, so this step too is only needed
+#    for v0.2.0+).
 $EDITOR CHANGELOG.md
 
 # 3. Commit the bump.

@@ -388,7 +388,7 @@ CLI's layout.
 ```sh
 pnpm install
 pnpm run build                 # dist/index.js
-backend/entrypoint.sh          # the pinned CLI -> backend/out/ (strict: fails until it is released)
+backend/entrypoint.sh          # the pinned CLI -> backend/out/ (strict: fails if the pinned release does not exist)
 python3 scripts/package.py     # out/Moonlight-Sync.zip (warns and skips bin/ without the CLI)
 
 pnpm run typecheck && pnpm run lint && pnpm run test
