@@ -1020,6 +1020,20 @@ class Backend:
         return {"ok": True, "settings": self.store.set_settings(patch)}
 
     @guarded
+    async def set_default_layout(self, url: Any = None, title: Any = None) -> Result:
+        """Store or clear the plugin's default controller layout (spec 3.16.2).
+
+        No CLI and no busy guard: this only touches ``settings.json`` and
+        ``pending.json``. ``url`` ``None`` clears the default; otherwise it
+        must start with one of ``settings.DEFAULT_LAYOUT_SCHEMES``. Either
+        way ``pending.layout_walk`` is set, so PR-10's walk (unset or apply)
+        picks it up at the next load or panel open.
+        """
+        settings = self.store.set_default_layout(url, title, when=iso_now())
+        self._log(f"default layout set: {url}" if url else "default layout cleared")
+        return {"ok": True, "settings": settings, "pending": self.store.pending()}
+
+    @guarded
     async def get_ignored(self) -> Result:
         return {"ok": True, "ignored": self.store.ignored()}
 

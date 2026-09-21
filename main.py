@@ -107,6 +107,9 @@ class Plugin:
     async def set_settings(self, patch):
         return await (await self._ready()).set_settings(patch)
 
+    async def set_default_layout(self, url=None, title=None):
+        return await (await self._ready()).set_default_layout(url, title)
+
     async def get_ignored(self):
         return await (await self._ready()).get_ignored()
 

@@ -36,6 +36,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "layout_strategy": "copy",
     "hide_stream_shortcuts": True,
     "streaming_collection": True,
+    "default_layout": None,
 }
 
 #: The countdown can never outlast the CLI's own await-exit wait (60 s),
@@ -45,8 +46,20 @@ DEFAULT_SETTINGS: dict[str, Any] = {
 RESTART_COUNTDOWN_MAX = 30
 LAYOUT_STRATEGIES = ("copy", "picker")
 
-#: What one layout copy (or *Choose layout*) can record (spec 3.10).
-LAYOUT_RESULTS = ("copied", "kept", "unavailable", "picker")
+#: What one layout copy (or *Choose layout*) can record (spec 3.10 / 3.16).
+#: ``default`` is spec 3.16: the entry is on the plugin's default layout.
+LAYOUT_RESULTS = ("copied", "kept", "unavailable", "picker", "default")
+
+#: URL schemes ``set_default_layout`` accepts (spec 3.16.1 / Decision 49):
+#: a Workshop item (community, or a personal layout that was *exported*) or
+#: a ``template://`` stock layout with ``bSelected: true``. ``autosave://``
+#: (edited in place, a file path under one appid) and ``default://`` (no
+#: choice at all) are refused up front rather than tried, since two apps
+#: sharing one autosave file is unmeasured and not fail-safe.
+DEFAULT_LAYOUT_SCHEMES = ("workshop://", "template://")
+#: The longest a stored default layout's URL or title may be.
+DEFAULT_LAYOUT_URL_MAX = 2048
+DEFAULT_LAYOUT_TITLE_MAX = 200
 #: Non-Steam shortcuts live at and above this appid (the CLI's ``| 0x80000000``).
 SHORTCUT_APPID_FLOOR = 0x80000000
 
@@ -138,6 +151,7 @@ class Store:
             merged["restart_countdown_s"] = max(0, min(countdown, RESTART_COUNTDOWN_MAX))
         else:
             merged["restart_countdown_s"] = DEFAULT_SETTINGS["restart_countdown_s"]
+        merged["default_layout"] = _sanitize_default_layout(merged["default_layout"])
         return merged
 
     def set_settings(self, patch: Any) -> dict[str, Any]:
@@ -150,6 +164,47 @@ class Store:
         raw.update(patch)
         raw["version"] = 1
         write_json_atomic(self.path(SETTINGS_FILE), raw)
+        return self.settings()
+
+    def set_default_layout(self, url: Any, title: Any, *, when: str) -> dict[str, Any]:
+        """Store or clear ``default_layout`` (spec 3.16.2); always sets ``layout_walk``.
+
+        ``url`` ``None`` clears it (``title`` is ignored) and still flags a
+        walk: the unset pass of 3.16.4 has to run so entries the plugin put
+        on the old default get it taken off. Otherwise ``url`` must be a
+        ``str`` starting with one of ``DEFAULT_LAYOUT_SCHEMES``, at most
+        ``DEFAULT_LAYOUT_URL_MAX`` characters, and ``title`` a ``str`` (empty
+        allowed), stripped and at most ``DEFAULT_LAYOUT_TITLE_MAX``
+        characters; anything else is a ``SettingsError`` (the callable's
+        ``bad-request``). Settings are written first, then ``pending``.
+        """
+        if url is None:
+            value = None
+        else:
+            if (
+                isinstance(url, bool)
+                or not isinstance(url, str)
+                or not url.startswith(DEFAULT_LAYOUT_SCHEMES)
+                or len(url) > DEFAULT_LAYOUT_URL_MAX
+            ):
+                raise SettingsError(
+                    f"url must be a string starting with one of {DEFAULT_LAYOUT_SCHEMES}, "
+                    f"at most {DEFAULT_LAYOUT_URL_MAX} characters"
+                )
+            if isinstance(title, bool) or not isinstance(title, str):
+                raise SettingsError("title must be a string")
+            title = title.strip()
+            if len(title) > DEFAULT_LAYOUT_TITLE_MAX:
+                raise SettingsError(f"title must be at most {DEFAULT_LAYOUT_TITLE_MAX} characters")
+            value = {"url": url, "title": title, "when": when}
+        raw = self._raw_settings()
+        for key, default in DEFAULT_SETTINGS.items():
+            raw.setdefault(key, default)
+        raw["default_layout"] = value
+        write_json_atomic(self.path(SETTINGS_FILE), raw)
+        pending = self.pending()
+        pending["layout_walk"] = True
+        self.write_pending(pending)
         return self.settings()
 
     def set_hosts(self, hosts: list[str]) -> list[str]:
@@ -249,9 +304,20 @@ class Store:
     ) -> dict[str, Any]:
         """Upsert one shortcut's entry atomically; returns the whole file.
 
-        ``real_appid`` is ``None`` only for a ``picker`` result: *Choose
-        layout* on a default host app (spec 3.14.1), which has no owned game
-        behind it. Every copy result names the game it copied from.
+        ``real_appid`` may be ``None`` for any result (spec 3.16.2): the
+        walk covers entries with no Steam game behind them (host apps, the
+        client, a title never matched), not only a ``picker`` result.
+
+        ``applied`` (spec 3.16.2/3.16.3) is the last URL *the plugin itself*
+        set on the shortcut, computed here so the frontend never has to:
+        ``prev_applied = prev.get("applied")``, or ``prev["url"]`` when
+        ``prev`` has no ``applied`` key and ``prev["result"] == "copied"``
+        (a pre-3.16 copy counts as plugin-applied, Decision 46, so it
+        migrates to the default on the first walk after one is set). Then
+        ``default`` sets ``applied = url``; ``kept`` clears it to ``None``
+        (the user made their own choice); ``unavailable`` / ``picker`` /
+        ``copied`` carry ``prev_applied`` forward unchanged (or ``None``
+        with no ``prev``).
         """
         if isinstance(shortcut_appid, bool) or not isinstance(shortcut_appid, int):
             raise SettingsError("shortcut_appid must be an integer")
@@ -261,21 +327,35 @@ class Store:
             )
         if result not in LAYOUT_RESULTS:
             raise SettingsError(f"result must be one of {', '.join(LAYOUT_RESULTS)}")
-        if real_appid is None:
-            if result != "picker":
-                raise SettingsError("real_appid may only be null for a picker result")
-        elif isinstance(real_appid, bool) or not isinstance(real_appid, int) or real_appid <= 0:
-            raise SettingsError("real_appid must be a positive integer")
-        elif real_appid >= SHORTCUT_APPID_FLOOR:
-            raise SettingsError("real_appid must be a Steam appid (below 0x80000000)")
+        if real_appid is not None:
+            if isinstance(real_appid, bool) or not isinstance(real_appid, int) or real_appid <= 0:
+                raise SettingsError("real_appid must be a positive integer")
+            if real_appid >= SHORTCUT_APPID_FLOOR:
+                raise SettingsError("real_appid must be a Steam appid (below 0x80000000)")
         if url is not None and not isinstance(url, str):
             raise SettingsError("url must be a string or null")
         data = self.layouts()
+        prev = data["entries"].get(str(shortcut_appid))
+        if prev is None:
+            prev_applied = None
+        elif "applied" in prev:
+            prev_applied = prev["applied"]
+        elif prev.get("result") == "copied":
+            prev_applied = prev.get("url")
+        else:
+            prev_applied = None
+        if result == "default":
+            applied = url or None
+        elif result == "kept":
+            applied = None
+        else:  # "unavailable", "picker", "copied"
+            applied = prev_applied
         data["entries"][str(shortcut_appid)] = {
             "real_appid": real_appid,
             "result": result,
             "url": url or None,
             "when": when,
+            "applied": applied,
         }
         write_json_atomic(self.path(LAYOUTS_FILE), data)
         return data
@@ -285,11 +365,28 @@ class Store:
             os.unlink(self.path(LAYOUTS_FILE))
 
 
+def _sanitize_default_layout(value: Any) -> dict[str, Any] | None:
+    """``value`` when it is a dict with a shareable ``url`` and a ``title``
+    string, else ``None`` (a hand-broken file reads as "no default")."""
+    if not isinstance(value, dict):
+        return None
+    url = value.get("url")
+    title = value.get("title")
+    if not isinstance(url, str) or not url.startswith(DEFAULT_LAYOUT_SCHEMES):
+        return None
+    if not isinstance(title, str):
+        return None
+    when = value.get("when")
+    return {"url": url, "title": title, "when": when if isinstance(when, str) else None}
+
+
 def _validate_setting(key: str, value: Any) -> None:
     if key == "hosts":
         raise SettingsError("hosts are changed with add_host / forget_host")
     if key == "version":
         raise SettingsError("version is not a setting")
+    if key == "default_layout":
+        raise SettingsError("default_layout is changed with set_default_layout")
     if key in ("copy_layouts", "retry_missing", "hide_stream_shortcuts", "streaming_collection"):
         if not isinstance(value, bool):
             raise SettingsError(f"{key} must be true or false")

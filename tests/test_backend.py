@@ -1184,6 +1184,7 @@ def test_settings_round_trip_and_validation(backend) -> None:
         {"streaming_collection": 0},
         {"layout_strategy": "mirror"},
         {"hosts": ["X"]},
+        {"default_layout": {"url": "workshop://1", "title": "x", "when": "2026-09-21T00:00:00Z"}},
         {"surprise": True},
         "not an object",
     ):
@@ -1250,6 +1251,7 @@ def test_layouts_empty_then_record_upserts_atomically(backend) -> None:
         "result": "unavailable",
         "url": None,
         "when": other["entries"][str(SHORTCUT + 1)]["when"],
+        "applied": None,
     }
     picker = run(backend.record_layout(SHORTCUT, REAL, "picker", ""))
     assert picker["entries"][str(SHORTCUT)]["url"] is None  # an empty URL is null
@@ -1266,9 +1268,6 @@ def test_record_layout_refuses_bad_arguments(backend) -> None:
         (SHORTCUT, 0, "copied", None),
         (SHORTCUT, REAL, "mirrored", None),
         (SHORTCUT, REAL, "copied", 5),
-        (SHORTCUT, None, "copied", None),  # only a picker has no game behind it
-        (SHORTCUT, None, "kept", None),
-        (SHORTCUT, None, "unavailable", None),
         (None, None, None, None),
     ):
         result = run(backend.record_layout(*args))
@@ -1282,7 +1281,13 @@ def test_record_layout_picker_for_a_host_app_has_no_real_appid(backend) -> None:
     recorded = run(backend.record_layout(SHORTCUT, None, "picker", None))
     assert recorded["ok"] is True
     entry = recorded["entries"][str(SHORTCUT)]
-    assert entry == {"real_appid": None, "result": "picker", "url": None, "when": entry["when"]}
+    assert entry == {
+        "real_appid": None,
+        "result": "picker",
+        "url": None,
+        "when": entry["when"],
+        "applied": None,
+    }
     assert run(backend.layouts())["entries"] == recorded["entries"]
     log = Path(backend.log_path).read_text()
     assert f"layout picker for shortcut {SHORTCUT} (no game): -" in log
@@ -1303,6 +1308,184 @@ def test_record_layout_is_logged(backend) -> None:
     run(backend.record_layout(SHORTCUT, REAL, "copied", "workshop://1"))
     log = Path(backend.log_path).read_text()
     assert f"layout copied for shortcut {SHORTCUT} (Steam {REAL}): workshop://1" in log
+
+
+def test_record_layout_real_appid_null_for_every_result(backend) -> None:
+    """spec 3.16.2: the walk covers entries with no Steam game behind them
+    (host apps, the client, a title never matched), not only a ``picker``
+    result any more."""
+    for result in ("copied", "kept", "unavailable", "default", "picker"):
+        recorded = run(backend.record_layout(SHORTCUT, None, result, "workshop://1"))
+        assert recorded["ok"] is True, result
+        assert recorded["entries"][str(SHORTCUT)]["real_appid"] is None
+
+
+def test_record_layout_default_result_is_a_valid_result(backend) -> None:
+    """``"default"`` (spec 3.16.2): the entry is on the plugin's default layout."""
+    recorded = run(backend.record_layout(SHORTCUT, REAL, "default", "workshop://1"))
+    assert recorded["ok"] is True
+    assert recorded["entries"][str(SHORTCUT)]["result"] == "default"
+
+
+def test_record_layout_applied_table(backend) -> None:
+    """spec 3.16.2's ``applied`` table, computed by ``record_layout`` itself."""
+    # no prior entry: every result but "default" carries applied=None forward.
+    for result in ("copied", "kept", "unavailable", "picker"):
+        appid = SHORTCUT + hash(result) % 1000
+        recorded = run(backend.record_layout(appid, REAL, result, "workshop://x"))
+        assert recorded["entries"][str(appid)]["applied"] is None, result
+
+    # "default" sets applied to the URL just set.
+    default = run(backend.record_layout(SHORTCUT, REAL, "default", "workshop://1"))
+    assert default["entries"][str(SHORTCUT)]["applied"] == "workshop://1"
+
+    # a later "unavailable"/"picker"/"copied" carries the previous applied forward.
+    later = run(backend.record_layout(SHORTCUT, REAL, "unavailable", None))
+    assert later["entries"][str(SHORTCUT)]["applied"] == "workshop://1"
+    picker = run(backend.record_layout(SHORTCUT, REAL, "picker", None))
+    assert picker["entries"][str(SHORTCUT)]["applied"] == "workshop://1"
+
+    # "kept" (a selection the plugin did not make) clears applied to None.
+    kept = run(backend.record_layout(SHORTCUT, REAL, "kept", "template://x.vdf"))
+    assert kept["entries"][str(SHORTCUT)]["applied"] is None
+
+    # a fresh "default" after "kept" sets applied to the new URL.
+    default2 = run(backend.record_layout(SHORTCUT, REAL, "default", "workshop://2"))
+    assert default2["entries"][str(SHORTCUT)]["applied"] == "workshop://2"
+
+
+def test_record_layout_legacy_copied_record_carries_as_applied(backend) -> None:
+    """Decision 46: a pre-3.16 ``copied`` record (no ``applied`` key on disk)
+    counts as plugin-applied, so the first walk after a default is set can
+    move it. A hand-written file, exactly as an older plugin left it (no
+    ``applied`` key), is what "pre-3.16" means here."""
+    path = Path(backend.settings_dir) / "layouts.json"
+    path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "entries": {
+                    str(SHORTCUT): {
+                        "real_appid": REAL,
+                        "result": "copied",
+                        "url": "workshop://legacy",
+                        "when": "2026-09-18T00:00:00Z",
+                    }
+                },
+            }
+        )
+    )
+    # a "default" after a legacy copied record picks up its url as applied
+    # (only relevant if the caller passes that url on; more importantly, an
+    # "unavailable"/"picker" pass-through after the legacy record surfaces
+    # the migrated applied value).
+    unavailable = run(backend.record_layout(SHORTCUT, REAL, "unavailable", None))
+    assert unavailable["entries"][str(SHORTCUT)]["applied"] == "workshop://legacy"
+
+    # a legacy "copied" record with no "applied" key and a *different*
+    # result (e.g. "kept", meaning the user has since chosen their own
+    # layout) is not migrated: applied is None from "kept" itself.
+    path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "entries": {
+                    str(SHORTCUT): {
+                        "real_appid": REAL,
+                        "result": "kept",
+                        "url": "template://x.vdf",
+                        "when": "2026-09-18T00:00:00Z",
+                    }
+                },
+            }
+        )
+    )
+    still_kept = run(backend.record_layout(SHORTCUT, REAL, "picker", None))
+    assert still_kept["entries"][str(SHORTCUT)]["applied"] is None
+
+
+def test_record_layout_rejects_unknown_result(backend) -> None:
+    result = run(backend.record_layout(SHORTCUT, REAL, "mirrored", None))
+    assert result["ok"] is False and result["error"] == "bad-request"
+
+
+# ----------------------------------------------------------------------
+# set_default_layout (spec 3.16.2)
+
+
+def test_set_default_layout_stores_and_sets_layout_walk(backend) -> None:
+    assert run(backend.get_settings())["settings"]["default_layout"] is None
+    result = run(backend.set_default_layout("workshop://12345", "My Game"))
+    assert result["ok"] is True
+    stored = result["settings"]["default_layout"]
+    assert stored["url"] == "workshop://12345"
+    assert stored["title"] == "My Game"
+    assert stored["when"].endswith("Z") and "T" in stored["when"]
+    assert result["pending"]["layout_walk"] is True
+    assert run(backend.get_settings())["settings"]["default_layout"] == stored
+    assert run(backend.pending())["layout_walk"] is True
+
+
+def test_set_default_layout_clear_sets_layout_walk_too(backend) -> None:
+    run(backend.set_default_layout("workshop://1", "Game"))
+    run(backend.clear_pending("layout_walk"))
+    assert run(backend.pending())["layout_walk"] is False
+    cleared = run(backend.set_default_layout(None, None))
+    assert cleared["ok"] is True
+    assert cleared["settings"]["default_layout"] is None
+    assert cleared["pending"]["layout_walk"] is True
+
+
+def test_set_default_layout_trims_title_and_allows_empty(backend) -> None:
+    result = run(backend.set_default_layout("template://x.vdf", "  Some Title  "))
+    assert result["settings"]["default_layout"]["title"] == "Some Title"
+    empty_title = run(backend.set_default_layout("workshop://1", ""))
+    assert empty_title["settings"]["default_layout"]["title"] == ""
+
+
+def test_set_default_layout_refuses_bad_arguments(backend) -> None:
+    for url, title in (
+        ("default://never touched", "x"),  # no choice at all
+        ("autosave:///path/to/config.vdf", "x"),  # edited in place
+        ("localconfig://x", "x"),  # not one of the two schemes
+        (5, "x"),
+        (True, "x"),
+        ("workshop://" + "x" * 2048, "x"),  # over the length cap
+        ("workshop://1", 5),
+        ("workshop://1", True),
+        ("workshop://1", "x" * 201),  # over the title cap
+    ):
+        result = run(backend.set_default_layout(url, title))
+        assert result["ok"] is False and result["error"] == "bad-request", (url, title)
+    assert run(backend.get_settings())["settings"]["default_layout"] is None
+
+
+def test_set_default_layout_url_at_the_length_cap_is_accepted(backend) -> None:
+    url = "workshop://" + "1" * (2048 - len("workshop://"))
+    assert len(url) == 2048
+    result = run(backend.set_default_layout(url, "x"))
+    assert result["ok"] is True
+
+
+def test_get_settings_sanitizes_a_hand_broken_default_layout(backend) -> None:
+    """A hand-broken value reads as "no default" rather than failing the
+    callable (spec 3.16.2)."""
+    path = Path(backend.settings_dir) / "settings.json"
+    raw = json.loads(path.read_text())
+    for broken in (
+        "workshop://1",
+        {"url": "default://x", "title": "x"},  # not a shareable scheme
+        {"url": 5, "title": "x"},
+        {"url": "workshop://1", "title": 5},
+        {"title": "x"},
+        [],
+    ):
+        raw["default_layout"] = broken
+        path.write_text(json.dumps(raw))
+        assert run(backend.get_settings())["settings"]["default_layout"] is None
+    raw["default_layout"] = {"url": "workshop://1", "title": "x", "when": "2026-09-21T00:00:00Z"}
+    path.write_text(json.dumps(raw))
+    assert run(backend.get_settings())["settings"]["default_layout"] == raw["default_layout"]
 
 
 def test_log_tail(backend) -> None:
