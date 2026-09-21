@@ -64,6 +64,7 @@ def sync_argv(backend, *extra: str) -> list[str]:
         settings_path(backend, "ignore.json"),
         "--client-shortcut",
         "--park-unpublished",
+        "--hide-host-apps",
         "--commit",
         "await-exit",
         *extra,
@@ -163,9 +164,19 @@ def test_argv_env_and_cwd_of_every_callable(make_backend) -> None:
     run(backend.test_sgdb_key())
     invocations = backend.harness.invocations()
     assert [i["argv"] for i in invocations] == [
-        ["--json", "status", "--owned-apps", own],
-        ["--json", "list", "--owned-apps", own, "--ignore-file", ign],
-        ["--json", "list", "--host", "OFFICE-PC", "--owned-apps", own, "--ignore-file", ign],
+        ["--json", "status", "--owned-apps", own, "--hide-host-apps"],
+        ["--json", "list", "--owned-apps", own, "--ignore-file", ign, "--hide-host-apps"],
+        [
+            "--json",
+            "list",
+            "--host",
+            "OFFICE-PC",
+            "--owned-apps",
+            own,
+            "--ignore-file",
+            ign,
+            "--hide-host-apps",
+        ],
         [
             "--json",
             "list",
@@ -176,6 +187,7 @@ def test_argv_env_and_cwd_of_every_callable(make_backend) -> None:
             own,
             "--ignore-file",
             ign,
+            "--hide-host-apps",
         ],
         ["--json", "host", "show"],
         ["--json", "host", "set", "MY-GAMING-PC"],
@@ -740,7 +752,7 @@ def test_list_parsing(backend) -> None:
     owned(backend)
     result = run(backend.list_apps())
     apps = [e for e in load_fixture("common/list.ndjson") if e["event"] == "app"]
-    assert result == {"ok": True, "apps": apps, "host": "MY-GAMING-PC", "count": 7, "notes": []}
+    assert result == {"ok": True, "apps": apps, "host": "MY-GAMING-PC", "count": 9, "notes": []}
 
 
 def test_list_cached_parsing(backend) -> None:
@@ -794,7 +806,7 @@ def test_check_host_memoises_for_ten_seconds(backend, monkeypatch) -> None:
     second = run(backend.check_host("MY-GAMING-PC"))
     assert first == second
     assert first["reachable"] is True
-    assert first["count"] == 7
+    assert first["count"] == 9
     assert first["ignored"] == 1
     assert first["host"] == "MY-GAMING-PC"
     assert len(backend.harness.argv()) == 1
@@ -860,7 +872,7 @@ def test_add_host_success_on_first_run_makes_it_active(make_backend) -> None:
     owned(backend)
     backend.harness.clear()
     result = run(backend.add_host("  OFFICE-PC "))
-    assert result == {"ok": True, "count": 7, "made_active": True}
+    assert result == {"ok": True, "count": 9, "made_active": True}
     assert run(backend.get_settings())["settings"]["hosts"] == ["OFFICE-PC"]
     argvs = backend.harness.argv()
     assert argvs[0][:4] == ["--json", "list", "--host", "OFFICE-PC"]
@@ -872,7 +884,7 @@ def test_add_host_with_an_active_host_does_not_switch(backend) -> None:
     run(backend.forget_host("OFFICE-PC"))
     backend.harness.clear()
     result = run(backend.add_host("OFFICE-PC"))
-    assert result == {"ok": True, "count": 7, "made_active": False}
+    assert result == {"ok": True, "count": 9, "made_active": False}
     assert run(backend.get_settings())["settings"]["hosts"] == ["MY-GAMING-PC", "OFFICE-PC"]
     assert ["--json", "host", "set", "OFFICE-PC"] not in backend.harness.argv()
     # adding it again does not duplicate it (case-insensitive)
@@ -961,6 +973,19 @@ def test_cli_protocol_when_the_cli_rejects_a_flag(backend) -> None:
     assert result["exit"] == 2
     assert "unrecognized arguments: --json --owned-apps" in result["stderr"]
     assert result["message"] == "The installed CLI did not understand the request (see the log)"
+
+
+def test_a_0_3_cli_rejects_hide_host_apps_alone(backend) -> None:
+    """Why the minimum is 0.4.0 and not a capability probe (spec 3.14.1): a
+    0.3.x argparse answers the flag with exit 2, which is also
+    EXIT_STEAM_RUNNING. Past the startup gate it reads as a protocol error."""
+    owned(backend)
+    backend.env["FAKE_CLI_VERSION"] = "0.3.1"
+    for call in (backend.status, backend.list_apps, lambda: backend.list_cached("OFFICE-PC")):
+        result = run(call())
+        assert result["error"] == "cli-protocol" and result["exit"] == 2
+        assert result["stderr"].rstrip().endswith("unrecognized arguments: --hide-host-apps")
+    assert run(backend.hosts())["ok"] is True  # nothing else carries the flag
 
 
 def test_cli_protocol_for_a_long_run(backend) -> None:
@@ -1232,11 +1257,26 @@ def test_record_layout_refuses_bad_arguments(backend) -> None:
         (SHORTCUT, 0, "copied", None),
         (SHORTCUT, REAL, "mirrored", None),
         (SHORTCUT, REAL, "copied", 5),
+        (SHORTCUT, None, "copied", None),  # only a picker has no game behind it
+        (SHORTCUT, None, "kept", None),
+        (SHORTCUT, None, "unavailable", None),
         (None, None, None, None),
     ):
         result = run(backend.record_layout(*args))
         assert result["ok"] is False and result["error"] == "bad-request", args
     assert not path.exists()
+
+
+def test_record_layout_picker_for_a_host_app_has_no_real_appid(backend) -> None:
+    """*Choose layout* on Desktop / Steam Big Picture (spec 3.14.1): the
+    entry is hidden with no owned game behind it, so ``real_appid`` is null."""
+    recorded = run(backend.record_layout(SHORTCUT, None, "picker", None))
+    assert recorded["ok"] is True
+    entry = recorded["entries"][str(SHORTCUT)]
+    assert entry == {"real_appid": None, "result": "picker", "url": None, "when": entry["when"]}
+    assert run(backend.layouts())["entries"] == recorded["entries"]
+    log = Path(backend.log_path).read_text()
+    assert f"layout picker for shortcut {SHORTCUT} (no game): -" in log
 
 
 def test_layouts_tolerates_a_broken_file(backend) -> None:

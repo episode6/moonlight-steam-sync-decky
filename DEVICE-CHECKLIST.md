@@ -320,10 +320,77 @@ to `~/homebrew/logs/steam-input-probe/steam-input-probe.log` (the loader's
       `plugin_loader`); expect the Quick Access entry to disappear and
       `~/.local/bin/moonlight-steam-sync` (the CLI) to be untouched.
 
-## 6. Fixtures vs. real CLI
+## 6. Host apps: the panel buttons replace the tiles (spec 3.14)
+
+Needs a host that publishes `Desktop` and `Steam Big Picture` under those
+names, and ideally an install from before this change: two visible tiles,
+one of them with a controller layout chosen on it. Note each tile's appid
+first (`moonlight-steam-sync --json status`).
+
+- [ ] **The first sync hides the two tiles in place.** Upgrade the plugin,
+      press *Sync now*. Expect the plan to count them as hidden, never as
+      replaced (the log's CLI line says `N to hide`; no `replace` event for
+      either name), one Steam restart, and afterwards no `Desktop` /
+      `Steam Big Picture` tile anywhere in the library, non-Steam
+      collection included.
+- [ ] **Same appid, nothing lost.** `--json status --hide-host-apps` shows
+      both entries with the appids noted above, `hidden: true`,
+      `parked: false`, `host_app: true`, and their artwork slots still
+      filled; no image was downloaded for them by that sync.
+- [ ] **Both panel buttons launch.** *Desktop* and *Steam Big Picture* each
+      start their stream from the Quick Access panel; Recent Games and the
+      in-game overlay show the entry with its artwork.
+- [ ] **Each layout button opens the configurator.** The gamepad button
+      beside *Desktop* opens Steam's controller configurator for Desktop
+      (the Quick Access menu closes and the configurator is in front), and
+      likewise for *Steam Big Picture*. Check what a screen reader / the
+      focus ring says: "Choose controller layout for Desktop". D-pad right
+      from the launch button reaches it, and D-pad up/down still walks the
+      panel's rows.
+- [ ] **A layout chosen before the upgrade is still selected** when the
+      configurator opens (same appid), and it applies in the stream.
+- [ ] **While a game runs** the two launch buttons are disabled ("A game is
+      running; exit it first") and the two layout buttons still work.
+- [ ] **On a client without `SteamClient.Apps.ShowControllerConfigurator`**
+      (if one turns up) the rows fall back to the plain full-width launch
+      buttons and the Titles rows have no *Choose layout*.
+- [ ] **Counters.** Do this one *before* the first sync: `status` carries
+      the flag from the upgrade on, so the two still-visible tiles already
+      read `host_app: true`. Right after the upgrade *Shortcuts* is two
+      lower than before (and *Unmatched* lower by however many of the two
+      had no match); *Stream buttons* is unchanged. The sync that hides the
+      two then moves none of the three.
+- [ ] **Titles page.** Both rows read **host app**, show under *All* only,
+      and have *Change match*, *Choose layout* and *Ignore*. *Choose
+      layout* opens the same configurator and the row then says `layout:
+      picker opened`. In *Change match* every result reads **art only**,
+      including a game this account owns; pin one, sync, and expect the
+      entry to stay a hidden host app with new artwork and no Stream button
+      on that game's library page.
+- [ ] **No layout copy for them.** After a sync's restart the layout walk
+      never touches the two entries (`layouts.json` has no `copied` / `kept`
+      / `unavailable` record for their appids, only `picker` with
+      `real_appid: null` once *Choose layout* was used).
+- [ ] **Ignore removes the button.** Ignore `Desktop` on the Titles page and
+      sync: the entry is removed and the panel's *Desktop* row is gone.
+      Unignore and sync: it comes back, hidden from the start.
+- [ ] **Switching hosts.** With a second host that does not publish them,
+      the two entries are parked (counted under parked, buttons gone); back
+      on the first host they are unparked *hidden*, never as tiles.
+- [ ] **Getting the tiles back** (README, "The Quick Access panel"): the
+      full command there (`--owned-apps`, `--ignore-file`,
+      `--client-shortcut`, `--park-unpublished`, no `--hide-host-apps`), run
+      from a terminal, shows the two tiles again with art and layout intact
+      and changes nothing else: every Stream button stays hidden, no ignored
+      title comes back, the Moonlight client entry stays. The next *Sync
+      now* hides the two again.
+
+## 7. Fixtures vs. real CLI
 
 - [ ] Run, on the device, against the real installed CLI:
-      `moonlight-steam-sync --json list`, `--json status`, `--json host
+      `moonlight-steam-sync --json list --hide-host-apps`, `--json status
+      --hide-host-apps` (the plugin always passes that flag, and the
+      fixtures carry its keys: `kind: "host-app"`, `entry.host_app`), `--json host
       show`, `--json search "Portal"`. Diff each event's key set against
       the corresponding fixture under `tests/fixtures/common/` (§3.6.3 of
       the spec: `tests/test_fixtures.py` checks the fixtures against the

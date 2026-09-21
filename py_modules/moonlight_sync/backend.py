@@ -570,6 +570,21 @@ class Backend:
     def _ignore_args(self) -> list[str]:
         return ["--ignore-file", self.store.path("ignore.json")]
 
+    def _list_args(self) -> list[str]:
+        """What every ``list`` call carries, live or ``--cached``."""
+        return [*self._owned_args(), *self._ignore_args(), *self._host_app_args()]
+
+    def _host_app_args(self) -> list[str]:
+        """``--hide-host-apps`` (spec 3.14), on every ``sync`` / ``list`` / ``status``.
+
+        Always passed, like ``--client-shortcut``: the panel's Desktop and
+        Steam Big Picture buttons replace the two library tiles, and the
+        CLI is what hides them (hard rule 1). The three must agree, or
+        ``status`` would call the hidden pair parked and ``list`` would
+        call them shortcuts.
+        """
+        return ["--hide-host-apps"]
+
     def _classify(self, result: RunResult, timeout: float | None) -> Result | None:
         """``None`` for a clean run, else the failure result for it.
 
@@ -724,7 +739,10 @@ class Backend:
     @guarded
     async def status(self) -> Result:
         result, fail = await self._collect(
-            "status", self._owned_args(), timeout=self.TIMEOUT_SHORT, needs_owned=True
+            "status",
+            [*self._owned_args(), *self._host_app_args()],
+            timeout=self.TIMEOUT_SHORT,
+            needs_owned=True,
         )
         if fail is not None:
             return fail
@@ -766,7 +784,7 @@ class Backend:
     async def list_apps(self) -> Result:
         result, fail = await self._collect(
             "list",
-            [*self._owned_args(), *self._ignore_args()],
+            self._list_args(),
             timeout=self.TIMEOUT_LONG,
             needs_owned=True,
         )
@@ -784,7 +802,7 @@ class Backend:
             return failure("bad-request", "a host name is required")
         result, fail = await self._collect(
             "list",
-            ["--host", host.strip(), "--cached", *self._owned_args(), *self._ignore_args()],
+            ["--host", host.strip(), "--cached", *self._list_args()],
             timeout=self.TIMEOUT_SHORT,
             needs_owned=True,
         )
@@ -833,7 +851,7 @@ class Backend:
             return memo[1]
         result, fail = await self._collect(
             "list",
-            ["--host", name, *self._owned_args(), *self._ignore_args()],
+            ["--host", name, *self._list_args()],
             timeout=self.TIMEOUT_LONG,
             needs_owned=True,
         )
@@ -927,7 +945,7 @@ class Backend:
             return failure("bad-request", "a host name has no spaces or slashes")
         result, fail = await self._collect(
             "list",
-            ["--host", name, *self._owned_args(), *self._ignore_args()],
+            ["--host", name, *self._list_args()],
             timeout=self.TIMEOUT_LONG,
             needs_owned=True,
         )
@@ -1256,12 +1274,12 @@ class Backend:
         ``result`` is ``copied`` / ``kept`` / ``unavailable`` (a Stream press
         or the post-restart walk) or ``picker`` (*Choose layout*). No CLI
         and no Steam file is involved: this only records what the frontend
-        did through Steam Input.
+        did through Steam Input. ``real_appid`` is ``None`` for a default
+        host app's ``picker`` (spec 3.14.1): there is no game behind it.
         """
         data = self.store.record_layout(shortcut_appid, real_appid, result, url, when=iso_now())
-        self._log(
-            f"layout {result} for shortcut {shortcut_appid} (Steam {real_appid}): {url or '-'}"
-        )
+        game = "no game" if real_appid is None else f"Steam {real_appid}"
+        self._log(f"layout {result} for shortcut {shortcut_appid} ({game}): {url or '-'}")
         return {"ok": True, **data}
 
     # ------------------------------------------------------------------
@@ -1310,6 +1328,7 @@ class Backend:
             *self._ignore_args(),
             "--client-shortcut",
             "--park-unpublished",
+            *self._host_app_args(),
             "--commit",
             "await-exit",
         ]

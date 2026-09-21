@@ -118,7 +118,8 @@ export function ChangeMatchModal({ row, onPinned, closeModal }: Props) {
   };
 
   const summary = matchSummary(row.match);
-  const rows = [...candidateRows(candidates ?? [], row.match), noMatchRow(row.match)];
+  const hostApp = row.kind === "host-app";
+  const rows = [...candidateRows(candidates ?? [], row.match, hostApp), noMatchRow(row.match, hostApp)];
 
   return (
     <ModalRoot closeModal={closeModal}>

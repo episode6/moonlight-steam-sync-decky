@@ -34,7 +34,13 @@ SUMMARY_KEYS = {
 #: carries the per-kind add counts (spec 3.4.6's plan-counts bullet, spec
 #: 3.13 A3), zeros included, and `art` / `remove` summaries never do.
 SUMMARY_KEYS_BY_COMMAND: dict[str, set[str]] = {"sync": SUMMARY_KEYS | {"added_by_kind"}}
-ADDED_BY_KIND_KEYS = {"stream", "shortcut"}
+#: The plugin passes ``--hide-host-apps`` on every sync / list / status (spec
+#: 3.14), so the fixtures are what the CLI says *under that flag*: the
+#: ``host-app`` kind, ``plan.host_app``, ``added_by_kind["host-app"]`` and
+#: ``entry.host_app`` are all present. (Without the flag none of them is.)
+ADDED_BY_KIND_KEYS = {"stream", "shortcut", "host-app"}
+TITLE_KINDS = {"stream", "shortcut", "host-app"}
+APP_KINDS = TITLE_KINDS | {"ignored", "parked", "duplicate"}
 SLOT_NAMES = {"portrait", "landscape", "hero", "logo", "icon"}
 TITLE_SLOT_VALUES = {"steam", "sgdb", "kept", "missing", "skipped", "cached-miss"}
 
@@ -56,6 +62,7 @@ EVENT_KEYS: dict[str, set[str]] = {
         "limit",
         "stream",
         "shortcut",
+        "host_app",
         "parked",
         "duplicates",
     },
@@ -85,6 +92,7 @@ EVENT_KEYS: dict[str, set[str]] = {
         "parked",
         "published",
         "client",
+        "host_app",
         "match",
         "slots",
         "stale_art",
@@ -165,14 +173,18 @@ def test_fixture_key_sets_match_the_schema(path: Path) -> None:
             if key in event and event[key] is not None:
                 assert set(event[key]) == MATCH_KEYS
         if name == "title":
+            assert event["kind"] in TITLE_KINDS
             assert set(event["slots"]) <= SLOT_NAMES
             assert set(event["slots"].values()) <= TITLE_SLOT_VALUES
         if name == "entry":
             assert set(event["slots"]) == SLOT_NAMES
+            assert isinstance(event["host_app"], bool)
+            assert not (event["host_app"] and event["client"])
         if name == "host":
             for cached in event["cached_hosts"]:
                 assert set(cached) == {"name", "when", "count"}
         if name == "app":
+            assert event["kind"] in APP_KINDS
             for other in event["same_game_as"]:
                 assert set(other) == {"name", "host"}
         if name == "summary" and "added_by_kind" in event:

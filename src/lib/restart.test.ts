@@ -103,6 +103,20 @@ describe("finishTitle", () => {
     ).toBe("Sync finished: 12 shortcuts, 9 Stream buttons");
     expect(finishTitle("sync", null, null)).toBe("Sync finished");
   });
+
+  it("names added host apps, and only when there are any (spec 3.14)", () => {
+    const byKind = { shortcut: 0, stream: 0 };
+    expect(finishTitle("sync", plan, { ...summary, added_by_kind: { ...byKind, "host-app": 2 } })).toBe(
+      "Sync finished: 0 shortcuts, 0 Stream buttons, 2 host apps",
+    );
+    expect(finishTitle("sync", plan, { ...summary, added_by_kind: { ...byKind, "host-app": 1 } })).toBe(
+      "Sync finished: 0 shortcuts, 0 Stream buttons, 1 host app",
+    );
+    // Every fixture summary carries the key as 0: the line is what it was.
+    expect(finishTitle("sync", plan, { ...summary, added_by_kind: { ...byKind, "host-app": 0 } })).toBe(
+      "Sync finished: 0 shortcuts, 0 Stream buttons",
+    );
+  });
 });
 
 describe("countdownLine", () => {

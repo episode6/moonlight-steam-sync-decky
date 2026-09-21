@@ -1,13 +1,16 @@
 import {
   ButtonItem,
+  DialogButton,
   DropdownItem,
   Field,
+  Focusable,
   Navigation,
   PanelSection,
   PanelSectionRow,
   Spinner,
 } from "@decky/ui";
 import { useEffect, type ReactNode } from "react";
+import { FaGamepad } from "react-icons/fa";
 
 import { SETTINGS_ROUTE, controller } from "../instance";
 import { lastSyncLine, relativeTime } from "../lib/format";
@@ -18,6 +21,7 @@ import {
   otherHostsLine,
   restartRowView,
   type AppState,
+  type HostAppKey,
 } from "../lib/state";
 import { confirmSwitch } from "./confirmSwitch";
 import { SyncProgress } from "./SyncProgress";
@@ -39,6 +43,69 @@ const dot = (color: string) => (
 function openSettings(page?: string) {
   Navigation.Navigate(page ? `${SETTINGS_ROUTE}/${page}` : SETTINGS_ROUTE);
   Navigation.CloseSideMenus();
+}
+
+/**
+ * A default host app's row (spec 3.8, 3.14.1): the launch button and, when
+ * the client can open the controller configurator, an icon-only *Choose
+ * layout* button beside it -- the hidden entry has no library page to reach
+ * it from. The launch is held back while a game runs; the layout button is
+ * not, since it starts nothing.
+ */
+function HostAppRow({
+  app,
+  inGame,
+  canChooseLayout,
+}: {
+  app: { key: HostAppKey; name: string; description: string };
+  inGame: boolean;
+  canChooseLayout: boolean;
+}) {
+  const description = inGame ? "A game is running; exit it first" : app.description;
+  if (!canChooseLayout) {
+    return (
+      <ButtonItem
+        layout="below"
+        description={description}
+        disabled={inGame}
+        onClick={() => controller.openHostApp(app.key)}
+      >
+        {app.name}
+      </ButtonItem>
+    );
+  }
+  return (
+    <div style={{ padding: "10px 0" }}>
+      <Focusable flow-children="horizontal" style={{ display: "flex", gap: 8 }}>
+        <DialogButton
+          style={{ flex: 1, minWidth: 0 }}
+          disabled={inGame}
+          onClick={() => controller.openHostApp(app.key)}
+        >
+          {app.name}
+        </DialogButton>
+        <DialogButton
+          aria-label={`Choose controller layout for ${app.name}`}
+          style={{
+            flex: "0 0 40px",
+            width: 40,
+            minWidth: 0,
+            padding: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+          onClick={() => {
+            Navigation.CloseSideMenus();
+            void controller.chooseHostAppLayout(app.key);
+          }}
+        >
+          <FaGamepad />
+        </DialogButton>
+      </Focusable>
+      <div style={{ fontSize: 12, opacity: 0.7, marginTop: 6 }}>{description}</div>
+    </div>
+  );
 }
 
 function Counter({ value, label }: { value: number | null | undefined; label: string }) {
@@ -200,6 +267,7 @@ export function QuickAccess() {
   }
 
   const ready = actionsReady(state);
+  const canChooseLayout = controller.canChooseLayout();
   const libraryRow =
     state.library === "loading" || state.library === "waiting" ? (
       <PanelSectionRow>
@@ -250,14 +318,7 @@ export function QuickAccess() {
       {HOST_APPS.map((app) =>
         state.hostApps[app.key] === null ? null : (
           <PanelSectionRow key={app.key}>
-            <ButtonItem
-              layout="below"
-              description={state.inGame ? "A game is running; exit it first" : app.description}
-              disabled={state.inGame}
-              onClick={() => controller.openHostApp(app.key)}
-            >
-              {app.name}
-            </ButtonItem>
+            <HostAppRow app={app} inGame={state.inGame} canChooseLayout={canChooseLayout} />
           </PanelSectionRow>
         ),
       )}

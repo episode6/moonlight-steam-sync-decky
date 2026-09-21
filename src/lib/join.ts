@@ -19,12 +19,13 @@ import { layoutStatusText } from "./layouts";
 // ---------------------------------------------------------------------------
 // rows
 
-export type RowKind = "stream" | "shortcut" | "ignored" | "parked" | "duplicate";
+/** `host-app`: the host's default `Desktop` / `Steam Big Picture`, hidden behind the panel's buttons (spec 3.14). */
+export type RowKind = "stream" | "shortcut" | "host-app" | "ignored" | "parked" | "duplicate";
 
 /** Pill colours, after the mockup's legend. */
 export type Tone = "stream" | "ok" | "warn" | "bad" | "neutral";
 
-export type BadgeId = "stream" | "shortcut" | "unmatched" | "ignored" | "parked" | "duplicate";
+export type BadgeId = "stream" | "shortcut" | "host-app" | "unmatched" | "ignored" | "parked" | "duplicate";
 
 export interface Badge {
   id: BadgeId;
@@ -66,13 +67,18 @@ export interface TitleRow {
    * opened", spec 3.10); `null` for other rows and before any copy.
    */
   layout: string | null;
-  /** The hidden shortcut and the owned game a *Choose layout* / copy would work on. */
-  layoutTarget: { shortcutAppid: number; realAppid: number } | null;
+  /**
+   * The hidden shortcut and the owned game a *Choose layout* / copy would
+   * work on. `realAppid: null` is a host-app row: picker only, there is no
+   * retail game to copy a layout from (spec 3.14.1).
+   */
+  layoutTarget: { shortcutAppid: number; realAppid: number | null } | null;
 }
 
 export const BADGES: Record<BadgeId, Badge> = {
   stream: { id: "stream", text: "stream button", tone: "stream" },
   shortcut: { id: "shortcut", text: "shortcut", tone: "ok" },
+  "host-app": { id: "host-app", text: "host app", tone: "neutral" },
   unmatched: { id: "unmatched", text: "unmatched", tone: "bad" },
   ignored: { id: "ignored", text: "ignored", tone: "neutral" },
   parked: { id: "parked", text: "parked", tone: "neutral" },
@@ -126,12 +132,15 @@ interface RowInput {
 /**
  * The hidden shortcut a layout copy works on: a stream row whose entry is
  * hidden, not parked, and matched to a Steam appid (the stream map's rule).
+ * A host-app row's hidden entry is a target too, with no game behind it
+ * (`realAppid: null`, whatever its match says): it has no library page, so
+ * *Choose layout* is the only way to its configurator, and no copy ever runs.
  */
 export function layoutTargetOf(kind: RowKind, entry: EntryEvent | null): TitleRow["layoutTarget"] {
-  const steam = entry?.match?.steam_appid;
-  if (kind !== "stream" || !entry || !entry.hidden || entry.parked || entry.client || typeof steam !== "number") {
-    return null;
-  }
+  if (!entry || !entry.hidden || entry.parked || entry.client) return null;
+  if (kind === "host-app") return { shortcutAppid: entry.appid, realAppid: null };
+  const steam = entry.match?.steam_appid;
+  if (kind !== "stream" || typeof steam !== "number") return null;
   return { shortcutAppid: entry.appid, realAppid: steam };
 }
 
@@ -345,7 +354,7 @@ export function applyPin(apps: readonly AppEvent[], pinned: PinnedEvent, matched
 // ---------------------------------------------------------------------------
 // the Change match modal
 
-export type Outcome = "becomes stream button" | "shortcut";
+export type Outcome = "becomes stream button" | "shortcut" | "art only";
 
 /** What `pin` gets for a choice: exactly one selector (spec 3.7). */
 export interface PinChoice {
@@ -369,10 +378,19 @@ export interface CandidateRow {
 /**
  * A pin of an owned Steam game is how a title becomes a Stream button on the
  * next sync (pins count as exact, spec 3.2); anything else is a shortcut.
+ * On a host-app row no pin can change the kind (it is decided by name,
+ * before `stream`, spec 3.14), so every candidate only drives the art.
  */
-export function outcomeOf(candidate: CandidateEvent): Outcome {
+export function outcomeOf(candidate: CandidateEvent, hostApp = false): Outcome {
+  if (hostApp) return "art only";
   return candidate.owned ? "becomes stream button" : "shortcut";
 }
+
+const OUTCOME_TONES: Record<Outcome, Tone> = {
+  "becomes stream button": "stream",
+  shortcut: "ok",
+  "art only": "neutral",
+};
 
 const candidateKey = (candidate: CandidateEvent) => `${candidate.source}:${candidate.id}`;
 
@@ -419,9 +437,14 @@ function candidateDetail(candidate: CandidateEvent, current: boolean): string {
 /**
  * `search`'s candidates as one list: the games owned on this account first
  * (the ones a pin turns into a Stream button), then the rest; within each
- * group Steam first, then SteamGridDB, each in the CLI's order.
+ * group Steam first, then SteamGridDB, each in the CLI's order. `hostApp`
+ * is a host-app row's modal: every outcome reads `art only`.
  */
-export function candidateRows(candidates: readonly CandidateEvent[], current: Match | null): CandidateRow[] {
+export function candidateRows(
+  candidates: readonly CandidateEvent[],
+  current: Match | null,
+  hostApp = false,
+): CandidateRow[] {
   const bySource = [
     ...candidates.filter((c) => c.source === "steam"),
     ...candidates.filter((c) => c.source === "sgdb"),
@@ -430,14 +453,14 @@ export function candidateRows(candidates: readonly CandidateEvent[], current: Ma
   const currentKey = currentCandidateKey(candidates, current);
   return ordered.map((candidate) => {
     const isCurrent = candidateKey(candidate) === currentKey;
-    const outcome = outcomeOf(candidate);
+    const outcome = outcomeOf(candidate, hostApp);
     return {
       key: candidateKey(candidate),
       source: candidate.source,
       name: candidate.name,
       detail: candidateDetail(candidate, isCurrent),
       outcome,
-      tone: outcome === "becomes stream button" ? "stream" : "ok",
+      tone: OUTCOME_TONES[outcome],
       current: isCurrent,
       choice:
         candidate.source === "steam"
@@ -448,13 +471,15 @@ export function candidateRows(candidates: readonly CandidateEvent[], current: Ma
 }
 
 /** The final row: pin "no match" (a shortcut with art found by name on SteamGridDB). */
-export function noMatchRow(current: Match | null): CandidateRow {
+export function noMatchRow(current: Match | null, hostApp = false): CandidateRow {
   const isCurrent = isPinned(current) && !hasIds(current);
+  // A host app is not "kept as a shortcut": its kind never depends on the match.
+  const what = hostApp ? "Search SteamGridDB by name for art" : "Keep as a shortcut, search SteamGridDB by name for art";
   return {
     key: "none",
     source: "none",
     name: "No match",
-    detail: `Keep as a shortcut, search SteamGridDB by name for art${isCurrent ? " · current match" : ""}`,
+    detail: `${what}${isCurrent ? " · current match" : ""}`,
     outcome: "pinned",
     tone: "neutral",
     current: isCurrent,

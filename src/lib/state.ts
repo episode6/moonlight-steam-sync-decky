@@ -51,6 +51,9 @@ export function countersFromStatus(entries: readonly EntryEvent[]): Counters {
       counters.parked++;
       continue;
     }
+    // A default host app (spec 3.14) is none of the three: hidden, it is no
+    // Stream button; its panel button is what stands for it.
+    if (entry.host_app) continue;
     if (entry.hidden) counters.stream++;
     else counters.shortcuts++;
     if (!entry.match || entry.match.how === "none") counters.unmatched++;
@@ -61,12 +64,16 @@ export function countersFromStatus(entries: readonly EntryEvent[]): Counters {
 /**
  * `Map<steamAppid, shortcutAppid>` from `status` (spec 3.9): hidden, not
  * parked, published, not the client, with a Steam match. PR-7 puts a Stream
- * button on each key's library page.
+ * button on each key's library page. A default host app is never in it
+ * (spec 3.14): a hidden `Desktop` whose match happens to be a Steam game
+ * would put a Stream button on that game's page, and the layout walk
+ * iterates this map.
  */
 export function streamMapFromStatus(entries: readonly EntryEvent[]): Map<number, number> {
   const map = new Map<number, number>();
   for (const entry of entries) {
     const steam = entry.match?.steam_appid;
+    if (entry.host_app) continue;
     if (entry.hidden && !entry.parked && entry.published && !entry.client && typeof steam === "number") {
       map.set(steam, entry.appid);
     }

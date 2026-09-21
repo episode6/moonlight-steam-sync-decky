@@ -86,13 +86,19 @@ src/lib/                    pure modules (vitest)
   events.ts                 NDJSON parsing, lastOf/eventsOf
   state.ts                  AppState, Store, reducers (runs, counters, stream map),
                             HOST_APPS / hostAppsFromStatus() (the panel's Desktop and
-                            Steam Big Picture buttons, by Moonlight name)
+                            Steam Big Picture buttons, by Moonlight name, blind to
+                            `hidden`); an `entry.host_app` entry counts toward none of
+                            stream / shortcuts / unmatched and is never in the stream
+                            map, so never in the layout walk either (spec §3.14.1)
   controller.ts             load order, runs, restart flow, hosts, settings actions,
                             loadTitles() (list -> list_cached fallback, and list_cached
                             while a run is going; `status` only reaches the shared store
                             when no run is going, the page always gets its entries),
                             pinTitle, setIgnored,
-                            streamPress() (guard, copy, run), chooseLayout(), layoutWalk()
+                            streamPress() (guard, copy, run), chooseLayout() (a `null`
+                            real appid = a host app: picker only), chooseHostAppLayout()
+                            (the panel's layout buttons; not held back by inGame),
+                            layoutWalk()
   layouts.ts                DEFAULT_LAYOUT_STRATEGY (the one switch), layoutStrategy(),
                             copyEnabled(), the SteamInput seam, isUnselected() (no URL,
                             default://, or bSelected false), copyLayout() (the §3.10
@@ -107,7 +113,10 @@ src/lib/                    pure modules (vitest)
   join.ts                   the Titles page: list + status joined by name into rows
                             (badge, chips, match line, capsule), filters, Show parked,
                             pages of 50, applyPin; the Change match rows (candidateRows,
-                            noMatchRow, matchSummary)
+                            noMatchRow, matchSummary); the `host-app` kind (badge
+                            `host app`, under *All* only, never unmatched, every
+                            candidate `art only`) and layoutTargetOf(), whose
+                            `realAppid` is `null` for a hidden host-app row
   __tests__/join.test.ts    the join, every badge/chip, filters, sort, paging (fixtures)
   restart.ts                restartDecision() (the §3.9 table), modal text
   version.ts                version parsing, the CLI-missing / too-old row
@@ -121,7 +130,9 @@ src/lib/                    pure modules (vitest)
 src/routes/libraryApp.tsx   the /library/app/:appid patch (routerHook.addPatch, afterPatch
                             on renderFunc, findInReactTree for the overview and the
                             InnerContainer), written fresh; injects StreamButton
-src/components/             QuickAccess, SyncProgress, RestartModal, SettingsPage,
+src/components/             QuickAccess (HostAppRow: the launch button plus the icon-only
+                            layout button, plain ButtonItem when the client has no
+                            configurator), SyncProgress, RestartModal, SettingsPage,
                             HostPage, TitlesPage (layout text, Choose layout),
                             ChangeMatchModal, Pill, StreamButton (renders only when
                             streamMap has the appid), ArtworkPage, AdvancedPage, AboutPage
@@ -171,7 +182,17 @@ Every callable returns `{"ok": true, …}` or `{"ok": false, "error": <code>,
 `bad-request`, `io`) and never raises. Argv is `[python3, <installed cli>,
 "--json", <subcommand>, …]` (`doctor`, `--version` and `art --help` have no
 `--json`), `cwd` and `HOME` are the deck user's home, and the child gets
-`MOONLIGHT_STEAM_SYNC_FROM_PLUGIN=1`. The child never inherits
+`MOONLIGHT_STEAM_SYNC_FROM_PLUGIN=1`. Every `sync`, `list` (live and
+`--cached`: `list_apps`, `list_cached`, `check_host`, `add_host`) and
+`status` call carries `--hide-host-apps` (`Backend._host_app_args()`, spec
+§3.14), always and with no setting, like `--client-shortcut` /
+`--park-unpublished`: the CLI writes `Desktop` / `Steam Big Picture` hidden
+(kind `host-app`) and the panel's buttons replace the two tiles. The three
+subcommands must agree, or `status` would call the hidden pair parked and
+`list` would call them shortcuts; `search`, `match`, `art` and `remove` do
+not take the flag. It is why the minimum CLI is 0.4.0 and not a capability
+probe: an older argparse answers the flag with exit 2, which is also
+`EXIT_STEAM_RUNNING`. The child never inherits
 plugin_loader's PyInstaller `LD_LIBRARY_PATH` (`/tmp/_MEI…`, an older
 bundled OpenSSL that breaks both `flatpak` and the CLI's `import ssl`):
 `Backend._child_env()` restores `LD_LIBRARY_PATH_ORIG` or drops the `_MEI*`
@@ -212,7 +233,10 @@ shortcut_appid, real_appid, result, url)` need no CLI either: they read and
 upsert `layouts.json` (`{version: 1, entries: {<shortcut appid>:
 {real_appid, result, url, when}}}`, `result` one of `copied` / `kept` /
 `unavailable` / `picker`; a broken file reads as empty), and
-`start_remove_all` deletes the file on `commit.written`.
+`start_remove_all` deletes the file on `commit.written`. `real_appid` may be
+`null` for a `picker` result only: *Choose layout* on a default host app,
+which has no owned game behind it (every copy result names its game).
+Older builds never read that value for anything but the log line.
 `stop_sync` and `unload` also cover the moment between the busy guard and
 the spawn: they flag the run, the SIGINT goes out as soon as its child
 exists, and a run the signal killed before the CLI printed anything is
@@ -259,7 +283,8 @@ There is no Steam Deck during development; everything else is tested.
 - `tests/fake_cli.py` stands in for the CLI. Driven by env vars:
   `FAKE_CLI_FIXTURES` (directories, `os.pathsep`-joined, searched in order),
   `FAKE_CLI_ARGV_LOG`, `FAKE_CLI_VERSION` (< 0.3.0 rejects the new flags
-  like argparse: stderr only, exit 2), `FAKE_CLI_ART_COMMIT`,
+  like argparse: stderr only, exit 2; < 0.4.0 rejects `--hide-host-apps`
+  the same way), `FAKE_CLI_ART_COMMIT`,
   `FAKE_CLI_STEAM_GONE_FILE` / `FAKE_CLI_WAIT_S` (the await-exit wait),
   `FAKE_CLI_SIGINT_DURING_WAIT=immediate|deferred`, `FAKE_CLI_SLEEP_MS`,
   `FAKE_CLI_EXIT`, `FAKE_CLI_STDERR`, `FAKE_CLI_NOISE` (a non-JSON stdout
@@ -275,7 +300,12 @@ There is no Steam Deck during development; everything else is tested.
 - `tests/fixtures/<scenario>/<command>.ndjson` are hand-written from §3.4.6
   (`full-sync`, `art-only`, `nothing-to-do`, `unreachable`, `stopped`,
   `refused`, `common/`); `tests/test_fixtures.py` checks every event's key
-  set against the schema. `common/` also holds the alternates picked with
+  set against the schema. The fixtures are what the CLI says *under
+  `--hide-host-apps`*, since the plugin always passes it: `entry.host_app`
+  on every `status` entry (with a hidden, published `Desktop` / `Steam Big
+  Picture` pair, `Desktop` deliberately matched to a Steam game),
+  `kind: "host-app"` apps in `list`, `plan.host_app` and
+  `added_by_kind["host-app"]` in every `sync`. `common/` also holds the alternates picked with
   `FAKE_CLI_FIXTURE_MATCH` / `FAKE_CLI_FIXTURE_SEARCH` (`match-none`,
   `match-sgdb`, `match-unknown`, `match-silent`, `search-empty`,
   `search-no-key`). The frontend's `events.test.ts`, `restart.test.ts`,
@@ -356,15 +386,18 @@ The pin **and** `MIN_CLI_VERSION` moved to the CLI's `v0.4.0` (released
 2026-09-20) together: one CLI version per plugin version, so the bundled,
 minimum and fake-CLI versions are all `0.4.0` and the fixtures' `start`
 events say so. The bundled-install path upgrades an older installed CLI, so
-the raised minimum is invisible to users. `v0.4.0` adds `--hide-host-apps`;
-the plugin does **not** pass it yet (the plugin half of spec §3.14.1: the
-flag, the `host-app` kind, counters, Choose layout, fixtures); that work
-is for a later release. The same PR prepared `v0.2.0` (`package.json`
-`"version"`, the dated CHANGELOG section), so steps 1-3 below are already
-done for it: what is left is the push and `gh release create v0.2.0`.
+the raised minimum is invisible to users. `v0.4.0` adds `--hide-host-apps`.
+Plugin `v0.2.0` (released 2026-09-20) bundles and requires that CLI but does
+not pass the flag; the plugin half of spec §3.14.1 (the flag on every sync /
+list / status, the `host-app` kind, counters, stream map, Choose layout,
+fixtures) landed after it, in `[Unreleased]`. It is a user-visible feature,
+so by semver the release that carries it is `v0.3.0`; all of steps 1-4
+below are still to do for that one, and only when the user asks.
 
-Modelled on the CLI repo's own "Cutting a release", once `v0.3.0` exists
-and everything intended for `v0.1.0` has merged to `main`:
+Modelled on the CLI repo's own "Cutting a release" (the example below is
+the plugin's first release, `v0.1.0`, which waited for the CLI's `v0.3.0`;
+substitute the version being cut), once the pinned CLI release exists and
+everything intended for the plugin release has merged to `main`:
 
 ```sh
 git checkout main && git pull

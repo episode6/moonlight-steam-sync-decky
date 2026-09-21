@@ -239,25 +239,33 @@ class Store:
     def record_layout(
         self,
         shortcut_appid: int,
-        real_appid: int,
+        real_appid: int | None,
         result: str,
         url: str | None,
         *,
         when: str,
     ) -> dict[str, Any]:
-        """Upsert one shortcut's entry atomically; returns the whole file."""
+        """Upsert one shortcut's entry atomically; returns the whole file.
+
+        ``real_appid`` is ``None`` only for a ``picker`` result: *Choose
+        layout* on a default host app (spec 3.14.1), which has no owned game
+        behind it. Every copy result names the game it copied from.
+        """
         if isinstance(shortcut_appid, bool) or not isinstance(shortcut_appid, int):
             raise SettingsError("shortcut_appid must be an integer")
         if shortcut_appid < SHORTCUT_APPID_FLOOR:
             raise SettingsError(
                 "shortcut_appid must be a non-Steam shortcut appid (0x80000000 or above)"
             )
-        if isinstance(real_appid, bool) or not isinstance(real_appid, int) or real_appid <= 0:
-            raise SettingsError("real_appid must be a positive integer")
-        if real_appid >= SHORTCUT_APPID_FLOOR:
-            raise SettingsError("real_appid must be a Steam appid (below 0x80000000)")
         if result not in LAYOUT_RESULTS:
             raise SettingsError(f"result must be one of {', '.join(LAYOUT_RESULTS)}")
+        if real_appid is None:
+            if result != "picker":
+                raise SettingsError("real_appid may only be null for a picker result")
+        elif isinstance(real_appid, bool) or not isinstance(real_appid, int) or real_appid <= 0:
+            raise SettingsError("real_appid must be a positive integer")
+        elif real_appid >= SHORTCUT_APPID_FLOOR:
+            raise SettingsError("real_appid must be a Steam appid (below 0x80000000)")
         if url is not None and not isinstance(url, str):
             raise SettingsError("url must be a string or null")
         data = self.layouts()

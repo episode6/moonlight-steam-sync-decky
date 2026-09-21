@@ -89,7 +89,7 @@ def test_main_py_end_to_end(plugin) -> None:
     assert version["pinned"] == "0.4.0"
     assert version["plugin_version"] == "0.1.0"
     assert owned == {"ok": True, "count": 1}
-    assert status["ok"] is True and len(status["entries"]) == 6
+    assert status["ok"] is True and len(status["entries"]) == 8
     assert started == {"ok": True, "kind": "sync"}
     names = [event for event, _ in decky.emitted]
     assert names[-1] == "sync_done"
@@ -170,7 +170,7 @@ def test_the_api_version_0_convention_drives_the_class_itself(plugin_module) -> 
     version, owned, status, settings = run(scenario())
     assert version["installed"] == "0.4.0"
     assert owned == {"ok": True, "count": 1}
-    assert status["ok"] is True and len(status["entries"]) == 6
+    assert status["ok"] is True and len(status["entries"]) == 8
     assert settings["ok"] is True
     # the state landed on the class, which is where the loader's `self` points
     assert plugin._backend is not None and plugin._startup.done()

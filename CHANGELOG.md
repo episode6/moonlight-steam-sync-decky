@@ -6,6 +6,38 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **A controller-layout button beside Desktop and Steam Big Picture.** Each
+  of the panel's two host-app buttons gets a small gamepad button that
+  opens Steam's controller configurator for that entry. It works while a
+  game is running, and is left out on a Steam client that cannot open the
+  configurator. The Titles page offers the same *Choose layout* on the two
+  rows.
+- **A `host app` badge on the Titles page** for `Desktop` and `Steam Big
+  Picture`. The rows are listed under *All* only; *Change match* only
+  changes their artwork (every result reads **art only**), and *Ignore*
+  removes the entry and its panel button on the next sync.
+
+### Changed
+
+- **The Desktop and Steam Big Picture buttons now replace the two library
+  tiles.** Every `sync`, `list` and `status` the plugin runs passes the
+  CLI's `--hide-host-apps`, so the two shortcuts are kept but written
+  hidden. On an existing install the next sync hides the two tiles in
+  place: same appid, so their artwork and any controller layout chosen on
+  them are untouched. To get the tiles back, run the plugin's sync from a
+  terminal without `--hide-host-apps` (the README's panel section has the
+  full command: it keeps `--owned-apps`, `--ignore-file`,
+  `--client-shortcut` and `--park-unpublished`); the next sync from the
+  plugin hides them again. There is no plugin setting.
+  A host whose two entries were renamed keeps its ordinary tiles.
+- The panel's **Stream buttons**, **Shortcuts** and **Unmatched** counters
+  no longer count the two host apps, no Stream button or layout copy is
+  ever derived from a host app's match, and `layouts.json` records
+  `real_appid: null` for *Choose layout* on one (there is no Steam game
+  behind it).
+
 ## [0.2.0] - 2026-09-20
 
 ### Added
