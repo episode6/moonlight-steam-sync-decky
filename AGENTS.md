@@ -390,9 +390,10 @@ the raised minimum is invisible to users. `v0.4.0` adds `--hide-host-apps`.
 Plugin `v0.2.0` (released 2026-09-20) bundles and requires that CLI but does
 not pass the flag; the plugin half of spec §3.14.1 (the flag on every sync /
 list / status, the `host-app` kind, counters, stream map, Choose layout,
-fixtures) landed after it, in `[Unreleased]`. It is a user-visible feature,
-so by semver the release that carries it is `v0.3.0`; all of steps 1-4
-below are still to do for that one, and only when the user asks.
+fixtures) landed after it and is plugin `v0.3.0` (a user-visible feature,
+so a minor bump; the user asked for that release on 2026-09-21). Its
+release PR did steps 1-3 below (`package.json` `"version"`, the dated
+CHANGELOG section), as the earlier releases' PRs did.
 
 Modelled on the CLI repo's own "Cutting a release" (the example below is
 the plugin's first release, `v0.1.0`, which waited for the CLI's `v0.3.0`;
