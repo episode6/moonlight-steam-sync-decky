@@ -6,6 +6,15 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **"Loading your library…" no longer spins forever after a boot.** When the
+  plugin loaded before the Steam client had set up its collections, reading
+  the library threw instead of answering "not yet", which killed the load
+  order with the row stuck on loading until the plugin was reloaded. That
+  throw now counts as "not loaded yet", so the plugin keeps polling, and any
+  other failure in that step ends on the *Steam library not loaded* row.
+
 ## [0.3.0] - 2026-09-21
 
 ### Added

@@ -371,6 +371,15 @@ describe("load order (spec 3.8)", () => {
     expect(names()).toContain("status");
   });
 
+  it("a throw while reading the library ends in 'failed', never a stuck 'loading'", async () => {
+    steam.ownedApps = () => {
+      throw new TypeError("Cannot read properties of undefined (reading 'get')");
+    };
+    const controller = new Controller(fakeBackend(calls), steam, ui, instantTiming());
+    await controller.load();
+    expect(controller.state.library).toBe("failed");
+  });
+
   it("an empty account is 'library not loaded'", async () => {
     const controller = new Controller(
       fakeBackend(calls, {

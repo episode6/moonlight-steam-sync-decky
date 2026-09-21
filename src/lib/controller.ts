@@ -233,18 +233,25 @@ export class Controller {
   /** Step 3: poll the library every 500 ms (60 s at most), then write owned-apps.json. */
   async loadLibrary(): Promise<void> {
     this.store.set({ library: "loading" });
-    const deadline = this.timing.now() + LIBRARY_TIMEOUT_MS;
-    let apps = this.steam.ownedApps();
-    while (!apps && this.timing.now() < deadline) {
-      await this.timing.sleep(LIBRARY_POLL_MS);
-      apps = this.steam.ownedApps();
-    }
-    if (!apps) {
+    try {
+      const deadline = this.timing.now() + LIBRARY_TIMEOUT_MS;
+      let apps = this.steam.ownedApps();
+      while (!apps && this.timing.now() < deadline) {
+        await this.timing.sleep(LIBRARY_POLL_MS);
+        apps = this.steam.ownedApps();
+      }
+      if (!apps) {
+        this.store.set({ library: "failed" });
+        return;
+      }
+      const written = await this.writeOwnedApps(apps);
+      this.store.set({ library: written ? "failed" : "ready" });
+    } catch (error) {
+      // Never leave "loading" behind: the row would spin for good, and the
+      // failed row is the one with a way out.
+      console.warn("Moonlight Sync: reading the Steam library failed", error);
       this.store.set({ library: "failed" });
-      return;
     }
-    const written = await this.writeOwnedApps(apps);
-    this.store.set({ library: written ? "failed" : "ready" });
   }
 
   /** `null` on success, else the failure. */
