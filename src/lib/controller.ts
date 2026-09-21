@@ -837,7 +837,8 @@ export class Controller {
    * hidden (the client ignores `IsHidden` in `shortcuts.vdf`), the visible
    * ones shown, and the *Streaming* collection holding every streamable
    * title. Only differences are applied, so a second call changes nothing.
-   * Does nothing without a `status` or while a run is going. `wait` (the
+   * Does nothing without a `status` or while a run is going (checked after
+   * the wait, too). `wait` (the
    * load after a restart) first gives the shortcut list 90 s to load; an
    * entry the client still does not know is skipped until the next call.
    */
@@ -851,16 +852,17 @@ export class Controller {
   }
 
   private async doReconcile(wait: boolean): Promise<void> {
-    const entries = this.state.entries;
-    if (entries === null || this.state.run?.running) return;
     const library = this.steam.library();
     const loaded = (appid: number) => this.steam.overviewLoaded(appid);
     if (wait) {
       const deadline = this.timing.now() + WALK_TIMEOUT_MS;
-      while (entries.some((entry) => !loaded(entry.appid)) && this.timing.now() < deadline) {
-        await this.timing.sleep(WALK_POLL_MS);
-      }
+      const waiting = () => !!this.state.entries?.some((entry) => !loaded(entry.appid));
+      while (waiting() && this.timing.now() < deadline) await this.timing.sleep(WALK_POLL_MS);
     }
+    // Read after the wait: a run started meanwhile owns the library now, and
+    // a `status` that came in meanwhile is the newer plan.
+    const entries = this.state.entries;
+    if (entries === null || this.state.run?.running) return;
     const settings = this.state.settings;
     if (library.canHide()) {
       const plan = hiddenPlan(entries, hideStreamEnabled(settings));
@@ -879,8 +881,12 @@ export class Controller {
     const current = library.collectionApps(STREAMING_COLLECTION);
     const wanted = streamingMembers(entries);
     if (!wanted.length) {
-      // nothing left to stream (*Remove everything*): the collection goes too
-      if (current) await library.deleteCollection(STREAMING_COLLECTION);
+      // Nothing to stream. After *Remove everything* the collection goes
+      // too; otherwise (a fresh install's empty `status`) only an empty one
+      // does, since a collection somebody already had under this name is
+      // not the plugin's to delete.
+      const removed = this.state.pending?.last_kind === "remove";
+      if (current && (removed || !current.length)) await library.deleteCollection(STREAMING_COLLECTION);
       return;
     }
     const diff = collectionDiff(wanted, current ?? []);

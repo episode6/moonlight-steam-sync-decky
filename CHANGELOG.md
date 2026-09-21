@@ -20,8 +20,9 @@ project uses [semantic versioning](https://semver.org/).
   `IsHidden` field the CLI writes to `shortcuts.vdf`, so every Stream
   button's shortcut, the Moonlight client entry, `Desktop` / `Steam Big
   Picture` and parked titles all still showed under *Non-Steam*. The plugin
-  now hides them in the client itself (and shows them again when the CLI
-  says so). With *Hide Stream shortcuts* off the Stream-button shortcuts
+  now hides them in the client itself, and shows an entry again whenever
+  the CLI calls it visible (so hide a Moonlight tile with *Ignore*, not with
+  Steam's own *Hide this game*). With *Hide Stream shortcuts* off the Stream-button shortcuts
   stay visible, so a streamed game comes to the front of Home.
 
 ## [0.3.3] - 2026-09-21

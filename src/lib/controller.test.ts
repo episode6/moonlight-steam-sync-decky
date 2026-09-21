@@ -1302,10 +1302,30 @@ describe("hidden state and the Streaming collection (spec 3.15)", () => {
     expect(steam.lib.log).toEqual([]);
   });
 
-  it("deletes the collection once nothing is left to stream", async () => {
+  it("deletes the collection after Remove everything", async () => {
     steam.lib.collections.set(STREAMING_COLLECTION, new Set([BALATRO]));
-    await loaded({ status: { ok: true, entries: [], notes: [] } });
+    await loaded({
+      status: { ok: true, entries: [], notes: [] },
+      pending: { ok: true, ...PENDING, last_kind: "remove" },
+    });
     expect(steam.lib.collections.has(STREAMING_COLLECTION)).toBe(false);
+  });
+
+  it("leaves a collection somebody already had alone while there is nothing to stream", async () => {
+    steam.lib.collections.set(STREAMING_COLLECTION, new Set([570]));
+    await loaded({ status: { ok: true, entries: [], notes: [] } });
+    expect([...(steam.lib.collections.get(STREAMING_COLLECTION) ?? [])]).toEqual([570]);
+  });
+
+  it("applies nothing when a run starts during the load's wait", async () => {
+    steam.loaded = new Set(); // nothing loads: the wait runs its 90 s
+    const controller = new Controller(fakeBackend(calls), steam, ui, instantTiming());
+    await controller.load();
+    const reconcile = controller.reconcileLibrary(true);
+    await controller.sync();
+    steam.loaded = null;
+    await reconcile;
+    expect(steam.lib.log).toEqual([]);
   });
 
   it("survives a client that throws", async () => {

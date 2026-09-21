@@ -420,6 +420,12 @@ measurement.
       (parked) and leave the collection; switching back shows them again.
 - [ ] *Remove everything*: after the restart the collection is gone and
       Steam's *Hidden* holds none of the plugin's entries.
+- [ ] After a host switch (or an *Ignore* + sync) that removes a visible
+      shortcut: the collection's `allApps` no longer lists its appid (the
+      plugin cannot remove a member whose overview is gone, so the client
+      has to drop it itself).
+- [ ] The first sync on a fresh install creates the collection with every
+      member in it (the port saves a new collection empty, then adds).
 - [ ] Open the panel and the Titles page a few times: nothing in the
       library flickers and `collectionStore` is not written again (the
       reconcile only applies differences).

@@ -348,7 +348,8 @@ export function libraryPort(): LibraryPort {
         if (!adding.length) return;
         collection = collections()?.NewUnsavedCollection?.(name, undefined, []) ?? null;
         if (!collection) return;
-        // Saved once empty: a collection only takes apps once it has an id.
+        // Saved once empty, on the assumption that a collection only takes
+        // apps once it has an id **[verify on device]**.
         await collection.Save?.();
       }
       const edit = collection.AsDragDropCollection?.();

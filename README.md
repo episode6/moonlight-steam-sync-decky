@@ -208,7 +208,9 @@ only what differs:
 - **The *Streaming* collection.** One tile for every title the active host
   can stream right now: the real Steam game when it has a Stream button,
   the Moonlight shortcut otherwise. It is found by its name, so renaming it
-  makes the plugin start a new one. Settings → **Advanced** → *Streaming
+  makes the plugin start a new one, and a collection you already have under
+  that name is taken over (anything else in it is removed at the first
+  sync); rename yours first, or turn the setting off before syncing. Settings → **Advanced** → *Streaming
   collection* (on by default) turns it off, which deletes it; *Remove
   everything* deletes it too. Collections sync through Steam Cloud, so it
   shows up on your other machines, where the shortcuts in it do not exist.

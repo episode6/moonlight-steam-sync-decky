@@ -112,7 +112,10 @@ src/lib/                    pure modules (vitest)
                             an unloaded appid is skipped until next time; hiding and
                             the collection fail independently; turning the collection
                             setting off is the only thing that deletes it, besides an
-                            empty member list)
+                            empty member list after a `remove` (`pending.last_kind`) or
+                            of an already empty collection -- never a non-empty one a
+                            fresh install finds under that name; `entries` and the run
+                            guard are read *after* the wait)
   layouts.ts                DEFAULT_LAYOUT_STRATEGY (the one switch), layoutStrategy(),
                             copyEnabled(), the SteamInput seam, isUnselected() (no URL,
                             default://, or bSelected false), copyLayout() (the §3.10
