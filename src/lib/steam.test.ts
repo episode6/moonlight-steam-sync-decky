@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   buildOwnedMap,
+  clearConfigAvailable,
   controllerConfiguratorAvailable,
   currentSteamId3,
   controllerIndex,
@@ -221,6 +222,21 @@ describe("the layout seam over the globals (spec 3.10)", () => {
     await input.setConfig(0x80000001, 15, "workshop://620");
     // the fifth argument is what makes the selection stick (PR-0 probe V2)
     expect(sets).toEqual([[0x80000001, 15, "workshop://620", false, 1]]);
+  });
+
+  it("clears a selection through ClearSelectedConfigForApp with the appid and index, only when the client has it", async () => {
+    // absent on the stubbed client above: the seam has no clearConfig at all
+    expect(clearConfigAvailable()).toBe(false);
+    expect(steamInput().clearConfig).toBeUndefined();
+    const clears: unknown[][] = [];
+    (g.SteamClient as { Input: Record<string, unknown> }).Input.ClearSelectedConfigForApp = async (...args: unknown[]) => {
+      clears.push(args);
+    };
+    expect(clearConfigAvailable()).toBe(true);
+    const input = steamInput();
+    await input.clearConfig!(0x80000001, 15);
+    expect(clears).toEqual([[0x80000001, 15]]);
+    expect(sets).toEqual([]);
   });
 
   it("overviewLoaded asks appStore for the shortcut's overview", () => {

@@ -12,6 +12,7 @@ import {
   filterCounts,
   filterRows,
   joinTitles,
+  layoutSourceOf,
   layoutTargetOf,
   loadMoreLabel,
   matchSummary,
@@ -519,9 +520,13 @@ describe("the layout text per row (spec 3.10)", () => {
     "2987654321": { real_appid: 1244090, result: "kept" as const, url: "template://sea.vdf", when },
   };
 
-  it("stream rows carry copied / own layout / Steam default / unavailable from layouts.json", () => {
+  it("rows carry default layout / copied / own layout / Steam default / unavailable from layouts.json", () => {
     const rows = joinTitles(apps, entries, [], layouts);
     expect(byName(rows, "Balatro").layout).toBe("copied");
+    const applied = joinTitles(apps, entries, [], {
+      "2718281828": { real_appid: 2379780, result: "default", url: "workshop://1", when, applied: "workshop://1" },
+    });
+    expect(byName(applied, "Balatro").layout).toBe("default layout");
     expect(byName(rows, "Sea of Stars").layout).toBe("own layout");
     const kept = joinTitles(apps, entries, [], {
       "2718281828": { real_appid: 2379780, result: "kept", url: "default://balatro", when },
@@ -546,13 +551,32 @@ describe("the layout text per row (spec 3.10)", () => {
     }
   });
 
-  it("names the pair Choose layout and the copy work on", () => {
+  it("names the pair Choose layout works on", () => {
     const rows = joinTitles(apps, entries, [], layouts);
     expect(byName(rows, "Balatro").layoutTarget).toEqual({ shortcutAppid: 2718281828, realAppid: 2379780 });
     expect(byName(rows, "Sea of Stars").layoutTarget).toEqual({ shortcutAppid: 2987654321, realAppid: 1244090 });
     expect(layoutTargetOf("stream", null)).toBeNull();
     expect(layoutTargetOf("shortcut", entries[0])).toBeNull();
     expect(layoutTargetOf("stream", { ...entries[0], parked: true })).toBeNull();
+  });
+
+  it("layoutSource: the entry Use as the default layout adopts from, on every non-parked row (spec 3.16.5)", () => {
+    const rows = rowsOf();
+    expect(byName(rows, "Balatro").layoutSource).toBe(2718281828); // a Stream entry
+    expect(byName(rows, "Hades II").layoutSource).toBe(3000000011); // a visible shortcut
+    expect(byName(rows, "Tunic").layoutSource).toBe(3000000007); // unmatched, still an entry
+    expect(byName(rows, "Desktop").layoutSource).toBe(3000000101); // a host app
+    expect(byName(rows, "Spiritfarer").layoutSource).toBeNull(); // parked
+    expect(byName(rows, "Demo Launcher").layoutSource).toBeNull(); // ignored: no entry
+    expect(byName(rows, "Sea of Stars (GOG)").layoutSource).toBeNull(); // duplicate: no entry
+    expect(layoutSourceOf(null)).toBeNull();
+    expect(layoutSourceOf({ ...entries[0], parked: true })).toBeNull();
+    // the row's layout text follows the same entry, so a visible shortcut shows its walk result too
+    const walked = joinTitles(apps, entries, [], {
+      "3000000011": { real_appid: 1145360, result: "default", url: "workshop://1", when, applied: "workshop://1" },
+    });
+    expect(byName(walked, "Hades II").layout).toBe("default layout");
+    expect(byName(walked, "Hades II").layoutTarget).toBeNull();
   });
 
   it("a host-app row is picker only: a target with no real appid (spec 3.14.1)", () => {

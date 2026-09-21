@@ -1,11 +1,12 @@
-import { DialogButton, Field, Focusable, Spinner, showModal } from "@decky/ui";
+import { ConfirmModal, DialogButton, Field, Focusable, Menu, MenuItem, Spinner, showContextMenu, showModal } from "@decky/ui";
 import { toaster } from "@decky/api";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import { controller } from "../instance";
 import { errorText, isFailure, type PinnedEvent } from "../lib/cli";
-import type { TitlesData, TitlesLoad } from "../lib/controller";
+import type { LayoutInspection, TitlesData, TitlesLoad } from "../lib/controller";
 import { relativeTime } from "../lib/format";
+import { layoutStrategy } from "../lib/layouts";
 import {
   applyPin,
   FILTERS,
@@ -56,25 +57,84 @@ function Thumb({ url }: { url: string | null }) {
   return <img src={url} loading="lazy" style={box} onError={() => setFailed(true)} alt="" />;
 }
 
+/** The toast for a title *Use as the default layout* cannot adopt from (spec 3.16.5), the texts exactly. */
+export function inspectionToast(name: string, reason: Exclude<LayoutInspection, { ok: true }>["reason"]): string {
+  switch (reason) {
+    case "no-controller":
+      return "Connect a controller first";
+    case "unselected":
+      return `“${name}” has no layout chosen yet. Use Choose layout first.`;
+    case "not-shareable":
+      return (
+        `This layout was edited in place and only exists for “${name}”. ` +
+        "In Steam's layout screen choose Export, select the exported copy, then try again."
+      );
+  }
+}
+
+/**
+ * *Use as the default layout* (spec 3.16.5, Decision 43): read the title's
+ * selection, refuse what cannot be shared, and confirm before every entry
+ * gets it.
+ */
+async function adoptAsDefault(row: TitleRow) {
+  const source = row.layoutSource;
+  if (source === null) return;
+  const found = await controller.inspectLayout(source);
+  if (!found.ok) {
+    toaster.toast({ title: "Moonlight Sync", body: inspectionToast(row.name, found.reason) });
+    return;
+  }
+  showModal(
+    <ConfirmModal
+      strTitle={`Use “${found.title}” as the default layout?`}
+      strDescription="Every streaming title without a layout of its own gets it, now and after each sync. Titles whose layout you chose yourself are left alone."
+      strOKButtonText="Use as default"
+      strCancelButtonText="Cancel"
+      onOK={() => {
+        void controller.setDefaultLayout(found.url, found.title);
+      }}
+    />,
+  );
+}
+
 function Row({
   row,
   locked,
   ignoring,
   canChooseLayout,
+  canSetDefault,
   onChangeMatch,
   onIgnore,
-  onChooseLayout,
 }: {
   row: TitleRow;
   /** A run is going: both edits are held until it finishes. */
   locked: boolean;
   ignoring: boolean;
-  /** `SteamClient.Apps.ShowControllerConfigurator` exists (else the action is hidden, spec 3.10). */
+  /** `SteamClient.Apps.ShowControllerConfigurator` exists (else *Choose layout…* is hidden, spec 3.10). */
   canChooseLayout: boolean;
+  /** The strategy is `copy` (under `picker` the default layout is off and hidden, spec 3.16). */
+  canSetDefault: boolean;
   onChangeMatch(): void;
   onIgnore(): void;
-  onChooseLayout(): void;
 }) {
+  const chooseLayout = row.layoutTarget && canChooseLayout ? row.layoutTarget : null;
+  const useAsDefaultSource = canSetDefault ? row.layoutSource : null;
+  // The *Layout* menu (Decision 50): both layout actions in one button.
+  const layoutMenu = (event: MouseEvent) =>
+    showContextMenu(
+      <Menu label={row.name}>
+        {chooseLayout ? (
+          <MenuItem onSelected={() => void controller.chooseLayout(chooseLayout.shortcutAppid, chooseLayout.realAppid)}>
+            Choose layout…
+          </MenuItem>
+        ) : null}
+        {useAsDefaultSource !== null ? (
+          <MenuItem onSelected={() => void adoptAsDefault(row)}>Use as the default layout</MenuItem>
+        ) : null}
+      </Menu>,
+      event.currentTarget ?? undefined,
+    );
   return (
     <Focusable
       flow-children="horizontal"
@@ -112,9 +172,9 @@ function Row({
           Change match
         </DialogButton>
       ) : null}
-      {row.layoutTarget && canChooseLayout ? (
-        <DialogButton style={SMALL} onClick={onChooseLayout}>
-          Choose layout
+      {chooseLayout || useAsDefaultSource !== null ? (
+        <DialogButton style={SMALL} onClick={layoutMenu}>
+          Layout
         </DialogButton>
       ) : null}
       {row.ignoredBy === "config" ? (
@@ -147,10 +207,12 @@ function headline(data: TitlesData, rows: readonly TitleRow[]): string {
  * every title the active host publishes, joined from `list` and `status`,
  * with what the next sync does with it. Rows render 50 at a time with a
  * load-more row; *Change match* opens the picker, *Ignore* / *Unignore*
- * edits `ignore.json`. A Stream button's row also shows its last layout
- * result ("copied" / "own layout" / "Steam default" / "unavailable", spec
- * 3.10) and has *Choose layout*, Steam's own picker for the hidden shortcut
- * (hidden when the client lacks it). Nothing here restarts Steam: a pin or
+ * edits `ignore.json`. A row with a non-parked entry also shows its last
+ * layout result ("default layout" / "own layout" / "Steam default" /
+ * "unavailable", spec 3.10, 3.16) and has a *Layout* menu: *Choose
+ * layout…*, Steam's own picker for the hidden shortcut (hidden when the
+ * client lacks it), and *Use as the default layout*, which adopts this
+ * title's layout for every entry (spec 3.16.5). Nothing here restarts Steam: a pin or
  * an ignore takes effect on the next sync. While a run is going the list
  * comes from the CLI's per-host cache (no live `list` racing the run), both
  * row edits are locked, and the page refreshes when the run finishes.
@@ -197,6 +259,7 @@ export function TitlesPage() {
     [data, layouts],
   );
   const canChooseLayout = controller.canChooseLayout();
+  const canSetDefault = layoutStrategy(state.settings) === "copy";
   const shown = useMemo(() => filterRows(rows, filter, showParked), [rows, filter, showParked]);
   const counts = useMemo(() => filterCounts(rows, showParked), [rows, showParked]);
   const page = pageOf(shown, pages);
@@ -322,12 +385,9 @@ export function TitlesPage() {
             locked={running}
             ignoring={ignoring === row.name}
             canChooseLayout={canChooseLayout}
+            canSetDefault={canSetDefault}
             onChangeMatch={() => changeMatch(row)}
             onIgnore={() => void toggleIgnore(row)}
-            onChooseLayout={() => {
-              const target = row.layoutTarget;
-              if (target) void controller.chooseLayout(target.shortcutAppid, target.realAppid);
-            }}
           />
         ))}
         {page.hasMore ? (

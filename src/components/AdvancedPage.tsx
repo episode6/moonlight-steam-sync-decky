@@ -1,27 +1,53 @@
-import { ButtonItem, ConfirmModal, SliderField, ToggleField, showModal } from "@decky/ui";
+import { ButtonItem, ConfirmModal, DialogButton, Field, SliderField, ToggleField, showModal } from "@decky/ui";
 
 import { controller } from "../instance";
-import { layoutStrategy } from "../lib/layouts";
+import { relativeTime } from "../lib/format";
+import { defaultLayoutOf, layoutKindText, layoutStrategy } from "../lib/layouts";
 import { hideStreamEnabled, STREAMING_COLLECTION, streamingCollectionEnabled } from "../lib/library";
 import { actionsReady } from "../lib/state";
 import { useStore } from "./useStore";
 
+/** The *Default controller layout* field's text (spec 3.16.5). */
+export function defaultLayoutDescription(
+  settings: Parameters<typeof defaultLayoutOf>[0],
+  now: Date = new Date(),
+): string {
+  if (layoutStrategy(settings) === "picker") {
+    return 'Off for this device: settings.json sets layout_strategy to "picker", so layouts are only chosen by hand (Titles → Layout → Choose layout…)';
+  }
+  const def = defaultLayoutOf(settings);
+  if (!def) return "None. Titles → Layout → Use as the default layout, on a title you have set up";
+  const set = def.when ? ` · set ${relativeTime(def.when, now)}` : "";
+  return `${def.title} · ${layoutKindText(def.url)}${set}`;
+}
+
 /**
- * Settings → Advanced (spec 3.8): the layout-copy toggle (spec 3.10: read on
- * every Stream press and by the post-restart walk), *Hide Stream shortcuts*
- * and the *Streaming* collection (spec 3.15), the restart countdown,
- * and *Remove everything this plugin created*.
+ * Settings → Advanced (spec 3.8): the default controller layout (spec 3.16:
+ * shown, and cleared, here; adopted from a title's row on the Titles page),
+ * *Hide Stream shortcuts* and the *Streaming* collection (spec 3.15), the
+ * restart countdown, and *Remove everything this plugin created*.
  */
 export function AdvancedPage() {
   const state = useStore(controller.store);
   const settings = state.settings;
   const entries = state.entries?.length ?? null;
   const picker = layoutStrategy(settings) === "picker";
+  const defaultLayout = defaultLayoutOf(settings);
   const canHide = controller.canHideShortcuts();
   const canCollect = controller.canKeepCollection();
-  const copyDescription = picker
-    ? "Off for this device: settings.json sets layout_strategy to \"picker\", so layouts are only chosen by hand (Titles → Choose layout)"
-    : "When a hidden Stream shortcut has no layout of its own, give it the one chosen for the real game (on each Stream press and after a sync's restart)";
+
+  const clearDefault = () =>
+    showModal(
+      <ConfirmModal
+        strTitle="Clear the default layout?"
+        strDescription="It is taken off every title that still has it. Titles whose layout you chose yourself are left alone."
+        strOKButtonText="Clear"
+        strCancelButtonText="Cancel"
+        onOK={() => {
+          void controller.setDefaultLayout(null, null);
+        }}
+      />,
+    );
 
   const removeAll = () =>
     showModal(
@@ -39,13 +65,17 @@ export function AdvancedPage() {
 
   return (
     <div>
-      <ToggleField
-        label="Copy controller layouts from the Steam game"
-        description={copyDescription}
-        checked={!!settings?.copy_layouts}
-        disabled={!settings || picker}
-        onChange={(checked) => void controller.setSettings({ copy_layouts: checked })}
-      />
+      <Field label="Default controller layout" description={defaultLayoutDescription(settings)} focusable={picker}>
+        {picker ? null : (
+          <DialogButton
+            style={{ minWidth: 0, width: "auto", padding: "6px 14px" }}
+            disabled={!settings || !defaultLayout || state.walking}
+            onClick={clearDefault}
+          >
+            Clear
+          </DialogButton>
+        )}
+      </Field>
       <ToggleField
         label="Hide Stream shortcuts"
         description={

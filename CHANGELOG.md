@@ -8,14 +8,36 @@ project uses [semantic versioning](https://semver.org/).
 
 ### Added
 
-- Backend half of the default controller layout (spec §3.16, PR-9): a
-  `default_layout` setting, changed only through the new
-  `set_default_layout` callable (a `workshop://` or `template://` URL, or
-  `null` to clear); `layouts.json` entries gain an `applied` field (the last
-  URL the plugin itself set on a shortcut, which today's layout copy fills
-  in too, so a copy made now still moves to the default later) and a new
-  `default` result. No frontend behaviour changes yet — nothing calls the
-  new callable until PR-10.
+- **A default controller layout** (spec §3.16). Everything the plugin
+  manages is a stream, so every entry now starts on one layout you pick
+  once: on the Titles page, a title you have set up with Steam's own
+  configurator gets **Layout → Use as the default layout**, and the plugin
+  puts that layout on every entry it manages (Stream buttons' hidden
+  shortcuts, visible shortcuts, `Desktop` / `Steam Big Picture` and the
+  Moonlight entry) — on each Stream press, after each sync's restart, and
+  at once when the default changes. Only a community layout, an exported
+  personal layout or a Steam template can be the default; a layout edited
+  in place is refused with a note to export it first. **A layout you chose
+  yourself is never overwritten**, not by a press, a sync or a change of the
+  default; a title still on the plugin's earlier default (including one
+  copied from its Steam game by an older version) moves to the new one.
+  Settings → Advanced → *Default controller layout* shows it and has
+  **Clear**, which takes the plugin's layout off every title that still has
+  it (through a Steam client call not yet measured on a device; on a client
+  without it the default is still cleared and titles keep their layout).
+  Backend: a `default_layout` setting, changed only through the new
+  `set_default_layout` callable; `layouts.json` entries gain an `applied`
+  field (the last URL the plugin itself set on a shortcut) and a `default`
+  result.
+
+### Removed
+
+- **Copying the controller layout from the real Steam game**, and the
+  Settings → Advanced toggle *Copy controller layouts from the Steam game*.
+  The default layout above replaces it: the real game's layout is never read
+  again (`copy_layouts` stays a valid, unused key in `settings.json`). The
+  Titles row's *Choose layout* button is now the *Layout* menu, with
+  *Choose layout…* and *Use as the default layout*.
 
 ## [0.4.0] - 2026-09-21
 

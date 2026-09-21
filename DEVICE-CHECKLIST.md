@@ -231,25 +231,33 @@ to `~/homebrew/logs/steam-input-probe/steam-input-probe.log` (the loader's
 
 ## 4. PR-7: Stream button and controller layouts
 
+*The layout items in this section were written for the copy from the real
+Steam game, which spec 3.16 (§8 below) replaced with a default layout you
+adopt: nothing copies from the real game any more, there is no Advanced
+toggle, and the Titles row's *Choose layout* is now **Layout → Choose
+layout…**. Run the button, guard, route-patch, picker-strategy and
+controller-index items here as written; the copy-specific ones are marked
+and superseded by §8.*
+
 - [ ] **Button placement.** With a host active and a sync done, open the
       library page of an owned game the host publishes: expect a Stream
       row. Open a game the host does not publish (or one parked / matched
       to nothing): expect no Stream row.
-- [ ] **First press copies a community layout.** Pick a `workshop://`
-      layout on the real game in Steam's controller settings, then press
-      *Stream*. Expect the hidden shortcut to launch with the same layout,
-      and `cat ~/homebrew/settings/"Moonlight Sync"/layouts.json` to show
-      that shortcut appid with result `"copied"` and the same `workshop://`
-      URL; the Titles row reads "copied".
+- [ ] ~~**First press copies a community layout.**~~ Superseded by §8
+      (nothing copies from the real game any more). With **no default
+      layout set**, press *Stream* on a game whose real entry has a
+      `workshop://` layout: expect the launch with no layout change and no
+      `layouts.json` write.
 - [ ] **A hand-picked layout on the hidden entry is never overwritten.**
-      Pick a different layout on the hidden shortcut (Titles row's *Choose
-      layout*, or Steam's own picker), press *Stream* again, then *Sync
-      now* and restart when prompted. Expect the hidden shortcut to keep
-      the hand-picked layout after both, `layouts.json` to read `"kept"`
-      with that URL, the row to read "own layout".
-- [ ] **Steam default.** On a real game left on Steam's default layout,
-      press *Stream*: expect `layouts.json` to record `"kept"`, the row to
-      read "Steam default", and no layout set on the hidden shortcut.
+      Pick a layout on the hidden shortcut (Titles row's *Layout → Choose
+      layout…*, or Steam's own picker), set a different default layout
+      (§8), press *Stream*, then *Sync now* and restart when prompted.
+      Expect the hidden shortcut to keep the hand-picked layout after all
+      three, `layouts.json` to read `"kept"` with that URL and `"applied":
+      null`, the row to read "own layout".
+- [ ] ~~**Steam default.**~~ Superseded by §8: with a default set, a
+      hidden shortcut on Steam's default gets the default layout on its
+      first press (`"default"`); without one, nothing is written.
 - [ ] **One row, however often the page is opened.** Open the same owned
       game's library page several times, backing out to the library and in
       again between each (and switch to another game's page and back).
@@ -260,27 +268,29 @@ to `~/homebrew/logs/steam-input-probe/steam-input-probe.log` (the loader's
 - [ ] **Running-app guard.** Launch any game, then open another published
       game's library page and press *Stream*: expect only the toast
       "Something is already running", no launch, no `layouts.json` change.
-- [ ] **Advanced toggle.** Turn off "Copy controller layouts from the Steam
-      game" and press *Stream* on a game with a community layout: expect
-      the launch with no copy (`layouts.json` unchanged); turn it back on
-      and expect the next press to copy.
-- [ ] **Post-restart layout walk.** Make a sync write shortcuts, restart
-      when prompted, wait up to 90 s after Steam is back. Expect
-      `layouts.json` to gain an entry per Stream button (copied / kept /
-      unavailable), the log to show the walk starting, each pair, and
-      "layout walk done"; the panel to show no restart row afterward.
-- [ ] **Choose layout.** On a Stream row, press *Choose layout*: expect
-      Steam's controller configurator to open for the hidden shortcut (its
-      title matching the game), `layouts.json` to record `"picker"` for
-      that appid; on a client without
-      `SteamClient.Apps.ShowControllerConfigurator` expect the action to be
-      absent instead of erroring.
+- [ ] ~~**Advanced toggle.**~~ Removed: the toggle is gone (spec Decision
+      47). Settings → Advanced shows *Default controller layout* instead
+      (§8); "no default set" is the off switch.
+- [ ] **Post-restart layout walk.** With a default layout set (§8), make a
+      sync write shortcuts, restart when prompted, wait up to 90 s after
+      Steam is back. Expect `layouts.json` to gain an entry per non-parked
+      entry (default / kept / unavailable), the log to show the walk
+      starting, each target, and "layout walk done"; the panel to show no
+      restart row afterward.
+- [ ] **Choose layout.** On a Stream row, press *Layout* → *Choose
+      layout…*: expect Steam's controller configurator to open for the
+      hidden shortcut (its title matching the game), `layouts.json` to
+      record `"picker"` for that appid; on a client without
+      `SteamClient.Apps.ShowControllerConfigurator` expect the menu item to
+      be absent instead of erroring.
 - [ ] **Picker strategy.** Set `"layout_strategy": "picker"` in
       `settings.json` (§0.4 above) and reload. Expect a Stream press to
       launch with no layout change and no `layouts.json` write, the
-      Advanced toggle disabled with its note, no walk after a sync's
-      restart, and *Choose layout* as the only layout action; remove the
-      key and reload to return to `copy`.
+      Advanced *Default controller layout* field to read "Off for this
+      device…" with no *Clear* button, no walk after a sync's restart, no
+      *Use as the default layout* in any *Layout* menu, and *Choose
+      layout…* as the only layout action; remove the key and reload to
+      return to `copy`.
 - [ ] **Controller index by type.** In the CEF console (or the PR-0 kit)
       with a Bluetooth pad also paired, run
       `ControllerStore.GetControllers().map(c => [c.nControllerIndex,
@@ -353,7 +363,8 @@ first (`moonlight-steam-sync --json status`).
       running; exit it first") and the two layout buttons still work.
 - [ ] **On a client without `SteamClient.Apps.ShowControllerConfigurator`**
       (if one turns up) the rows fall back to the plain full-width launch
-      buttons and the Titles rows have no *Choose layout*.
+      buttons and the Titles rows' *Layout* menus have no *Choose
+      layout…* (only *Use as the default layout*).
 - [ ] **Counters.** Do this one *before* the first sync: `status` carries
       the flag from the upgrade on, so the two still-visible tiles already
       read `host_app: true`. Right after the upgrade *Shortcuts* is two
@@ -361,16 +372,19 @@ first (`moonlight-steam-sync --json status`).
       had no match); *Stream buttons* is unchanged. The sync that hides the
       two then moves none of the three.
 - [ ] **Titles page.** Both rows read **host app**, show under *All* only,
-      and have *Change match*, *Choose layout* and *Ignore*. *Choose
-      layout* opens the same configurator and the row then says `layout:
+      and have *Change match*, *Layout* and *Ignore*. *Layout → Choose
+      layout…* opens the same configurator and the row then says `layout:
       picker opened`. In *Change match* every result reads **art only**,
       including a game this account owns; pin one, sync, and expect the
       entry to stay a hidden host app with new artwork and no Stream button
       on that game's library page.
-- [ ] **No layout copy for them.** After a sync's restart the layout walk
-      never touches the two entries (`layouts.json` has no `copied` / `kept`
-      / `unavailable` record for their appids, only `picker` with
-      `real_appid: null` once *Choose layout* was used).
+- [ ] **No layout copied onto them.** *(Written for the layout copy that
+      spec 3.16 replaced; §8 covers them now.)* Without a default layout
+      set, after a sync's restart the layout walk never touches the two
+      entries (`layouts.json` has no `copied` / `kept` / `unavailable`
+      record for their appids, only `picker` with `real_appid: null` once
+      *Choose layout…* was used). With a default set they get it, like
+      every other entry (§8).
 - [ ] **Ignore removes the button.** Ignore `Desktop` on the Titles page and
       sync: the entry is removed and the panel's *Desktop* row is gone.
       Unignore and sync: it comes back, hidden from the start.
@@ -430,7 +444,88 @@ measurement.
       library flickers and `collectionStore` is not written again (the
       reconcile only applies differences).
 
-## 8. Fixtures vs. real CLI
+## 8. The default controller layout (spec 3.16)
+
+The plugin never reads the real game's layout any more: one layout you
+adopt from a title is put on every entry the plugin manages, and a
+selection the plugin did not make is never overwritten (`applied` in
+`layouts.json` is what the plugin last set per shortcut). Two things here
+are unmeasured on any device: whether a `template://` layout sticks on
+other titles, and the name and arguments of the call that clears a
+selection (`SteamClient.Input.ClearSelectedConfigForApp(appid,
+controllerIndex)`, spec 3.16.3 **[verify]**). Do this section with a
+controller connected; *Use as the default layout* answers "Connect a
+controller first" otherwise.
+
+- [ ] **Adopt a community layout.** On a title's row (Titles page) whose
+      hidden shortcut you gave a `workshop://` community layout (*Layout →
+      Choose layout…*), press *Layout → Use as the default layout*. Expect
+      a confirm titled `Use “<layout title>” as the default layout?`; after
+      OK, a toast `Default layout applied to N titles` (N = every non-parked
+      entry that had no layout of its own, host apps and the Moonlight entry
+      included) plus ` · M kept their own` for the ones that had; Settings →
+      Advanced → *Default controller layout* reading `<title> · Workshop
+      layout · set today …`; `layouts.json` with `"default"` and `"applied"`
+      set to the URL for each. A fresh title (a game the host just started
+      publishing, after its sync and restart) streams on it without any
+      press first, and its Titles row reads "default layout".
+- [ ] **Adopt a `template://` layout [verify].** Pick one of Steam's own
+      templates on a title, adopt it. Expect the same toast; check
+      `layouts.json`: every other entry must read `"default"` with the
+      `template://` URL. If they read `"unavailable"` instead (the URL did
+      not stick when read back), report it: `template://` then has to come
+      out of `DEFAULT_LAYOUT_SCHEMES` (spec 3.16.1, Decision 49), a
+      Fable-class decision.
+- [ ] **An edited-in-place layout is refused.** Edit a title's layout in
+      Steam's layout screen without exporting it (it reads
+      `autosave:///…`), then *Use as the default layout* on it. Expect only
+      the toast `This layout was edited in place and only exists for
+      “<name>”. In Steam's layout screen choose Export, select the exported
+      copy, then try again.`, no confirm, no change.
+- [ ] **An exported personal layout works.** Export that layout, select the
+      exported copy on the title (it now reads `workshop://…`), adopt it:
+      expect the normal confirm and toast.
+- [ ] **A title with no layout is refused.** On a row whose entry was never
+      given a layout (reads `default://…`, or a `template://` Steam only
+      offers), expect the toast `“<name>” has no layout chosen yet. Use
+      Choose layout first.`
+- [ ] **Hand-picked survives, plugin-applied moves.** With a default set,
+      pick a different layout by hand on one title (*Choose layout…*), then
+      adopt a *second* default from another title. Expect the hand-picked
+      title unchanged (`"kept"`, `"applied": null`, row "own layout"), every
+      plugin-applied title on the new default, the title you adopted *from*
+      unchanged, and the toast's `M kept their own` counting the hand-picked
+      one and the source.
+- [ ] **A pre-upgrade copied title moves.** On an install upgraded from a
+      version that copied layouts from the real game (`layouts.json` has
+      `"copied"` records without an `"applied"` key), set a default: expect
+      those titles to move to it (Decision 46) as long as their selection is
+      still the copied URL.
+- [ ] **Clear [verify].** Settings → Advanced → *Clear*: expect the confirm
+      `Clear the default layout?`, then the toast `Default layout cleared ·
+      removed from N titles`. Every plugin-applied title must be back on
+      Steam's default (the layout screen shows nothing selected; the row
+      reads "Steam default", `"applied": null`), and hand-picked ones must
+      keep their layout. In the CEF console first check `typeof
+      SteamClient.Input.ClearSelectedConfigForApp`: if it is not
+      `"function"`, the toast reads `Default layout cleared. This Steam
+      client cannot unset a layout, so titles keep the one they have.` and
+      nothing changes on any title; if it is a function but titles are not
+      back on Steam's default afterwards (`"unavailable"` with the old URL
+      in `layouts.json`), the call's name or arguments are wrong: report
+      it (spec 3.16.3), do not guess at another.
+- [ ] **A sync's new titles get it after the restart.** With a default
+      set, add a title on the host, *Sync now*, restart: within 90 s the new
+      shortcut is on the default (`layouts.json`, and the layout screen).
+- [ ] **The host apps, the client entry and a visible shortcut get it.**
+      After any of the above, check `layouts.json` for `Desktop`, `Steam
+      Big Picture`, `Moonlight` and a visible (non-Stream) shortcut:
+      `"default"` with `"real_appid": null` for the first three.
+- [ ] **Not held back.** Start a game, then adopt or clear a default from
+      the Titles page: it goes through (the toast appears) while the game
+      runs; a Stream press is still refused meanwhile.
+
+## 9. Fixtures vs. real CLI
 
 - [ ] Run, on the device, against the real installed CLI:
       `moonlight-steam-sync --json list --hide-host-apps`, `--json status

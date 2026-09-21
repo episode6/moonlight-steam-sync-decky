@@ -2,7 +2,7 @@ import { DialogButton, Focusable } from "@decky/ui";
 import { useState, type CSSProperties } from "react";
 
 import { controller } from "../instance";
-import { copyEnabled, layoutLine } from "../lib/layouts";
+import { defaultLayoutOf, layoutLine } from "../lib/layouts";
 import { layoutEntryFor } from "../lib/state";
 import { useStore } from "./useStore";
 
@@ -26,9 +26,10 @@ interface Props {
  * The Stream button on an owned game's library page (spec 3.9, mockup
  * screen 3), injected by `routes/libraryApp.tsx`. Renders nothing unless the
  * stream map has this appid (a hidden shortcut exists for it and the active
- * host publishes it). A press copies the controller layout when enabled,
- * then runs the hidden shortcut through Steam; while a game is running it
- * only toasts (the controller's guard).
+ * host publishes it). A press puts the default controller layout on the
+ * hidden shortcut when one is set (spec 3.16), then runs the shortcut
+ * through Steam; while a game is running it only toasts (the controller's
+ * guard). The layout line shows only while a default is set.
  */
 export function StreamButton({ appid, name }: Props) {
   const state = useStore(controller.store);
@@ -38,8 +39,8 @@ export function StreamButton({ appid, name }: Props) {
 
   const host = state.hosts?.active ?? "the host";
   const title = name ?? String(appid);
-  const layout = copyEnabled(state.settings)
-    ? `Controller layout: ${busy ? "copying…" : layoutLine(layoutEntryFor(state, shortcut))}`
+  const layout = defaultLayoutOf(state.settings)
+    ? `Controller layout: ${busy ? "applying…" : layoutLine(layoutEntryFor(state, shortcut))}`
     : "";
   const press = async () => {
     setBusy(true);
