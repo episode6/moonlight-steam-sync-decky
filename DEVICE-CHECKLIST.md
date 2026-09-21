@@ -133,6 +133,10 @@ to `~/homebrew/logs/steam-input-probe/steam-input-probe.log` (the loader's
       later, and a fresh *Sync now* afterwards to start exactly one run.
 - [ ] **Open Moonlight** launches the client shortcut without picking a
       game.
+- [ ] **Desktop** / **Steam Big Picture** show on the panel when the active
+      host publishes them, each starts its stream with the controller
+      layout chosen on that shortcut, and neither shows once its entry is
+      ignored and synced away.
 - [ ] **Backend not answering at load.** Force the failure (open the panel
       immediately at Game Mode start, or temporarily rename
       `~/homebrew/plugins/Moonlight Sync/py_modules` to break a callable).

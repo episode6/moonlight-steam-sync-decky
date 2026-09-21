@@ -122,6 +122,11 @@ CLI release)" and you can install the CLI with its own `install.sh`.
 - **Open Moonlight**: starts the Moonlight client itself, through a hidden
   "Moonlight" shortcut the first sync creates (until then it reads "Sync
   once to enable").
+- **Desktop** and **Steam Big Picture**: the two entries every Sunshine /
+  Apollo host publishes by default get a button each, which launches that
+  entry's synced shortcut. A button only shows when the active host
+  publishes the entry and it is not ignored (an ignored entry has no
+  shortcut to launch).
 - Four counters from the last status: **Stream buttons** (hidden entries for
   games you own), **Shortcuts**, **Unmatched**, **Ignored**; and **Last
   sync** ("Today 14:02 · 2 added, 1 removed").

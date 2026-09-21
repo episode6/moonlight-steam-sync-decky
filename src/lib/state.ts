@@ -81,6 +81,35 @@ export function clientAppid(entries: readonly EntryEvent[]): number | null {
 }
 
 /**
+ * The two entries every Sunshine / Apollo host publishes out of the box, in
+ * the order the panel shows them. They get a launch button each on the panel.
+ */
+export const HOST_APPS = [
+  { key: "desktop", name: "Desktop", description: "Stream the host's desktop" },
+  { key: "bigPicture", name: "Steam Big Picture", description: "Stream the host's Steam in Big Picture" },
+] as const;
+
+export type HostAppKey = (typeof HOST_APPS)[number]["key"];
+
+/**
+ * The shortcut appid per default host app, or `null` when the active host
+ * does not publish it (or it is ignored, so it has no entry). Matched on the
+ * Moonlight name, never `app_name`, and regardless of `hidden`, so the
+ * buttons keep working whichever way the CLI writes these two.
+ */
+export function hostAppsFromStatus(entries: readonly EntryEvent[]): Record<HostAppKey, number | null> {
+  const apps: Record<HostAppKey, number | null> = { desktop: null, bigPicture: null };
+  for (const app of HOST_APPS) {
+    const wanted = app.name.toLowerCase();
+    const entry = entries.find(
+      (e) => !e.client && !e.parked && e.published && e.name.trim().toLowerCase() === wanted,
+    );
+    if (entry) apps[app.key] = entry.appid;
+  }
+  return apps;
+}
+
+/**
  * The host row's subtitle (spec 3.8): the other known hosts and how many
  * titles each has parked.
  *
@@ -232,6 +261,8 @@ export interface AppState {
   counters: Counters | null;
   streamMap: Map<number, number>;
   clientAppid: number | null;
+  /** The *Desktop* / *Steam Big Picture* shortcuts, when the host publishes them. */
+  hostApps: Record<HostAppKey, number | null>;
   reach: HostCheck | null;
   reachLoading: boolean;
   /** Ignored names, for the counter when `check_host` did not count them. */
@@ -260,6 +291,7 @@ export function initialState(): AppState {
     counters: null,
     streamMap: new Map(),
     clientAppid: null,
+    hostApps: { desktop: null, bigPicture: null },
     reach: null,
     reachLoading: false,
     ignoredCount: null,
@@ -287,6 +319,7 @@ export function withStatus(state: AppState, entries: EntryEvent[]): AppState {
     counters: countersFromStatus(entries),
     streamMap: streamMapFromStatus(entries),
     clientAppid: clientAppid(entries),
+    hostApps: hostAppsFromStatus(entries),
   };
 }
 
