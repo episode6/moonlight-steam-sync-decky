@@ -39,6 +39,18 @@ def test_frontend_never_calls_the_live_shortcut_apis() -> None:
     assert offenders == []
 
 
+def test_the_client_library_is_only_touched_in_steam_ts() -> None:
+    """Spec 3.15's one exception: hidden state and the Streaming collection,
+    through collectionStore, in `libraryPort()` and nowhere else."""
+    call = re.compile(r"\b(SetAppsAsHidden|NewUnsavedCollection|AsDragDropCollection)\b")
+    users = {
+        str(path.relative_to(ROOT))
+        for path in source_files()
+        if not path.name.endswith(".test.ts") and call.search(path.read_text())
+    }
+    assert users == {"src/lib/steam.ts"}
+
+
 def test_backend_never_names_config_toml_for_writing() -> None:
     """keys.py reads config.toml with tomllib; nothing opens it for writing."""
     for path in (ROOT / "py_modules").rglob("*.py"):

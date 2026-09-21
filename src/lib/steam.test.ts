@@ -5,6 +5,7 @@ import {
   controllerConfiguratorAvailable,
   currentSteamId3,
   controllerIndex,
+  libraryPort,
   overviewLoaded,
   ownedApps,
   showControllerConfigurator,
@@ -236,5 +237,83 @@ describe("the layout seam over the globals (spec 3.10)", () => {
     (g.SteamClient as { Apps: object }).Apps = {};
     expect(controllerConfiguratorAvailable()).toBe(false);
     expect(showControllerConfigurator(0x80000001)).toBe(false);
+  });
+});
+
+describe("libraryPort (spec 3.15)", () => {
+  const g = globalThis as Record<string, unknown>;
+  afterEach(() => {
+    delete g.collectionStore;
+    delete g.appStore;
+  });
+
+  /** A user collection like the client's: apps by overview, edited through the drag-drop view. */
+  function collection(name: string, log: string[]) {
+    const apps: { appid: number }[] = [];
+    return {
+      displayName: name,
+      get allApps() {
+        return apps;
+      },
+      AsDragDropCollection: () => ({
+        AddApps: (added: { appid: number }[]) => void apps.push(...added),
+        RemoveApps: (removed: { appid: number }[]) => {
+          for (const app of removed) apps.splice(apps.findIndex((a) => a.appid === app.appid), 1);
+        },
+      }),
+      Save: async () => void log.push(`save ${name}`),
+      Delete: async () => void log.push(`delete ${name}`),
+    };
+  }
+
+  it("is inert on a client with no such calls", async () => {
+    const port = libraryPort();
+    expect(port.canHide()).toBe(false);
+    expect(port.canCollect()).toBe(false);
+    expect(port.isHidden(1)).toBeNull();
+    expect(port.collectionApps("Streaming")).toBeNull();
+    port.setHidden([1], true);
+    await port.updateCollection("Streaming", [1], []);
+    await port.deleteCollection("Streaming");
+  });
+
+  it("reads and sets hidden state through collectionStore", () => {
+    const sets: [number[], boolean][] = [];
+    g.collectionStore = {
+      BIsHidden: (appid: number) => appid === 7,
+      SetAppsAsHidden: (appids: number[], hidden: boolean) => void sets.push([appids, hidden]),
+    };
+    const port = libraryPort();
+    expect(port.canHide()).toBe(true);
+    expect(port.isHidden(7)).toBe(true);
+    expect(port.isHidden(8)).toBe(false);
+    port.setHidden([], true);
+    port.setHidden([8, 9], true);
+    expect(sets).toEqual([[[8, 9], true]]);
+  });
+
+  it("creates the collection, then adds and removes by overview, skipping what is not loaded", async () => {
+    const log: string[] = [];
+    const userCollections: ReturnType<typeof collection>[] = [];
+    g.appStore = { GetAppOverviewByAppID: (appid: number) => (appid === 404 ? null : { appid }) };
+    g.collectionStore = {
+      userCollections,
+      NewUnsavedCollection: (name: string) => {
+        const made = collection(name, log);
+        userCollections.push(made);
+        return made;
+      },
+    };
+    const port = libraryPort();
+    expect(port.canCollect()).toBe(true);
+    await port.updateCollection("Streaming", [404], []);
+    expect(userCollections).toEqual([]); // nothing to put in it: not created
+    await port.updateCollection("Streaming", [1, 2, 404], []);
+    expect(port.collectionApps("Streaming")).toEqual([1, 2]);
+    await port.updateCollection("Streaming", [3], [1]);
+    expect(port.collectionApps("Streaming")).toEqual([2, 3]);
+    expect(userCollections).toHaveLength(1);
+    await port.deleteCollection("Streaming");
+    expect(log.at(-1)).toBe("delete Streaming");
   });
 });

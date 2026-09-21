@@ -93,6 +93,8 @@ def test_startup_creates_settings_and_ignore(backend) -> None:
     assert settings["copy_layouts"] is True
     assert settings["retry_missing"] is False
     assert settings["layout_strategy"] == "copy"
+    assert settings["hide_stream_shortcuts"] is True
+    assert settings["streaming_collection"] is True
     assert json.loads(Path(settings_path(backend, "ignore.json")).read_text()) == []
 
 
@@ -1166,6 +1168,10 @@ def test_settings_round_trip_and_validation(backend) -> None:
     assert result["settings"]["restart_countdown_s"] == 0
     assert result["settings"]["copy_layouts"] is False
     assert run(backend.get_settings())["settings"]["restart_countdown_s"] == 0
+    off = {"hide_stream_shortcuts": False, "streaming_collection": False}
+    library = run(backend.set_settings(off))
+    assert library["settings"]["hide_stream_shortcuts"] is False
+    assert library["settings"]["streaming_collection"] is False
     at_max = run(backend.set_settings({"restart_countdown_s": 30}))
     assert at_max["settings"]["restart_countdown_s"] == 30
     for bad in (
@@ -1174,6 +1180,8 @@ def test_settings_round_trip_and_validation(backend) -> None:
         {"restart_countdown_s": -1},
         {"restart_countdown_s": "5"},
         {"copy_layouts": 1},
+        {"hide_stream_shortcuts": "no"},
+        {"streaming_collection": 0},
         {"layout_strategy": "mirror"},
         {"hosts": ["X"]},
         {"surprise": True},

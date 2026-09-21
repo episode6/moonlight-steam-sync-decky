@@ -6,6 +6,25 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **A *Streaming* collection** in the library: every title the active host
+  can stream, as the real Steam game when it has a Stream button and as the
+  Moonlight shortcut otherwise, kept up to date after each sync. Settings →
+  Advanced → *Streaming collection* turns it off (and deletes it).
+- **Settings → Advanced → *Hide Stream shortcuts*** (on by default).
+
+### Fixed
+
+- **Hidden shortcuts are actually hidden.** The Steam client ignores the
+  `IsHidden` field the CLI writes to `shortcuts.vdf`, so every Stream
+  button's shortcut, the Moonlight client entry, `Desktop` / `Steam Big
+  Picture` and parked titles all still showed under *Non-Steam*. The plugin
+  now hides them in the client itself, and shows an entry again whenever
+  the CLI calls it visible (so hide a Moonlight tile with *Ignore*, not with
+  Steam's own *Hide this game*). With *Hide Stream shortcuts* off the Stream-button shortcuts
+  stay visible, so a streamed game comes to the front of Home.
+
 ## [0.3.3] - 2026-09-21
 
 ### Fixed

@@ -277,10 +277,22 @@ export interface Settings {
   restart_countdown_s: number;
   retry_missing: boolean;
   layout_strategy?: LayoutStrategy;
+  /** Hide Stream-button shortcuts in the client (spec 3.15); absent reads as on. */
+  hide_stream_shortcuts?: boolean;
+  /** Keep the *Streaming* collection (spec 3.15); absent reads as on. */
+  streaming_collection?: boolean;
 }
 
 export type SettingsPatch = Partial<
-  Pick<Settings, "copy_layouts" | "restart_countdown_s" | "retry_missing" | "layout_strategy">
+  Pick<
+    Settings,
+    | "copy_layouts"
+    | "restart_countdown_s"
+    | "retry_missing"
+    | "layout_strategy"
+    | "hide_stream_shortcuts"
+    | "streaming_collection"
+  >
 >;
 
 export interface CliVersion {

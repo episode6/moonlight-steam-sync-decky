@@ -385,7 +385,52 @@ first (`moonlight-steam-sync --json status`).
       title comes back, the Moonlight client entry stays. The next *Sync
       now* hides the two again.
 
-## 7. Fixtures vs. real CLI
+## 7. Hidden shortcuts and the Streaming collection (spec 3.15)
+
+None of `collectionStore.SetAppsAsHidden`, `BIsHidden`, `userCollections`,
+`NewUnsavedCollection`, `AsDragDropCollection` or a collection's `Save` /
+`Delete` was probed before this was built; every item here is a first
+measurement.
+
+- [ ] In the CEF console: `typeof collectionStore.SetAppsAsHidden`,
+      `typeof collectionStore.BIsHidden`, `typeof
+      collectionStore.NewUnsavedCollection` are all `"function"`, and
+      Settings → Advanced shows both toggles enabled (a disabled toggle
+      says the client has no such call).
+- [ ] After the plugin loads with an existing install: the *Non-Steam* tab
+      holds only the visible shortcuts (the panel's **Shortcuts** counter),
+      no Stream-button shortcut, no `Moonlight`, no `Desktop` / `Steam Big
+      Picture`, no parked title. They are all under Steam's *Hidden*.
+- [ ] A **Streaming** collection exists and its size is the panel's
+      **Stream buttons** + **Shortcuts**. An owned game in it opens the real
+      game's page (with the Stream button); an unowned one is the shortcut.
+- [ ] A Stream press still launches the (now hidden) shortcut, and the
+      panel's *Open Moonlight*, *Desktop* and *Steam Big Picture* still work.
+- [ ] *Hide Stream shortcuts* off: the Stream-button shortcuts appear under
+      *Non-Steam* within a moment, the other hidden entries do not, and the
+      collection is unchanged. Stream a game, quit: its shortcut is at the
+      front of Home. On again: they are gone again.
+- [ ] *Streaming collection* off: the collection is deleted. On: it is
+      back, complete.
+- [ ] Sync after the host gains a title: once Steam has restarted, the new
+      Stream shortcut is hidden and the game is in the collection without
+      opening the panel (allow 90 s). Note whether the tile is visible for
+      a moment first.
+- [ ] Switch hosts and sync: the first host's visible tiles are hidden
+      (parked) and leave the collection; switching back shows them again.
+- [ ] *Remove everything*: after the restart the collection is gone and
+      Steam's *Hidden* holds none of the plugin's entries.
+- [ ] After a host switch (or an *Ignore* + sync) that removes a visible
+      shortcut: the collection's `allApps` no longer lists its appid (the
+      plugin cannot remove a member whose overview is gone, so the client
+      has to drop it itself).
+- [ ] The first sync on a fresh install creates the collection with every
+      member in it (the port saves a new collection empty, then adds).
+- [ ] Open the panel and the Titles page a few times: nothing in the
+      library flickers and `collectionStore` is not written again (the
+      reconcile only applies differences).
+
+## 8. Fixtures vs. real CLI
 
 - [ ] Run, on the device, against the real installed CLI:
       `moonlight-steam-sync --json list --hide-host-apps`, `--json status

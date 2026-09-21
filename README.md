@@ -186,6 +186,39 @@ only thing the plugin changes on that page. Nothing is written to Steam's
 files by the plugin: the hidden shortcut is the CLI's, and the button just
 runs it.
 
+## Hidden shortcuts and the Streaming collection
+
+The CLI marks the shortcut behind every Stream button (and the Moonlight
+client entry, `Desktop` / `Steam Big Picture`, and another host's parked
+titles) `IsHidden` in `shortcuts.vdf`. The current Steam client ignores that
+field: what is hidden lives in the client's own *Hidden* collection, which
+only the running client can change. So after every `status` (at load, after
+a sync, on the Titles page) the plugin brings the client in line, changing
+only what differs:
+
+- **Hidden.** Every entry the CLI calls hidden is hidden in the client, and
+  every entry it calls visible is shown (which is what brings a parked tile
+  back). Settings → **Advanced** → *Hide Stream shortcuts* (on by default)
+  governs the Stream-button shortcuts only. Turn it off to have them under
+  *Non-Steam* again, where a streamed game comes to the front of Home as
+  its shortcut; the client entry, the two host apps and parked titles stay
+  hidden either way. Because the CLI's word is final here, hide a Moonlight
+  title with **Ignore** on the Titles page rather than Steam's own *Hide
+  this game*, which the next sync would undo.
+- **The *Streaming* collection.** One tile for every title the active host
+  can stream right now: the real Steam game when it has a Stream button,
+  the Moonlight shortcut otherwise. It is found by its name, so renaming it
+  makes the plugin start a new one, and a collection you already have under
+  that name is taken over (anything else in it is removed at the first
+  sync); rename yours first, or turn the setting off before syncing. Settings → **Advanced** → *Streaming
+  collection* (on by default) turns it off, which deletes it; *Remove
+  everything* deletes it too. Collections sync through Steam Cloud, so it
+  shows up on your other machines, where the shortcuts in it do not exist.
+
+Right after a sync's restart both wait (up to 90 s) for the client to load
+its shortcut list; anything still missing then is picked up the next time.
+On a client without these calls the two toggles are disabled and say so.
+
 ## The one restart
 
 Steam only reads `shortcuts.vdf` at startup, so a sync that changes it ends
@@ -411,7 +444,9 @@ Steam's:
 
 `settings.json` also carries `layout_strategy` (`"copy"` or `"picker"`),
 which has no UI: it is the hand-editable switch described under
-"Controller layouts", for trying the fallback on a device.
+"Controller layouts", for trying the fallback on a device; and
+`hide_stream_shortcuts` / `streaming_collection`, the two Advanced toggles
+above.
 
 A pin from the Titles page is written by the CLI itself (`moonlight-steam-sync
 match … --defer-art`) into its own match cache,
@@ -421,9 +456,11 @@ too.
 What the plugin never does: write `shortcuts.vdf`, anything under Steam's
 `userdata/` or `grid/`, or controller config files (the CLI is the one
 writer); call Steam's live shortcut APIs (`AddShortcut`, `RemoveShortcut`,
-`SetShortcutName`, `SetAppLaunchOptions`, `SetAppHiddenState`,
-`SetCustomArtworkForApp`); write the CLI's `config.toml`; run as root; or
-install anything on the gaming PC.
+`SetShortcutName`, `SetAppLaunchOptions`, `SetCustomArtworkForApp`); write
+the CLI's `config.toml`; run as root; or install anything on the gaming PC.
+The one thing it changes in the running client is the hidden state of the
+CLI's own entries and the *Streaming* collection (above), because no file
+the CLI could write does either.
 
 ## Developing
 
