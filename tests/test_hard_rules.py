@@ -48,8 +48,8 @@ def test_backend_never_names_config_toml_for_writing() -> None:
 
 def test_the_cli_pin_lives_only_in_package_json() -> None:
     package = json.loads((ROOT / "package.json").read_text())
-    assert package["moonlightSteamSync"] == "0.3.1"
+    assert package["moonlightSteamSync"] == "0.4.0"
     assert package["license"] == "MIT"
     assert "remote_binary" not in package
     for path in (ROOT / "backend" / "entrypoint.sh", ROOT / ".github" / "workflows" / "ci.yml"):
-        assert "0.3.1" not in path.read_text(), path
+        assert "0.4.0" not in path.read_text(), path

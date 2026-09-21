@@ -16,7 +16,7 @@ section 5), not decided here.
    run build && backend/entrypoint.sh && python3 scripts/package.py`, or
    take the `Moonlight-Sync` artifact from a CI run, and install it by
    hand — `README.md`'s "Manual install". Either way Settings → About
-   should show the bundled and installed CLI both at `0.3.1`; the plugin
+   should show the bundled and installed CLI both at `0.4.0`; the plugin
    installs or upgrades `~/.local/bin/moonlight-steam-sync` on first load.
 2. SSH into the Deck while it sits in Game Mode (`passwd` once in Desktop
    Mode, then `sudo systemctl enable --now sshd`; see `probes/PROBES.md`

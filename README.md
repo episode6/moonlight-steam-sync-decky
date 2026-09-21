@@ -16,8 +16,8 @@ with.
 
 **Status:** released through `v0.1.1`. Its first device run (a generic
 SteamOS machine) produced the `v0.1.1` fixes; it has **not been run on a
-Steam Deck yet** (`DEVICE-CHECKLIST.md`). It bundles moonlight-steam-sync
-**0.3.1** and needs 0.3.0 or newer.
+Steam Deck yet** (`DEVICE-CHECKLIST.md`). `main` bundles moonlight-steam-sync
+**0.4.0** (the `v0.1.1` release bundles 0.3.1) and needs 0.3.0 or newer.
 
 ## Requirements
 

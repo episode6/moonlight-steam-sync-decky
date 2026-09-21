@@ -16,6 +16,10 @@ project uses [semantic versioning](https://semver.org/).
 
 ### Changed
 
+- **Bundles moonlight-steam-sync `v0.4.0`** (the `package.json` pin moved
+  from `0.3.1`). `v0.4.0` adds `--hide-host-apps`, which the plugin does
+  not pass yet, so nothing changes in behaviour and `MIN_CLI_VERSION`
+  stays `0.3.0`.
 - **Change match lists the games you own first.** Search results that this
   account owns (the ones a pin turns into a Stream button) now sit at the
   top of the list, ahead of the other Steam and SteamGridDB results, so
