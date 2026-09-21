@@ -6,6 +6,8 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-21
+
 ### Fixed
 
 - **"Loading your library…" no longer spins forever after a boot.** When the
