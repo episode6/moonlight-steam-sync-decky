@@ -1115,7 +1115,8 @@ class Backend:
         ``--owned-apps`` is passed only when the file exists (spec 3.7), so
         a search still works before the library has loaded (every
         candidate then reads ``owned: false``). Candidates keep the CLI's
-        order; the Change match modal groups them (Steam first).
+        order; the Change match modal groups them (owned first, then Steam
+        before SteamGridDB).
         """
         term = self._title_name(term)
         if term is None:
