@@ -4,8 +4,11 @@
  * running-app watch, and the Steam Input seam for the layout copy (read a
  * selection, set a selection, the index of the controller to copy for) plus
  * Steam's layout picker. Nothing here writes a Steam file: the plugin never
- * calls AddShortcut, RemoveShortcut, SetShortcutName, SetAppLaunchOptions,
- * SetAppHiddenState or SetCustomArtworkForApp.
+ * calls AddShortcut, RemoveShortcut, SetShortcutName, SetAppLaunchOptions
+ * or SetCustomArtworkForApp. The one thing it does change in the client is
+ * `libraryPort()` below (spec 3.15): the hidden state of the CLI's entries
+ * and the *Streaming* collection, both through `collectionStore`, because
+ * the client ignores `IsHidden` in `shortcuts.vdf`.
  *
  * Only globals are used here (`SteamClient`, `collectionStore`, `appStore`,
  * `ControllerStore`, `App`), so this module imports nothing from `@decky/*`;
@@ -20,6 +23,7 @@ import {
   type LayoutConfig,
   type SteamInput,
 } from "./layouts";
+import type { LibraryPort } from "./library";
 
 /** The steam64 of account id 0 (`steam64 - this = steamid3`). */
 export const STEAM64_BASE = 76561197960265728n;
@@ -66,8 +70,21 @@ export function steamId3FromSteam64(steam64: string | null | undefined): number 
   return Number(id);
 }
 
+/** A user collection, as far as `libraryPort()` uses it. */
+interface CollectionLike {
+  displayName?: string;
+  allApps?: AppLike[];
+  AsDragDropCollection?(): { AddApps(apps: unknown[]): void; RemoveApps(apps: unknown[]): void };
+  Save?(): Promise<unknown>;
+  Delete?(): Promise<unknown>;
+}
+
 interface CollectionStoreLike {
   allAppsCollection?: { allApps?: AppLike[] };
+  userCollections?: CollectionLike[];
+  NewUnsavedCollection?(name: string, filter: undefined, apps: unknown[]): CollectionLike | undefined;
+  BIsHidden?(appid: number): boolean;
+  SetAppsAsHidden?(appids: number[], hidden: boolean): void;
 }
 
 function globals(): Record<string, unknown> {
@@ -274,4 +291,75 @@ export function showControllerConfigurator(appid: number): boolean {
   if (!controllerConfiguratorAvailable()) return false;
   SteamClient.Apps.ShowControllerConfigurator(appid);
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// hidden state and the Streaming collection (spec 3.15)
+
+function collections(): CollectionStoreLike | undefined {
+  return globals().collectionStore as CollectionStoreLike | undefined;
+}
+
+function findCollection(name: string): CollectionLike | null {
+  try {
+    return collections()?.userCollections?.find((c) => c?.displayName === name) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** The overviews `AddApps` / `RemoveApps` take; an appid the client has not loaded is left out. */
+function overviews(appids: readonly number[]): unknown[] {
+  const store = globals().appStore as AppStoreLike | undefined;
+  return appids.map((appid) => store?.GetAppOverviewByAppID(appid)).filter((overview) => !!overview);
+}
+
+/**
+ * `library.ts`'s port over `collectionStore` **[verify on device]**. Every
+ * method is a no-op (or `null`) on a client without the call it needs, so a
+ * client update can only switch the feature off, never break the load.
+ */
+export function libraryPort(): LibraryPort {
+  return {
+    canHide: () => typeof collections()?.SetAppsAsHidden === "function",
+    isHidden(appid) {
+      const store = collections();
+      if (typeof store?.BIsHidden !== "function") return null;
+      try {
+        return !!store.BIsHidden(appid);
+      } catch {
+        return null;
+      }
+    },
+    setHidden(appids, hidden) {
+      const store = collections();
+      if (!appids.length || typeof store?.SetAppsAsHidden !== "function") return;
+      store.SetAppsAsHidden([...appids], hidden);
+    },
+    canCollect: () => typeof collections()?.NewUnsavedCollection === "function",
+    collectionApps(name) {
+      const apps = findCollection(name)?.allApps;
+      return Array.isArray(apps) ? apps.map((app) => app.appid) : null;
+    },
+    async updateCollection(name, add, remove) {
+      let collection = findCollection(name);
+      const adding = overviews(add);
+      if (!collection) {
+        if (!adding.length) return;
+        collection = collections()?.NewUnsavedCollection?.(name, undefined, []) ?? null;
+        if (!collection) return;
+        // Saved once empty: a collection only takes apps once it has an id.
+        await collection.Save?.();
+      }
+      const edit = collection.AsDragDropCollection?.();
+      if (!edit) return;
+      if (adding.length) edit.AddApps(adding);
+      const removing = overviews(remove);
+      if (removing.length) edit.RemoveApps(removing);
+      await collection.Save?.();
+    },
+    async deleteCollection(name) {
+      await findCollection(name)?.Delete?.();
+    },
+  };
 }

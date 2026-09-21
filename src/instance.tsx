@@ -13,6 +13,7 @@ import { Controller, type UiPort } from "./lib/controller";
 import {
   controllerConfiguratorAvailable,
   currentSteamId3,
+  libraryPort,
   overviewLoaded,
   ownedApps,
   runShortcut,
@@ -44,6 +45,7 @@ export const controller = new Controller(
     overviewLoaded,
     canChooseLayout: controllerConfiguratorAvailable,
     showControllerConfigurator,
+    library: libraryPort,
   },
   ui,
 );

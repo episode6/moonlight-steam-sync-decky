@@ -11,6 +11,7 @@ import type {
 import { Controller, type RestartPrompt, type SteamPort, type UiPort } from "./controller";
 import { eventsOf, lastOf } from "./events";
 import type { SteamInput } from "./layouts";
+import { STREAMING_COLLECTION, type LibraryPort } from "./library";
 import { restartRowView } from "./state";
 
 const PENDING: Pending = {
@@ -127,7 +128,53 @@ class FakeInput implements SteamInput {
   }
 }
 
+/** A scripted client library: the hidden set, the collections, and a log of every change. */
+class FakeLibrary implements LibraryPort {
+  hiding = true;
+  collecting = true;
+  /** `false`: the client cannot say what is hidden. */
+  readable = true;
+  hidden = new Set<number>();
+  collections = new Map<string, Set<number>>();
+  log: string[] = [];
+  canHide() {
+    return this.hiding;
+  }
+  isHidden(appid: number) {
+    return this.readable ? this.hidden.has(appid) : null;
+  }
+  setHidden(appids: readonly number[], hidden: boolean) {
+    if (!appids.length) return;
+    this.log.push(`${hidden ? "hide" : "show"} ${[...appids].sort().join(",")}`);
+    for (const appid of appids) {
+      if (hidden) this.hidden.add(appid);
+      else this.hidden.delete(appid);
+    }
+  }
+  canCollect() {
+    return this.collecting;
+  }
+  collectionApps(name: string) {
+    const apps = this.collections.get(name);
+    return apps ? [...apps] : null;
+  }
+  async updateCollection(name: string, add: readonly number[], remove: readonly number[]) {
+    this.log.push(`update +${[...add].sort().join(",")} -${[...remove].sort().join(",")}`);
+    const apps = this.collections.get(name) ?? new Set<number>();
+    for (const appid of add) apps.add(appid);
+    for (const appid of remove) apps.delete(appid);
+    this.collections.set(name, apps);
+  }
+  async deleteCollection(name: string) {
+    if (this.collections.delete(name)) this.log.push("delete");
+  }
+}
+
 class FakeSteam implements SteamPort {
+  lib = new FakeLibrary();
+  library() {
+    return this.lib;
+  }
   apps: Record<string, string> | null = { "2379780": "Balatro", "1244090": "Sea of Stars" };
   steamid3: number | null = 12345678;
   shutdowns = 0;
@@ -1160,5 +1207,113 @@ describe("the Stream button and controller layouts (spec 3.9, 3.10)", () => {
       await first;
       expect(calls.filter(([n]) => n === "clear_pending")).toHaveLength(1);
     });
+  });
+});
+
+describe("hidden state and the Streaming collection (spec 3.15)", () => {
+  const BALATRO = 2379780;
+  const SEA = 1244090;
+  const [BALATRO_S, DESKTOP, HADES, SEA_S, SPIRITFARER, BIG_PICTURE, TUNIC, CLIENT] = [
+    2718281828, 3000000101, 3000000011, 2987654321, 2555555555, 3000000102, 3000000007, 2400000001,
+  ];
+  const sorted = (ids: Iterable<number>) => [...ids].sort((a, b) => a - b);
+  /** `set_settings` answering with the patch applied, like the backend. */
+  const patched = (patch: object) => ({
+    ok: true,
+    settings: { version: 1, hosts: [], copy_layouts: true, restart_countdown_s: 5, retry_missing: false, ...patch },
+  });
+
+  async function loaded(answers: Partial<Record<keyof Backend, unknown>> = {}) {
+    const controller = new Controller(fakeBackend(calls, answers), steam, ui, instantTiming());
+    await controller.load();
+    await controller.reconcileLibrary();
+    return controller;
+  }
+
+  it("hides every hidden entry and collects every streamable title at load", async () => {
+    // a visible entry somebody hid in the client, and a stale member
+    steam.lib.hidden.add(TUNIC);
+    steam.lib.collections.set(STREAMING_COLLECTION, new Set([BALATRO, 570]));
+    await loaded();
+    expect(sorted(steam.lib.hidden)).toEqual(sorted([BALATRO_S, DESKTOP, SEA_S, SPIRITFARER, BIG_PICTURE, CLIENT]));
+    // the real game for a Stream button, the shortcut for a visible title;
+    // never the client, a host app (Desktop is matched to a game) or a parked entry
+    expect(sorted(steam.lib.collections.get(STREAMING_COLLECTION) ?? [])).toEqual(sorted([BALATRO, SEA, HADES, TUNIC]));
+  });
+
+  it("changes nothing the second time", async () => {
+    const controller = await loaded();
+    steam.lib.log = [];
+    await controller.reconcileLibrary();
+    expect(steam.lib.log).toEqual([]);
+  });
+
+  it("shows the Stream shortcuts with the setting off, and keeps the rest hidden", async () => {
+    const controller = await loaded({ set_settings: patched });
+    await controller.setSettings({ hide_stream_shortcuts: false });
+    await controller.reconcileLibrary();
+    expect(sorted(steam.lib.hidden)).toEqual(sorted([DESKTOP, SPIRITFARER, BIG_PICTURE, CLIENT]));
+    expect(sorted(steam.lib.collections.get(STREAMING_COLLECTION) ?? [])).toEqual(sorted([BALATRO, SEA, HADES, TUNIC]));
+  });
+
+  it("deletes the collection when the setting is turned off, and leaves it alone afterwards", async () => {
+    const controller = await loaded({ set_settings: patched });
+    await controller.setSettings({ streaming_collection: false });
+    await controller.reconcileLibrary();
+    expect(steam.lib.collections.has(STREAMING_COLLECTION)).toBe(false);
+    // one the user makes under that name later is theirs
+    steam.lib.collections.set(STREAMING_COLLECTION, new Set([570]));
+    await controller.reconcileLibrary();
+    expect([...(steam.lib.collections.get(STREAMING_COLLECTION) ?? [])]).toEqual([570]);
+  });
+
+  it("skips an entry the client has not loaded, and picks it up on the next call", async () => {
+    steam.loaded = new Set([BALATRO_S, DESKTOP, SEA_S, SPIRITFARER, BIG_PICTURE, TUNIC, CLIENT, BALATRO, SEA]);
+    const controller = await loaded();
+    expect(steam.lib.collections.get(STREAMING_COLLECTION)?.has(HADES)).toBe(false);
+    steam.loaded = null;
+    await controller.reconcileLibrary();
+    expect(steam.lib.collections.get(STREAMING_COLLECTION)?.has(HADES)).toBe(true);
+  });
+
+  it("sets the state regardless when the client cannot say what is hidden", async () => {
+    steam.lib.readable = false;
+    await loaded();
+    expect(sorted(steam.lib.hidden)).toEqual(sorted([BALATRO_S, DESKTOP, SEA_S, SPIRITFARER, BIG_PICTURE, CLIENT]));
+  });
+
+  it("does nothing on a client with neither call", async () => {
+    steam.lib.hiding = false;
+    steam.lib.collecting = false;
+    const controller = await loaded();
+    expect(steam.lib.log).toEqual([]);
+    expect(controller.canHideShortcuts()).toBe(false);
+    expect(controller.canKeepCollection()).toBe(false);
+  });
+
+  it("does nothing without a status, or while a run is going", async () => {
+    await loaded({ status: { ok: false, error: "cli-error", message: "boom", exit: 1 } });
+    expect(steam.lib.log).toEqual([]);
+    const controller = await loaded();
+    steam.lib.log = [];
+    steam.lib.hidden.clear();
+    await controller.sync();
+    await controller.reconcileLibrary();
+    expect(steam.lib.log).toEqual([]);
+  });
+
+  it("deletes the collection once nothing is left to stream", async () => {
+    steam.lib.collections.set(STREAMING_COLLECTION, new Set([BALATRO]));
+    await loaded({ status: { ok: true, entries: [], notes: [] } });
+    expect(steam.lib.collections.has(STREAMING_COLLECTION)).toBe(false);
+  });
+
+  it("survives a client that throws", async () => {
+    steam.lib.setHidden = () => {
+      throw new Error("no such store");
+    };
+    await expect(loaded()).resolves.toBeDefined();
+    // and the collection is still kept
+    expect(steam.lib.collections.get(STREAMING_COLLECTION)?.size).toBe(4);
   });
 });

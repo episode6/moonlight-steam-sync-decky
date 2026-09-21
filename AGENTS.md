@@ -22,7 +22,13 @@ Breaking any of these is a blocker, not a judgement call.
    directory (`shortcuts.vdf`, `userdata/`, `grid/`, controller configs) and
    never calls `AddShortcut`, `RemoveShortcut`, `SetShortcutName`,
    `SetAppLaunchOptions`, `SetAppHiddenState` or `SetCustomArtworkForApp`.
-   It never writes the CLI's `config.toml` either.
+   It never writes the CLI's `config.toml` either. **The one exception**
+   (spec §3.15, the user's decision of 2026-09-21): the client ignores
+   `IsHidden` in `shortcuts.vdf`, so the plugin mirrors `status`'s `hidden`
+   into the client and keeps the *Streaming* collection, both through
+   `collectionStore` and only in `steam.ts`'s `libraryPort()`
+   (`tests/test_hard_rules.py` holds it there). It writes no file and
+   touches only the CLI's own entries plus that one collection.
 2. **No `_root`.** `plugin.json` `flags` stays `[]`: the backend must run as
    the deck user so `HOME` and the CLI's paths resolve.
 3. **No MoonDeck code.** MoonDeck is GPLv3, this repo is MIT. Do not open,
@@ -98,7 +104,15 @@ src/lib/                    pure modules (vitest)
                             streamPress() (guard, copy, run), chooseLayout() (a `null`
                             real appid = a host app: picker only), chooseHostAppLayout()
                             (the panel's layout buttons; not held back by inGame),
-                            layoutWalk()
+                            layoutWalk(), reconcileLibrary() (spec 3.15: after every
+                            status that reaches the store -- load, run done, Titles,
+                            Retry, the two settings -- never while a run is going;
+                            serialised; differences only; the load's call waits up to
+                            90 s for the shortcut list and runs *before* the walk;
+                            an unloaded appid is skipped until next time; hiding and
+                            the collection fail independently; turning the collection
+                            setting off is the only thing that deletes it, besides an
+                            empty member list)
   layouts.ts                DEFAULT_LAYOUT_STRATEGY (the one switch), layoutStrategy(),
                             copyEnabled(), the SteamInput seam, isUnselected() (no URL,
                             default://, or bSelected false), copyLayout() (the §3.10
@@ -110,6 +124,14 @@ src/lib/                    pure modules (vitest)
                             walkPairs() and the walk's timings
   layouts.test.ts           copyLayout's seven cases + idempotence, the index by type,
                             the strategy switch, the stream-map derivation
+  library.ts                spec 3.15, the pure half: STREAMING_COLLECTION (found by
+                            name, no id stored), the LibraryPort seam, streamingMembers()
+                            (the stream map's real appids + visible published shortcuts;
+                            never the client, a host app, a parked entry), hiddenPlan()
+                            (`hidden` from status is the truth; *Hide Stream shortcuts*
+                            governs Stream entries only, the client / host apps / parked
+                            are hidden regardless; a visible entry is shown, which is
+                            what unparks it), collectionDiff()
   join.ts                   the Titles page: list + status joined by name into rows
                             (badge, chips, match line, capsule), filters, Show parked,
                             pages of 50, applyPin; the Change match rows (candidateRows,
@@ -127,7 +149,11 @@ src/lib/                    pure modules (vitest)
                             SteamClient.Input, controllerIndex() (ControllerStore or
                             controllerStore, else the guarded list watch; plus the
                             active-controller watch),
-                            overviewLoaded(), showControllerConfigurator() (globals only)
+                            overviewLoaded(), showControllerConfigurator(),
+                            libraryPort() (collectionStore: BIsHidden / SetAppsAsHidden,
+                            userCollections / NewUnsavedCollection / AsDragDropCollection
+                            / Save / Delete, every one feature-detected, none probed on
+                            a device yet) (globals only)
 src/routes/libraryApp.tsx   the /library/app/:appid patch (routerHook.addPatch, afterPatch
                             on renderFunc, then on the returned element's
                             renderChildrenFunc, then createReactTreePatcher on the
@@ -140,7 +166,9 @@ src/components/             QuickAccess (HostAppRow: the launch button plus the 
                             configurator), SyncProgress, RestartModal, SettingsPage,
                             HostPage, TitlesPage (layout text, Choose layout),
                             ChangeMatchModal, Pill, StreamButton (renders only when
-                            streamMap has the appid), ArtworkPage, AdvancedPage, AboutPage
+                            streamMap has the appid), ArtworkPage, AdvancedPage (also
+                            *Hide Stream shortcuts* and *Streaming collection*, disabled
+                            on a client without the calls), AboutPage
 src/test/fixtures.ts        loads tests/fixtures for vitest
 tests/                      pytest: fake_cli.py, fixtures/, conftest.py, test_*.py,
                             test_install_sh.py (install.sh end to end via
@@ -458,7 +486,8 @@ Then walk `DEVICE-CHECKLIST.md` from the top.
 
 ## Docs to keep current
 
-README (install, panel, restart, hosts, Titles page, key, files,
+README (install, panel, restart, hosts, Titles page, hidden shortcuts and
+the Streaming collection, key, files,
 developing), this file (module map, harness, release), `CHANGELOG.md`
 `[Unreleased]`, `DEVICE-CHECKLIST.md`, and docstrings, in the same PR as
 the change.

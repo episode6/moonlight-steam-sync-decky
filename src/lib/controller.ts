@@ -36,6 +36,15 @@ import {
   type LayoutOutcome,
   type SteamInput,
 } from "./layouts";
+import {
+  collectionDiff,
+  hiddenPlan,
+  hideStreamEnabled,
+  STREAMING_COLLECTION,
+  streamingCollectionEnabled,
+  streamingMembers,
+  type LibraryPort,
+} from "./library";
 import { restartDecision, unwrittenMessage, type RestartDecision } from "./restart";
 import {
   applyRunDone,
@@ -63,6 +72,8 @@ export interface SteamPort {
   canChooseLayout(): boolean;
   /** Open Steam's layout picker for a shortcut; `false` when the client cannot. */
   showControllerConfigurator(appid: number): boolean;
+  /** The client's hidden state and collections (spec 3.15). */
+  library(): LibraryPort;
 }
 
 export interface RestartPrompt {
@@ -136,6 +147,8 @@ export class Controller {
   private starting: { kind: RunKind; immediate: boolean } | null = null;
   /** The layout walk in progress (spec 3.10: never two at once). */
   private walking: Promise<void> | null = null;
+  /** The tail of the library reconciles (spec 3.15: one after the other, never two at once). */
+  private reconciling: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly backend: Backend,
@@ -227,7 +240,9 @@ export class Controller {
     // restart row renders from `pending`. The walk can take 90 s, so the
     // load does not wait for it (it is kept from running twice by itself).
     await Promise.all([this.refreshStatus(), this.checkHost(false)]);
-    void this.layoutWalk();
+    // Hiding first: right after a sync's restart it is what takes the new
+    // tiles out of the library, and the walk can take minutes.
+    void this.reconcileLibrary(true).then(() => this.layoutWalk());
   }
 
   /** Step 3: poll the library every 500 ms (60 s at most), then write owned-apps.json. */
@@ -464,6 +479,7 @@ export class Controller {
     this.store.set({ message });
     // layouts.json too: a remove run deletes it
     await Promise.all([this.refreshStatus(), this.refreshHosts(), this.refreshIgnored(), this.refreshLayouts()]);
+    void this.reconcileLibrary();
   }
 
   private showPrompt(
@@ -605,7 +621,10 @@ export class Controller {
     // a run is going the panel's counters and stream map belong to the run
     // (the Titles page is reading the cache anyway), and a mid-run `status`
     // snapshot would flicker them. The page still gets these entries below.
-    if (!isFailure(status) && !running) this.store.set((s) => withStatus(s, status.entries));
+    if (!isFailure(status) && !running) {
+      this.store.set((s) => withStatus(s, status.entries));
+      void this.reconcileLibrary();
+    }
     const ignoredNames = isFailure(ignored) ? [] : ignored.ignored;
     if (!isFailure(ignored)) this.store.set({ ignoredCount: ignoredNames.length });
     return {
@@ -802,9 +821,86 @@ export class Controller {
     else if (this.state.pending) this.store.set({ pending: { ...this.state.pending, layout_walk: false } });
   }
 
+  // -------------------------------------------------------------------------
+  // hidden state and the Streaming collection (spec 3.15)
+
+  canHideShortcuts(): boolean {
+    return this.steam.library().canHide();
+  }
+
+  canKeepCollection(): boolean {
+    return this.steam.library().canCollect();
+  }
+
+  /**
+   * Bring the client in line with the last `status`: the CLI's hidden entries
+   * hidden (the client ignores `IsHidden` in `shortcuts.vdf`), the visible
+   * ones shown, and the *Streaming* collection holding every streamable
+   * title. Only differences are applied, so a second call changes nothing.
+   * Does nothing without a `status` or while a run is going. `wait` (the
+   * load after a restart) first gives the shortcut list 90 s to load; an
+   * entry the client still does not know is skipped until the next call.
+   */
+  reconcileLibrary(wait = false): Promise<void> {
+    this.reconciling = this.reconciling.then(() =>
+      this.doReconcile(wait).catch((error) => {
+        console.warn("Moonlight Sync: updating the library failed", error);
+      }),
+    );
+    return this.reconciling;
+  }
+
+  private async doReconcile(wait: boolean): Promise<void> {
+    const entries = this.state.entries;
+    if (entries === null || this.state.run?.running) return;
+    const library = this.steam.library();
+    const loaded = (appid: number) => this.steam.overviewLoaded(appid);
+    if (wait) {
+      const deadline = this.timing.now() + WALK_TIMEOUT_MS;
+      while (entries.some((entry) => !loaded(entry.appid)) && this.timing.now() < deadline) {
+        await this.timing.sleep(WALK_POLL_MS);
+      }
+    }
+    const settings = this.state.settings;
+    if (library.canHide()) {
+      const plan = hiddenPlan(entries, hideStreamEnabled(settings));
+      try {
+        library.setHidden(plan.hide.filter((id) => loaded(id) && library.isHidden(id) !== true), true);
+        library.setHidden(plan.show.filter((id) => loaded(id) && library.isHidden(id) !== false), false);
+      } catch (error) {
+        // the collection does not depend on it
+        console.warn("Moonlight Sync: hiding shortcuts failed", error);
+      }
+    }
+    // Off: the collection is left alone here; turning the setting off is
+    // what deletes it (setSettings), so a collection the user made under the
+    // same name afterwards is never touched.
+    if (!library.canCollect() || !streamingCollectionEnabled(settings)) return;
+    const current = library.collectionApps(STREAMING_COLLECTION);
+    const wanted = streamingMembers(entries);
+    if (!wanted.length) {
+      // nothing left to stream (*Remove everything*): the collection goes too
+      if (current) await library.deleteCollection(STREAMING_COLLECTION);
+      return;
+    }
+    const diff = collectionDiff(wanted, current ?? []);
+    const add = diff.add.filter(loaded);
+    if (add.length || diff.remove.length) await library.updateCollection(STREAMING_COLLECTION, add, diff.remove);
+  }
+
   async setSettings(patch: SettingsPatch): Promise<Result> {
     const result = await this.backend.set_settings(patch);
-    if (!isFailure(result)) this.store.set({ settings: result.settings });
+    if (isFailure(result)) return result;
+    this.store.set({ settings: result.settings });
+    if ("hide_stream_shortcuts" in patch || "streaming_collection" in patch) {
+      if (patch.streaming_collection === false) {
+        await this.steam
+          .library()
+          .deleteCollection(STREAMING_COLLECTION)
+          .catch((error) => console.warn("Moonlight Sync: deleting the Streaming collection failed", error));
+      }
+      void this.reconcileLibrary();
+    }
     return result;
   }
 
@@ -817,6 +913,7 @@ export class Controller {
     await this.loadLibrary();
     if (this.state.library === "ready") {
       await Promise.all([this.refreshStatus(), this.checkHost(false)]);
+      void this.reconcileLibrary();
     }
   }
 

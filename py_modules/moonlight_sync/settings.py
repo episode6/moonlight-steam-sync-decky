@@ -34,6 +34,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "restart_countdown_s": 5,
     "retry_missing": False,
     "layout_strategy": "copy",
+    "hide_stream_shortcuts": True,
+    "streaming_collection": True,
 }
 
 #: The countdown can never outlast the CLI's own await-exit wait (60 s),
@@ -288,7 +290,7 @@ def _validate_setting(key: str, value: Any) -> None:
         raise SettingsError("hosts are changed with add_host / forget_host")
     if key == "version":
         raise SettingsError("version is not a setting")
-    if key in ("copy_layouts", "retry_missing"):
+    if key in ("copy_layouts", "retry_missing", "hide_stream_shortcuts", "streaming_collection"):
         if not isinstance(value, bool):
             raise SettingsError(f"{key} must be true or false")
         return

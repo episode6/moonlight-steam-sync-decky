@@ -2,12 +2,14 @@ import { ButtonItem, ConfirmModal, SliderField, ToggleField, showModal } from "@
 
 import { controller } from "../instance";
 import { layoutStrategy } from "../lib/layouts";
+import { hideStreamEnabled, STREAMING_COLLECTION, streamingCollectionEnabled } from "../lib/library";
 import { actionsReady } from "../lib/state";
 import { useStore } from "./useStore";
 
 /**
  * Settings → Advanced (spec 3.8): the layout-copy toggle (spec 3.10: read on
- * every Stream press and by the post-restart walk), the restart countdown,
+ * every Stream press and by the post-restart walk), *Hide Stream shortcuts*
+ * and the *Streaming* collection (spec 3.15), the restart countdown,
  * and *Remove everything this plugin created*.
  */
 export function AdvancedPage() {
@@ -15,6 +17,8 @@ export function AdvancedPage() {
   const settings = state.settings;
   const entries = state.entries?.length ?? null;
   const picker = layoutStrategy(settings) === "picker";
+  const canHide = controller.canHideShortcuts();
+  const canCollect = controller.canKeepCollection();
   const copyDescription = picker
     ? "Off for this device: settings.json sets layout_strategy to \"picker\", so layouts are only chosen by hand (Titles → Choose layout)"
     : "When a hidden Stream shortcut has no layout of its own, give it the one chosen for the real game (on each Stream press and after a sync's restart)";
@@ -41,6 +45,28 @@ export function AdvancedPage() {
         checked={!!settings?.copy_layouts}
         disabled={!settings || picker}
         onChange={(checked) => void controller.setSettings({ copy_layouts: checked })}
+      />
+      <ToggleField
+        label="Hide Stream shortcuts"
+        description={
+          canHide
+            ? "Keep the shortcuts behind the Stream buttons out of the library. Off: they show under Non-Steam, and a streamed game comes to the front of Home as its shortcut"
+            : "This Steam client has no way for a plugin to hide a shortcut"
+        }
+        checked={canHide && hideStreamEnabled(settings)}
+        disabled={!settings || !canHide}
+        onChange={(checked) => void controller.setSettings({ hide_stream_shortcuts: checked })}
+      />
+      <ToggleField
+        label="Streaming collection"
+        description={
+          canCollect
+            ? `Keep a "${STREAMING_COLLECTION}" collection of every title the active host can stream, updated after each sync. Off: the collection is deleted`
+            : "This Steam client has no collections a plugin can edit"
+        }
+        checked={canCollect && streamingCollectionEnabled(settings)}
+        disabled={!settings || !canCollect}
+        onChange={(checked) => void controller.setSettings({ streaming_collection: checked })}
       />
       <SliderField
         label="Restart countdown"
