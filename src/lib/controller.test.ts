@@ -674,6 +674,10 @@ describe("runs and the restart flow (spec 3.9)", () => {
     expect(controller.openHostApp("desktop")).toBe(true);
     expect(controller.openHostApp("bigPicture")).toBe(false);
     expect(steam.launched).toEqual([3000000101]);
+    // Like the Stream button: nothing is launched over a running game.
+    controller.setInGame(true);
+    expect(controller.openHostApp("desktop")).toBe(false);
+    expect(steam.launched).toEqual([3000000101]);
   });
 });
 

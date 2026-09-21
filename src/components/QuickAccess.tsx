@@ -252,7 +252,8 @@ export function QuickAccess() {
           <PanelSectionRow key={app.key}>
             <ButtonItem
               layout="below"
-              description={app.description}
+              description={state.inGame ? "A game is running; exit it first" : app.description}
+              disabled={state.inGame}
               onClick={() => controller.openHostApp(app.key)}
             >
               {app.name}
