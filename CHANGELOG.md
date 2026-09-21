@@ -6,6 +6,14 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Desktop and Steam Big Picture buttons on the panel.** The two entries
+  every Sunshine / Apollo host publishes by default each get a launch
+  button under *Open Moonlight*, shown when the active host publishes the
+  entry. They run the entry's synced shortcut, so its controller layout
+  applies as usual.
+
 ### Changed
 
 - **Change match lists the games you own first.** Search results that this

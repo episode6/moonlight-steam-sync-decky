@@ -47,6 +47,7 @@ import {
   withCliVersion,
   withStatus,
   type AppState,
+  type HostAppKey,
 } from "./state";
 
 export interface SteamPort {
@@ -643,6 +644,23 @@ export class Controller {
     if (appid === null) return false;
     const ok = this.steam.runShortcut(appid);
     if (!ok) this.ui.toast("Moonlight Sync", "The Moonlight shortcut is not loaded yet");
+    return ok;
+  }
+
+  /**
+   * A press of the panel's *Desktop* / *Steam Big Picture* button. It starts
+   * a stream, so like the Stream button it is only a toast while anything is
+   * running.
+   */
+  openHostApp(key: HostAppKey): boolean {
+    const appid = this.state.hostApps[key];
+    if (appid === null) return false;
+    if (this.state.inGame) {
+      this.ui.toast("Moonlight Sync", "Something is already running");
+      return false;
+    }
+    const ok = this.steam.runShortcut(appid);
+    if (!ok) this.ui.toast("Moonlight Sync", "That shortcut is not loaded yet; restart Steam first");
     return ok;
   }
 

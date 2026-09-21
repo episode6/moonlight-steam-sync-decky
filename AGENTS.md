@@ -84,7 +84,9 @@ src/lib/                    pure modules (vitest)
   cli.ts                    every §3.4.6 event type, Result/Failure, Backend, makeBackend,
                             errorText (the §3.8 strings)
   events.ts                 NDJSON parsing, lastOf/eventsOf
-  state.ts                  AppState, Store, reducers (runs, counters, stream map)
+  state.ts                  AppState, Store, reducers (runs, counters, stream map),
+                            HOST_APPS / hostAppsFromStatus() (the panel's Desktop and
+                            Steam Big Picture buttons, by Moonlight name)
   controller.ts             load order, runs, restart flow, hosts, settings actions,
                             loadTitles() (list -> list_cached fallback, and list_cached
                             while a run is going; `status` only reaches the shared store

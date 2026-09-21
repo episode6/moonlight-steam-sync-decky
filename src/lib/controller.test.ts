@@ -666,6 +666,19 @@ describe("runs and the restart flow (spec 3.9)", () => {
     expect(controller.openMoonlight()).toBe(true);
     expect(steam.launched).toEqual([2400000001]);
   });
+
+  it("Desktop / Steam Big Picture run their shortcut, and only when the host has one", async () => {
+    const entries = eventsOf(loadFixture("common/status.ndjson"), "entry");
+    const desktop = { ...entries.find((e) => e.name === "Tunic")!, name: "Desktop", appid: 3000000101 };
+    const controller = await loaded({ status: { ok: true, entries: [...entries, desktop], notes: [] } });
+    expect(controller.openHostApp("desktop")).toBe(true);
+    expect(controller.openHostApp("bigPicture")).toBe(false);
+    expect(steam.launched).toEqual([3000000101]);
+    // Like the Stream button: nothing is launched over a running game.
+    controller.setInGame(true);
+    expect(controller.openHostApp("desktop")).toBe(false);
+    expect(steam.launched).toEqual([3000000101]);
+  });
 });
 
 describe("the Titles page (spec 3.8)", () => {

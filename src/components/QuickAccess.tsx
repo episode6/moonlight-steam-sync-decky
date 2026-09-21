@@ -12,6 +12,7 @@ import { useEffect, type ReactNode } from "react";
 import { SETTINGS_ROUTE, controller } from "../instance";
 import { lastSyncLine, relativeTime } from "../lib/format";
 import {
+  HOST_APPS,
   actionsReady,
   ignoredCounter,
   otherHostsLine,
@@ -246,6 +247,20 @@ export function QuickAccess() {
           Open Moonlight
         </ButtonItem>
       </PanelSectionRow>
+      {HOST_APPS.map((app) =>
+        state.hostApps[app.key] === null ? null : (
+          <PanelSectionRow key={app.key}>
+            <ButtonItem
+              layout="below"
+              description={state.inGame ? "A game is running; exit it first" : app.description}
+              disabled={state.inGame}
+              onClick={() => controller.openHostApp(app.key)}
+            >
+              {app.name}
+            </ButtonItem>
+          </PanelSectionRow>
+        ),
+      )}
       {state.message ? (
         <PanelSectionRow>
           <Field description={state.message} focusable={false} />

@@ -9,6 +9,7 @@ import {
   applyRunEvent,
   clientAppid,
   countersFromStatus,
+  hostAppsFromStatus,
   ignoredCounter,
   initialState,
   newRun,
@@ -52,6 +53,21 @@ describe("stream map and client", () => {
   it("finds the client entry for Open Moonlight", () => {
     expect(clientAppid(entries)).toBe(2400000001);
     expect(clientAppid(entries.filter((e) => !e.client))).toBeNull();
+  });
+
+  it("finds the Desktop and Steam Big Picture entries by Moonlight name", () => {
+    const tunic = entries.find((e) => e.name === "Tunic")!;
+    const desktop: EntryEvent = { ...tunic, name: "desktop ", app_name: "Desktop (MY-GAMING-PC)", appid: 3000000101 };
+    const bigPicture: EntryEvent = { ...tunic, name: "Steam Big Picture", appid: 3000000102, hidden: true };
+    expect(hostAppsFromStatus(entries)).toEqual({ desktop: null, bigPicture: null });
+    expect(hostAppsFromStatus([...entries, desktop, bigPicture])).toEqual({
+      desktop: 3000000101,
+      bigPicture: 3000000102,
+    });
+    // Another host's parked copy is not launchable from this one.
+    expect(hostAppsFromStatus([{ ...desktop, parked: true, published: false }]).desktop).toBeNull();
+    // Only the Moonlight name counts, not what the shortcut is called.
+    expect(hostAppsFromStatus([{ ...tunic, app_name: "Desktop" }]).desktop).toBeNull();
   });
 });
 
