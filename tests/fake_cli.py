@@ -20,7 +20,8 @@ backend's ``cli=`` seam. Everything is driven by environment variables:
     ``fake_cli: no fixture for X`` to stderr and exits **99**.
 ``FAKE_CLI_ARGV_LOG``
     Append ``{"argv", "cwd", "from_plugin", "home", "ld_library_path",
-    "ld_library_path_orig"}`` as one JSON line per invocation.
+    "ld_library_path_orig", "pythonunbuffered"}`` as one JSON line per
+    invocation.
 ``FAKE_CLI_VERSION`` (default ``0.4.0``)
     ``--version`` prints ``moonlight-steam-sync <v>``. Below 0.3.0 the new
     flags and subcommands are rejected the way argparse does: usage and
@@ -123,8 +124,10 @@ def _version_tuple(text: str) -> tuple[int, int, int]:
 
 
 def _out(line: str) -> None:
+    # No flush, like the real CLI's Reporter: over a pipe Python block-buffers
+    # stdout, so an event only reaches the backend live because the backend
+    # spawns its children with PYTHONUNBUFFERED=1 (`Backend._child_env`).
     sys.stdout.write(line + "\n")
-    sys.stdout.flush()
 
 
 def _err(line: str) -> None:
@@ -153,6 +156,7 @@ def _log_argv(argv: list[str]) -> None:
                     "home": os.environ.get("HOME"),
                     "ld_library_path": os.environ.get("LD_LIBRARY_PATH"),
                     "ld_library_path_orig": os.environ.get("LD_LIBRARY_PATH_ORIG"),
+                    "pythonunbuffered": os.environ.get("PYTHONUNBUFFERED"),
                 }
             )
             + "\n"

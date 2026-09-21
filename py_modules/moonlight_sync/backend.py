@@ -14,7 +14,9 @@ Conventions (spec 3.7, amended):
 - Argv is always ``[python3, <installed cli>, "--json", <subcommand>, ...]``
   except ``doctor``, ``--version`` and ``art --help``. The child runs with
   ``cwd=<home>`` and ``env`` = the backend's plus
-  ``MOONLIGHT_STEAM_SYNC_FROM_PLUGIN=1`` and ``HOME=<home>``, minus
+  ``MOONLIGHT_STEAM_SYNC_FROM_PLUGIN=1``, ``HOME=<home>`` and
+  ``PYTHONUNBUFFERED=1`` (the CLI does not flush its events, and a buffered
+  ``awaiting-steam-exit`` arrives after the wait it announces), minus
   plugin_loader's PyInstaller ``LD_LIBRARY_PATH`` (``_child_env``).
 - Collecting runs wait for the child, time out (30 s / 90 s: SIGINT, then
   SIGKILL 3 s later) and return the events; pipes a grandchild keeps open
@@ -281,6 +283,11 @@ class Backend:
             env.pop("LD_LIBRARY_PATH", None)
         env["MOONLIGHT_STEAM_SYNC_FROM_PLUGIN"] = "1"
         env["HOME"] = self.home
+        # The CLI prints its events without flushing, and over a pipe Python
+        # block-buffers stdout: `awaiting-steam-exit` would sit in the child's
+        # buffer for the whole 60 s wait and only arrive with the exit, so the
+        # client was never shut down in time and shortcuts.vdf never written.
+        env["PYTHONUNBUFFERED"] = "1"
         return env
 
     def _read_installed(self) -> install.Version | None:

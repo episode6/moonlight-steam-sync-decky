@@ -74,7 +74,9 @@ class Recorder:
 def base_env(tmp_path: Path, scenario: str | None) -> dict[str, str]:
     # The host's own library path stays out, so the tests that set one (the
     # plugin_loader cases) do not depend on the shell pytest was run from.
-    dropped = {"SGDB_API_KEY", "LD_LIBRARY_PATH", "LD_LIBRARY_PATH_ORIG"}
+    # PYTHONUNBUFFERED likewise: the fake CLI must only see the one the backend
+    # sets (`Backend._child_env`), or a shell that exports it hides a regression.
+    dropped = {"SGDB_API_KEY", "LD_LIBRARY_PATH", "LD_LIBRARY_PATH_ORIG", "PYTHONUNBUFFERED"}
     env = {
         key: value
         for key, value in os.environ.items()

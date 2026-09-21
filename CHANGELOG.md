@@ -6,6 +6,16 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A sync's shortcuts are written when Steam restarts again.** The CLI's
+  "waiting for Steam to exit" event was stuck in an output buffer until the
+  CLI gave up 60 s later, so the restart prompt never appeared in time, the
+  run ended with "Steam did not exit" and nothing reached `shortcuts.vdf`.
+  The plugin now runs the CLI unbuffered, so the prompt (or the immediate
+  restart from the *Restart Steam to apply* row) happens while the CLI is
+  still waiting.
+
 ## [0.3.1] - 2026-09-21
 
 ### Fixed
