@@ -246,9 +246,10 @@ export class Controller {
       }
       const written = await this.writeOwnedApps(apps);
       this.store.set({ library: written ? "failed" : "ready" });
-    } catch {
+    } catch (error) {
       // Never leave "loading" behind: the row would spin for good, and the
       // failed row is the one with a way out.
+      console.warn("Moonlight Sync: reading the Steam library failed", error);
       this.store.set({ library: "failed" });
     }
   }
