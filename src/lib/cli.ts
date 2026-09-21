@@ -274,7 +274,11 @@ export type LayoutStrategy = "copy" | "picker";
 export interface DefaultLayout {
   url: string;
   title: string;
-  when: string;
+  /**
+   * When it was set; `null` when a hand-edited `settings.json` has none
+   * (the backend keys "no default" on `url` and `title` only, spec 3.16.2).
+   */
+  when: string | null;
 }
 
 export interface Settings {
@@ -383,8 +387,9 @@ export interface KeyState {
 /**
  * What one layout action recorded for a hidden shortcut (spec 3.10 / 3.16).
  * `"default"`: the entry is on the plugin's default layout. `"copied"` is
- * no longer written by anything but stays valid so an older file and an
- * older frontend still round-trip.
+ * what the spec 3.10 copy (`copyLayout`) still writes on every Stream press
+ * and walk until PR-10 replaces it with `applyDefault`; it stays valid
+ * after that so an older file and an older frontend still round-trip.
  */
 export type LayoutResult = "copied" | "kept" | "unavailable" | "picker" | "default";
 
@@ -396,8 +401,10 @@ export interface LayoutEntry {
   when: string;
   /**
    * The last URL *the plugin itself* set on this shortcut, or `null`
-   * (spec 3.16.2): computed by the backend, so `layouts.ts`'s `appliedUrl`
-   * only needs to fall back for a record written before this field existed.
+   * (spec 3.16.2, Decision 53): computed by the backend (`default` and
+   * `copied` set it, `kept` keeps it only for that same URL), so
+   * `layouts.ts`'s `appliedUrl` only needs to fall back for a record
+   * written before this field existed.
    */
   applied?: string | null;
 }

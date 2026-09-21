@@ -314,10 +314,19 @@ class Store:
         ``prev`` has no ``applied`` key and ``prev["result"] == "copied"``
         (a pre-3.16 copy counts as plugin-applied, Decision 46, so it
         migrates to the default on the first walk after one is set). Then
-        ``default`` sets ``applied = url``; ``kept`` clears it to ``None``
-        (the user made their own choice); ``unavailable`` / ``picker`` /
-        ``copied`` carry ``prev_applied`` forward unchanged (or ``None``
-        with no ``prev``).
+        ``default`` and ``copied`` set ``applied = url`` (both are a URL the
+        plugin just set; Decision 53); ``kept`` keeps ``prev_applied`` when
+        ``url`` *is* ``prev_applied`` (the selection kept is still the
+        plugin's own, which is what the spec 3.10 copy reports on a title it
+        copied earlier) and clears it to ``None`` otherwise (the user made
+        their own choice); ``unavailable`` / ``picker`` carry
+        ``prev_applied`` forward unchanged (or ``None`` with no ``prev``).
+
+        The table has to hold under the spec 3.10 frontend too: until PR-10
+        lands, every Stream press and walk still records ``copied`` /
+        ``kept`` here, and PR-10's ``applyDefault`` only reports ``kept``
+        for a URL that is not the plugin's, so the ``kept`` rule reduces to
+        ``None`` there.
         """
         if isinstance(shortcut_appid, bool) or not isinstance(shortcut_appid, int):
             raise SettingsError("shortcut_appid must be an integer")
@@ -344,11 +353,11 @@ class Store:
             prev_applied = prev.get("url")
         else:
             prev_applied = None
-        if result == "default":
+        if result in ("default", "copied"):
             applied = url or None
         elif result == "kept":
-            applied = None
-        else:  # "unavailable", "picker", "copied"
+            applied = prev_applied if url and url == prev_applied else None
+        else:  # "unavailable", "picker"
             applied = prev_applied
         data["entries"][str(shortcut_appid)] = {
             "real_appid": real_appid,

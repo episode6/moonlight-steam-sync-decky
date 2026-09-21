@@ -1328,10 +1328,11 @@ def test_record_layout_default_result_is_a_valid_result(backend) -> None:
 
 
 def test_record_layout_applied_table(backend) -> None:
-    """spec 3.16.2's ``applied`` table, computed by ``record_layout`` itself."""
-    # no prior entry: every result but "default" carries applied=None forward.
-    for result in ("copied", "kept", "unavailable", "picker"):
-        appid = SHORTCUT + hash(result) % 1000
+    """spec 3.16.2's ``applied`` table (Decision 53), computed by
+    ``record_layout`` itself."""
+    # no prior entry: "kept" / "unavailable" / "picker" have nothing to carry.
+    for offset, result in enumerate(("kept", "unavailable", "picker"), start=1):
+        appid = SHORTCUT + offset
         recorded = run(backend.record_layout(appid, REAL, result, "workshop://x"))
         assert recorded["entries"][str(appid)]["applied"] is None, result
 
@@ -1339,19 +1340,50 @@ def test_record_layout_applied_table(backend) -> None:
     default = run(backend.record_layout(SHORTCUT, REAL, "default", "workshop://1"))
     assert default["entries"][str(SHORTCUT)]["applied"] == "workshop://1"
 
-    # a later "unavailable"/"picker"/"copied" carries the previous applied forward.
+    # a later "unavailable" / "picker" carries the previous applied forward.
     later = run(backend.record_layout(SHORTCUT, REAL, "unavailable", None))
     assert later["entries"][str(SHORTCUT)]["applied"] == "workshop://1"
     picker = run(backend.record_layout(SHORTCUT, REAL, "picker", None))
     assert picker["entries"][str(SHORTCUT)]["applied"] == "workshop://1"
 
-    # "kept" (a selection the plugin did not make) clears applied to None.
+    # "kept" of the very URL the plugin applied keeps it: the selection kept
+    # is still the plugin's own (what the spec 3.10 copy reports on a title
+    # it copied earlier, until PR-10 replaces it).
+    same = run(backend.record_layout(SHORTCUT, REAL, "kept", "workshop://1"))
+    assert same["entries"][str(SHORTCUT)]["applied"] == "workshop://1"
+
+    # "kept" of any other URL (a selection the plugin did not make) clears it.
     kept = run(backend.record_layout(SHORTCUT, REAL, "kept", "template://x.vdf"))
     assert kept["entries"][str(SHORTCUT)]["applied"] is None
+
+    # and so does a "kept" with no URL at all (Steam's default).
+    default_after = run(backend.record_layout(SHORTCUT, REAL, "default", "workshop://1"))
+    assert default_after["entries"][str(SHORTCUT)]["applied"] == "workshop://1"
+    none_kept = run(backend.record_layout(SHORTCUT, REAL, "kept", None))
+    assert none_kept["entries"][str(SHORTCUT)]["applied"] is None
 
     # a fresh "default" after "kept" sets applied to the new URL.
     default2 = run(backend.record_layout(SHORTCUT, REAL, "default", "workshop://2"))
     assert default2["entries"][str(SHORTCUT)]["applied"] == "workshop://2"
+
+
+def test_record_layout_copied_is_plugin_applied(backend) -> None:
+    """Decision 53: a ``copied`` result is a URL the plugin just set, so it
+    lands with ``applied = url`` even with no prior entry -- the spec 3.10
+    copy still writes it on every Stream press until PR-10, and a copy made
+    then must still move to the default later."""
+    copied = run(backend.record_layout(SHORTCUT, REAL, "copied", "workshop://game"))
+    entry = copied["entries"][str(SHORTCUT)]
+    assert entry["result"] == "copied" and entry["applied"] == "workshop://game"
+
+    # the second Stream press on that title: the copy reads back as "kept"
+    # with the same URL, and applied survives it.
+    again = run(backend.record_layout(SHORTCUT, REAL, "kept", "workshop://game"))
+    assert again["entries"][str(SHORTCUT)]["applied"] == "workshop://game"
+
+    # a copy over a different earlier applied replaces it, like "default".
+    recopied = run(backend.record_layout(SHORTCUT, REAL, "copied", "workshop://other"))
+    assert recopied["entries"][str(SHORTCUT)]["applied"] == "workshop://other"
 
 
 def test_record_layout_legacy_copied_record_carries_as_applied(backend) -> None:
@@ -1375,12 +1407,31 @@ def test_record_layout_legacy_copied_record_carries_as_applied(backend) -> None:
             }
         )
     )
-    # a "default" after a legacy copied record picks up its url as applied
-    # (only relevant if the caller passes that url on; more importantly, an
-    # "unavailable"/"picker" pass-through after the legacy record surfaces
-    # the migrated applied value).
+    # an "unavailable" / "picker" pass-through after the legacy record
+    # surfaces the migrated value: the legacy url is now the explicit applied.
     unavailable = run(backend.record_layout(SHORTCUT, REAL, "unavailable", None))
     assert unavailable["entries"][str(SHORTCUT)]["applied"] == "workshop://legacy"
+
+    # the same legacy record touched by today's copy instead (a "kept" of
+    # the copied URL, spec 3.10's report on a title it copied earlier)
+    # migrates too, rather than downgrading the copy to "the user's own".
+    path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "entries": {
+                    str(SHORTCUT): {
+                        "real_appid": REAL,
+                        "result": "copied",
+                        "url": "workshop://legacy",
+                        "when": "2026-09-18T00:00:00Z",
+                    }
+                },
+            }
+        )
+    )
+    kept_same = run(backend.record_layout(SHORTCUT, REAL, "kept", "workshop://legacy"))
+    assert kept_same["entries"][str(SHORTCUT)]["applied"] == "workshop://legacy"
 
     # a legacy "copied" record with no "applied" key and a *different*
     # result (e.g. "kept", meaning the user has since chosen their own

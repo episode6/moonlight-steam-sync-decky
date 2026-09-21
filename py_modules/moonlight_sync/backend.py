@@ -1290,13 +1290,16 @@ class Backend:
         result: Any = None,
         url: Any = None,
     ) -> Result:
-        """Upsert one shortcut's ``{real_appid, result, url, when}`` atomically.
+        """Upsert one shortcut's ``{real_appid, result, url, when, applied}``
+        atomically.
 
-        ``result`` is ``copied`` / ``kept`` / ``unavailable`` (a Stream press
-        or the post-restart walk) or ``picker`` (*Choose layout*). No CLI
-        and no Steam file is involved: this only records what the frontend
-        did through Steam Input. ``real_appid`` is ``None`` for a default
-        host app's ``picker`` (spec 3.14.1): there is no game behind it.
+        ``result`` is ``copied`` / ``kept`` / ``unavailable`` / ``default``
+        (a Stream press or the post-restart walk) or ``picker`` (*Choose
+        layout*). No CLI and no Steam file is involved: this only records
+        what the frontend did through Steam Input. ``real_appid`` may be
+        ``None`` for any result (spec 3.16.2): host apps, the client and a
+        title never matched have no game behind them. ``applied`` is
+        computed by ``Store.record_layout`` (its docstring has the table).
         """
         data = self.store.record_layout(shortcut_appid, real_appid, result, url, when=iso_now())
         game = "no game" if real_appid is None else f"Steam {real_appid}"

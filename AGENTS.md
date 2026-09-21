@@ -279,12 +279,19 @@ empty), and `start_remove_all` deletes the file on `commit.written`.
 entries with no Steam game behind them -- host apps, the client, a title
 never matched -- not only *Choose layout* on a default host app).
 `applied` is the last URL *the plugin itself* set on that shortcut,
-computed by `record_layout` so no caller has to: it carries forward
-unchanged on `unavailable` / `picker` / `copied`, clears to `null` on
-`kept` (a selection the plugin did not make), and is set to `url` on
-`default`; a legacy `copied` record with no `applied` key on disk migrates
-its `url` in as `applied` the first time it is touched again (Decision 46),
-so the first walk after a default is set can move it. `settings.json`
+computed by `record_layout` so no caller has to (spec 3.16.2, Decision
+53): it is set to `url` on `default` *and* `copied` (both a URL the plugin
+just set), kept on `kept` only when the kept `url` is the previous
+`applied` (still the plugin's own selection, what the spec 3.10 copy
+reports on a title it copied earlier) and cleared to `null` for any other
+`kept` (a selection the plugin did not make), and carried forward unchanged
+on `unavailable` / `picker`; a legacy `copied` record with no `applied` key
+on disk migrates its `url` in as `applied` the first time it is touched
+again (Decision 46), so the first walk after a default is set can move it.
+The table holds under the current frontend, which still records `copied` /
+`kept` from `copyLayout` on every Stream press and walk until PR-10; under
+PR-10's `applyDefault` a `kept` never carries the plugin's own URL, so the
+rule reduces to `null` there. `settings.json`
 gains `default_layout`, `null` by default, else `{url, title, when}`; it
 is changed only through `set_default_layout(url, title)` (`@guarded`, no
 CLI, no busy guard), which needs no argument to validate but `url`, when
