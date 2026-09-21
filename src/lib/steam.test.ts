@@ -68,6 +68,15 @@ describe("the globals", () => {
     expect(ownedApps()).toEqual({ "620": "Portal 2" });
   });
 
+  it("ownedApps is null while the client's collection getter still throws", () => {
+    g.collectionStore = {
+      get allAppsCollection(): never {
+        throw new TypeError("Cannot read properties of undefined (reading 'get')");
+      },
+    };
+    expect(ownedApps()).toBeNull();
+  });
+
   it("currentSteamId3 reads App.m_CurrentUser", () => {
     expect(currentSteamId3()).toBeNull();
     g.App = { m_CurrentUser: { strSteamID: "76561197960265729" } };

@@ -121,7 +121,8 @@ src/lib/                    pure modules (vitest)
   restart.ts                restartDecision() (the §3.9 table), modal text
   version.ts                version parsing, the CLI-missing / too-old row
   format.ts                 relative times, the Last sync line
-  steam.ts                  ownedApps(), currentSteamId3(), runShortcut(),
+  steam.ts                  ownedApps() (a throwing `allAppsCollection` getter, as early
+                            in the client's boot, is "not loaded yet"), currentSteamId3(), runShortcut(),
                             shutdownSteam(), watchRunningApps(), steamInput() over
                             SteamClient.Input, controllerIndex() (ControllerStore or
                             controllerStore, else the guarded list watch; plus the

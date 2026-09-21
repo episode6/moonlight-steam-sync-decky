@@ -77,10 +77,18 @@ function globals(): Record<string, unknown> {
 /**
  * The owned map from `collectionStore.allAppsCollection.allApps` **[verify V4]**,
  * or `null` while the library has not loaded (no store, or no apps yet).
+ * Early in the client's boot the `allAppsCollection` getter itself throws
+ * (its collections are not initialised yet); that is "not loaded" too, so
+ * the caller's poll goes on instead of the load order dying.
  */
 export function ownedApps(): Record<string, string> | null {
   const store = globals().collectionStore as CollectionStoreLike | undefined;
-  const apps = store?.allAppsCollection?.allApps;
+  let apps: AppLike[] | undefined;
+  try {
+    apps = store?.allAppsCollection?.allApps;
+  } catch {
+    return null;
+  }
   if (!Array.isArray(apps) || apps.length === 0) return null;
   const owned = buildOwnedMap(apps);
   return Object.keys(owned).length ? owned : null;
