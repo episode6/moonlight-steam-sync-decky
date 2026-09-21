@@ -64,9 +64,9 @@ function Candidate({
 /**
  * Change match (spec 3.8, mockup screen 5): search Steam's store and
  * SteamGridDB, then pin a result, or pin "no match". Results are one list,
- * Steam first, then SteamGridDB; each row shows what the next sync makes of
- * the title (`becomes stream button` for a game this account owns), the
- * current match is marked, and *No match* comes last. *Use this* pins with
+ * owned games first, then Steam before SteamGridDB; each row shows what the
+ * next sync makes of the title (`becomes stream button` for a game this
+ * account owns), the current match is marked, and *No match* comes last. *Use this* pins with
  * `--defer-art` (Decision 8), so nothing changes until the next sync, which
  * also re-fetches the title's art. *Cancel* does nothing.
  */

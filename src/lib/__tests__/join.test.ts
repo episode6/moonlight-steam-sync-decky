@@ -323,9 +323,20 @@ describe("applyPin: the row after Use this, before the next list", () => {
 describe("the Change match modal's rows", () => {
   const hades: Match = byName(rowsOf(), "Hades II").match!;
 
-  it("one list, Steam first then SteamGridDB, each in the CLI's order", () => {
+  it("one list, owned first, then Steam before SteamGridDB, each in the CLI's order", () => {
     const rows = candidateRows(candidates, hades);
-    expect(rows.map((r) => r.key)).toEqual(["steam:2300320", "steam:1172470", "sgdb:5406129", "sgdb:36072"]);
+    expect(rows.map((r) => r.key)).toEqual(["sgdb:5406129", "steam:2300320", "steam:1172470", "sgdb:36072"]);
+  });
+
+  it("owned candidates keep Steam before SteamGridDB among themselves", () => {
+    const candidate = (source: "steam" | "sgdb", id: number, owned: boolean): CandidateEvent => ({
+      event: "candidate", source, id, name: `Game ${id}`, verified: true, owned, steam_appid: null,
+    });
+    const rows = candidateRows(
+      [candidate("sgdb", 1, false), candidate("sgdb", 2, true), candidate("steam", 3, false), candidate("steam", 4, true)],
+      null,
+    );
+    expect(rows.map((r) => r.key)).toEqual(["steam:4", "sgdb:2", "steam:3", "sgdb:1"]);
   });
 
   it("the outcome comes from candidate.owned", () => {
@@ -408,8 +419,8 @@ describe("the Change match modal's rows", () => {
 
   it("each row pins exactly one selector", () => {
     const rows = candidateRows(candidates, hades);
-    expect(rows[0].choice).toEqual({ steam: 2300320, sgdb: null, none: false });
-    expect(rows[2].choice).toEqual({ steam: null, sgdb: 5406129, none: false });
+    expect(rows[1].choice).toEqual({ steam: 2300320, sgdb: null, none: false });
+    expect(rows[0].choice).toEqual({ steam: null, sgdb: 5406129, none: false });
     expect(noMatchRow(hades).choice).toEqual({ steam: null, sgdb: null, none: true });
   });
 

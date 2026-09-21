@@ -222,9 +222,9 @@ the middle of the run, and re-lists on its own as soon as the run ends.
 
 **Change match** searches Steam's store and SteamGridDB (prefilled with
 the title's name; edit it and **Search** again) and shows the results as
-one list, Steam first, then SteamGridDB, each with what it would make of
-the title: **becomes stream button** for a game this account owns,
-**shortcut** otherwise. The current match is marked, and the last row is
+one list, the games this account owns first, then Steam's results before
+SteamGridDB's, each with what it would make of the title: **becomes stream
+button** for a game this account owns, **shortcut** otherwise. The current match is marked, and the last row is
 **No match** (a plain shortcut with art found by name on SteamGridDB).
 Pressing a row pins it; **Cancel** (B) changes nothing. Changing a match is
 disabled while a sync runs.
