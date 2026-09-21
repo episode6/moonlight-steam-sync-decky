@@ -13,7 +13,11 @@
  * then `renderChildrenFunc` when there is one, then the overview
  * component's type (`createReactTreePatcher`, which caches the patched type
  * so the page is not remounted on every render), and there the button row
- * is spliced in right after the header. Anything unexpected in the tree
+ * is spliced in right after the header. A props object is only ever wrapped
+ * once (`afterPatch` stacks, and the row's key would hide a stack), should
+ * the client hand the same element back across renders. Unloading removes
+ * the route patch only: the patched type lives on per-render elements, so
+ * the next render after an unload is clean. Anything unexpected in the tree
  * (another client version, a page still loading) leaves the page untouched;
  * the patch never throws into Steam's render.
  */
@@ -37,7 +41,6 @@ interface Overview {
 
 interface TreeNode {
   key?: string | null;
-  type?: unknown;
   props?: Record<string, unknown> & { children?: unknown; className?: unknown; overview?: unknown };
 }
 
@@ -85,7 +88,11 @@ const patchAppDetails = createReactTreePatcher(
   [overviewNodeOf],
   (args: unknown[], rendered: unknown) => {
     try {
-      const overview = (args[0] as { overview?: unknown } | undefined)?.overview;
+      // A function component's args are its props; a class's `render` has
+      // none, so fall back to the header inside the output, which carries
+      // the same overview.
+      const fromProps = (args[0] as { overview?: unknown } | undefined)?.overview;
+      const overview = isOverview(fromProps) ? fromProps : overviewNodeOf(rendered)?.props?.overview;
       injectStreamRow(rendered, isOverview(overview) ? overview : null);
     } catch (error) {
       console.warn("Moonlight Sync: could not patch the library page", error);
@@ -94,6 +101,9 @@ const patchAppDetails = createReactTreePatcher(
   },
   "MoonlightSyncLibraryApp",
 );
+
+/** The props objects whose `renderChildrenFunc` is already wrapped. */
+const patchedHolders = new WeakSet<object>();
 
 interface RenderableChild {
   props?: { renderFunc?: (...args: unknown[]) => ReactElement };
@@ -111,8 +121,11 @@ export function patchLibraryApp(): () => void {
         const holder = findInReactTree(rendered, (n: TreeNode) => typeof n?.props?.renderChildrenFunc === "function") as
           | TreeNode
           | undefined;
-        if (holder?.props) afterPatch(holder.props, "renderChildrenFunc", patchAppDetails);
-        else patchAppDetails([], rendered);
+        if (!holder?.props) patchAppDetails([], rendered);
+        else if (!patchedHolders.has(holder.props)) {
+          patchedHolders.add(holder.props);
+          afterPatch(holder.props, "renderChildrenFunc", patchAppDetails);
+        }
       } catch (error) {
         console.warn("Moonlight Sync: could not patch the library page", error);
       }
