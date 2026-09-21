@@ -21,7 +21,7 @@ from dataclasses import dataclass
 
 #: The oldest CLI the plugin can drive (``--json``, ``--commit``, ``host``...).
 #: The one place this value lives.
-MIN_CLI_VERSION: tuple[int, int, int] = (0, 3, 0)
+MIN_CLI_VERSION: tuple[int, int, int] = (0, 4, 0)
 
 Version = tuple[int, int, int]
 

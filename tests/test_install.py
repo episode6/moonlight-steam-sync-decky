@@ -18,20 +18,20 @@ def ensure(env):
 
 
 def test_missing_installed_is_copied(install_env) -> None:
-    install_env.bundled("moonlight-steam-sync.pyz 0.3.0")
+    install_env.bundled("moonlight-steam-sync.pyz 0.4.0")
     assert not install_env.installed_path.parent.exists()  # ~/.local/bin is created
     report = ensure(install_env)
     assert report.action == "installed"
     assert report.error is None
-    assert report.bundled == (0, 3, 0)
-    assert report.installed == (0, 3, 0)
+    assert report.bundled == (0, 4, 0)
+    assert report.installed == (0, 4, 0)
     assert install_env.installed_path.read_bytes() == install_env.bundled_path.read_bytes()
     assert stat.S_IMODE(install_env.installed_path.stat().st_mode) == 0o755
     assert not os.path.exists(str(install_env.installed_path) + ".tmp")
 
 
 def test_older_installed_is_replaced_atomically(install_env, monkeypatch) -> None:
-    install_env.bundled("moonlight-steam-sync.pyz 0.3.0")
+    install_env.bundled("moonlight-steam-sync.pyz 0.4.0")
     install_env.installed("moonlight-steam-sync 0.2.0")
     calls = []
     real_replace = os.replace
@@ -43,14 +43,14 @@ def test_older_installed_is_replaced_atomically(install_env, monkeypatch) -> Non
     monkeypatch.setattr(install.os, "replace", spy)
     report = ensure(install_env)
     assert report.action == "upgraded"
-    assert report.installed == (0, 3, 0)
+    assert report.installed == (0, 4, 0)
     assert calls == [(str(install_env.installed_path) + ".tmp", str(install_env.installed_path))]
     assert install_env.installed_path.read_bytes() == install_env.bundled_path.read_bytes()
     assert stat.S_IMODE(install_env.installed_path.stat().st_mode) == 0o755
 
 
 def test_newer_installed_is_untouched(install_env) -> None:
-    install_env.bundled("moonlight-steam-sync.pyz 0.3.0")
+    install_env.bundled("moonlight-steam-sync.pyz 0.4.0")
     install_env.installed("moonlight-steam-sync 0.4.1")
     before = install_env.installed_path.read_bytes()
     report = ensure(install_env)
@@ -60,8 +60,8 @@ def test_newer_installed_is_untouched(install_env) -> None:
 
 
 def test_same_version_is_untouched(install_env) -> None:
-    install_env.bundled("moonlight-steam-sync.pyz 0.3.0")
-    install_env.installed("moonlight-steam-sync 0.3.0")
+    install_env.bundled("moonlight-steam-sync.pyz 0.4.0")
+    install_env.installed("moonlight-steam-sync 0.4.0")
     before = install_env.installed_path.read_bytes()
     assert ensure(install_env).action == "kept"
     assert install_env.installed_path.read_bytes() == before
@@ -79,7 +79,7 @@ def test_unreadable_bundle_is_an_error_and_nothing_is_replaced(install_env) -> N
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="root can read a 000 file")
 def test_bundle_without_read_permission(install_env) -> None:
-    install_env.bundled("moonlight-steam-sync.pyz 0.3.0").chmod(0)
+    install_env.bundled("moonlight-steam-sync.pyz 0.4.0").chmod(0)
     try:
         report = ensure(install_env)
     finally:
@@ -91,7 +91,7 @@ def test_bundle_without_read_permission(install_env) -> None:
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="root can write a read-only directory")
 def test_copy_failure_leaves_installed_alone(install_env) -> None:
-    install_env.bundled("moonlight-steam-sync.pyz 0.3.0")
+    install_env.bundled("moonlight-steam-sync.pyz 0.4.0")
     install_env.installed("moonlight-steam-sync 0.2.0")
     before = install_env.installed_path.read_bytes()
     install_env.installed_path.parent.chmod(0o555)
@@ -154,23 +154,23 @@ def make_backend_with_shim(tmp_path, install_env) -> Backend:
 
 
 def test_startup_installs_the_bundle_and_about_shows_both(tmp_path, install_env) -> None:
-    install_env.bundled("moonlight-steam-sync.pyz 0.3.0")
-    (install_env.plugin_dir / "package.json").write_text('{"moonlightSteamSync": "0.3.0"}\n')
+    install_env.bundled("moonlight-steam-sync.pyz 0.4.0")
+    (install_env.plugin_dir / "package.json").write_text('{"moonlightSteamSync": "0.4.0"}\n')
     backend = make_backend_with_shim(tmp_path, install_env)
     run(backend.startup())
     assert install_env.installed_path.exists()
     info = run(backend.cli_version())
     assert info["ok"] is True
-    assert info["installed"] == "0.3.0"
-    assert info["bundled"] == "0.3.0"
-    assert info["pinned"] == "0.3.0"
-    assert info["minimum"] == "0.3.0"
+    assert info["installed"] == "0.4.0"
+    assert info["bundled"] == "0.4.0"
+    assert info["pinned"] == "0.4.0"
+    assert info["minimum"] == "0.4.0"
     assert info["too_old"] is False
     assert info["install_error"] is None
     assert info["installed_path"] == str(install_env.installed_path)
     assert info["bundled_path"] == str(install_env.bundled_path)
     log = (tmp_path / "logs" / "moonlight-sync.log").read_text()
-    assert "bundled 0.3.0, installed 0.3.0, action installed" in log
+    assert "bundled 0.4.0, installed 0.4.0, action installed" in log
 
 
 def test_too_old_short_circuits_without_spawning(tmp_path, install_env) -> None:
@@ -192,9 +192,9 @@ def test_too_old_short_circuits_without_spawning(tmp_path, install_env) -> None:
     assert result == {
         "ok": False,
         "error": "cli-too-old",
-        "message": "CLI too old (0.2.0, needs 0.3.0) — see About",
+        "message": "CLI too old (0.2.0, needs 0.4.0) — see About",
         "installed": "0.2.0",
-        "minimum": "0.3.0",
+        "minimum": "0.4.0",
     }
     for call in (backend.hosts(), backend.list_apps(), backend.start_sync(), backend.doctor()):
         assert run(call)["error"] == "cli-too-old"
@@ -216,5 +216,5 @@ def test_missing_cli_short_circuits(tmp_path, install_env) -> None:
 
 
 def test_min_cli_version_is_the_one_constant() -> None:
-    assert install.MIN_CLI_VERSION == (0, 3, 0)
+    assert install.MIN_CLI_VERSION == (0, 4, 0)
     assert FAKE_CLI.exists()

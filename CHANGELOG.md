@@ -6,6 +6,8 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-20
+
 ### Added
 
 - **Desktop and Steam Big Picture buttons on the panel.** The two entries
@@ -17,9 +19,10 @@ project uses [semantic versioning](https://semver.org/).
 ### Changed
 
 - **Bundles moonlight-steam-sync `v0.4.0`** (the `package.json` pin moved
-  from `0.3.1`). `v0.4.0` adds `--hide-host-apps`, which the plugin does
-  not pass yet, so nothing changes in behaviour and `MIN_CLI_VERSION`
-  stays `0.3.0`.
+  from `0.3.1`) **and needs 0.4.0 or newer** (`MIN_CLI_VERSION` moved from
+  `0.3.0`): one CLI version per plugin version. The plugin installs or
+  upgrades the CLI on first load, so there is nothing to do by hand.
+  `v0.4.0` adds `--hide-host-apps`, which the plugin does not pass yet.
 - **Change match lists the games you own first.** Search results that this
   account owns (the ones a pin turns into a Stream button) now sit at the
   top of the list, ahead of the other Steam and SteamGridDB results, so

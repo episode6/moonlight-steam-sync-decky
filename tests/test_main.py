@@ -85,7 +85,7 @@ def test_main_py_end_to_end(plugin) -> None:
         return version, owned, status, started
 
     version, owned, status, started = run(scenario())
-    assert version["installed"] == "0.3.0"
+    assert version["installed"] == "0.4.0"
     assert version["pinned"] == "0.4.0"
     assert version["plugin_version"] == "0.1.0"
     assert owned == {"ok": True, "count": 1}
@@ -168,7 +168,7 @@ def test_the_api_version_0_convention_drives_the_class_itself(plugin_module) -> 
         return version, owned, status, settings
 
     version, owned, status, settings = run(scenario())
-    assert version["installed"] == "0.3.0"
+    assert version["installed"] == "0.4.0"
     assert owned == {"ok": True, "count": 1}
     assert status["ok"] is True and len(status["entries"]) == 6
     assert settings["ok"] is True

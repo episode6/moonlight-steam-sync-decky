@@ -1,4 +1,4 @@
 # match "Tunic" --none --defer-art: "no match" pinned, both ids null and the
 # override line in its config form, an empty table (spec 3.4.6).
-{"event":"start","schema":1,"version":"0.3.0","command":"match"}
+{"event":"start","schema":1,"version":"0.4.0","command":"match"}
 {"event":"pinned","name":"Tunic","steam_appid":null,"sgdb_id":null,"override_line":"\"Tunic\" = {}"}

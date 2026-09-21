@@ -29,13 +29,13 @@ function fakeBackend(calls: Calls, answers: Partial<Record<keyof Backend, unknow
   const defaults: Partial<Record<keyof Backend, unknown>> = {
     cli_version: {
       ok: true,
-      installed: "0.3.0",
-      bundled: "0.3.0",
-      minimum: "0.3.0",
+      installed: "0.4.0",
+      bundled: "0.4.0",
+      minimum: "0.4.0",
       too_old: false,
       installed_path: "~/.local/bin/moonlight-steam-sync",
       bundled_path: "",
-      pinned: "0.3.0",
+      pinned: "0.4.0",
       plugin_version: "0.1.0",
       log_path: "",
       install_error: null,
@@ -247,9 +247,9 @@ describe("load order (spec 3.8)", () => {
             ? { ok: false, error: "io", message: "could not run the CLI: [Errno 13] denied" }
             : {
                 ok: true,
-                installed: "0.3.0",
-                bundled: "0.3.0",
-                minimum: "0.3.0",
+                installed: "0.4.0",
+                bundled: "0.4.0",
+                minimum: "0.4.0",
                 too_old: false,
                 capabilities: { art_commit: true },
               };
@@ -283,9 +283,9 @@ describe("load order (spec 3.8)", () => {
             ? { ok: false, error: "io", message: "boom" }
             : {
                 ok: true,
-                installed: "0.3.0",
-                bundled: "0.3.0",
-                minimum: "0.3.0",
+                installed: "0.4.0",
+                bundled: "0.4.0",
+                minimum: "0.4.0",
                 too_old: false,
                 capabilities: { art_commit: true },
               };
@@ -309,7 +309,7 @@ describe("load order (spec 3.8)", () => {
           ok: true,
           installed: null,
           bundled: null,
-          minimum: "0.3.0",
+          minimum: "0.4.0",
           too_old: false,
           capabilities: { art_commit: false },
         },
@@ -330,9 +330,9 @@ describe("load order (spec 3.8)", () => {
     let answered = false;
     const ok = {
       ok: true,
-      installed: "0.3.0",
-      bundled: "0.3.0",
-      minimum: "0.3.0",
+      installed: "0.4.0",
+      bundled: "0.4.0",
+      minimum: "0.4.0",
       too_old: false,
       capabilities: { art_commit: true },
     };
@@ -628,7 +628,7 @@ describe("runs and the restart flow (spec 3.9)", () => {
     const controller = await loaded();
     await controller.sync();
     const mismatch: CliEvent[] = [
-      { event: "start", schema: 1, version: "0.3.0", command: "sync" },
+      { event: "start", schema: 1, version: "0.4.0", command: "sync" },
       {
         event: "error",
         exit: 1,

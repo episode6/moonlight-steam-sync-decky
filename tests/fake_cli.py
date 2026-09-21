@@ -21,7 +21,7 @@ backend's ``cli=`` seam. Everything is driven by environment variables:
 ``FAKE_CLI_ARGV_LOG``
     Append ``{"argv", "cwd", "from_plugin", "home", "ld_library_path",
     "ld_library_path_orig"}`` as one JSON line per invocation.
-``FAKE_CLI_VERSION`` (default ``0.3.0``)
+``FAKE_CLI_VERSION`` (default ``0.4.0``)
     ``--version`` prints ``moonlight-steam-sync <v>``. Below 0.3.0 the new
     flags and subcommands are rejected the way argparse does: usage and
     ``error: unrecognized arguments`` on stderr, nothing on stdout, exit 2.
@@ -345,7 +345,7 @@ def main(argv: list[str]) -> int:
     extra = os.environ.get("FAKE_CLI_STDERR")
     if extra:
         _err(extra)
-    version = os.environ.get("FAKE_CLI_VERSION", "0.3.0")
+    version = os.environ.get("FAKE_CLI_VERSION", "0.4.0")
     if "--version" in argv:
         _out(f"moonlight-steam-sync {version}")
         return 0

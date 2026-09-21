@@ -123,17 +123,17 @@ def test_capabilities_without_art_commit(backend) -> None:
 def test_cli_version_shape(backend, tmp_path) -> None:
     plugin = Path(backend.plugin_dir)
     plugin.mkdir(parents=True, exist_ok=True)
-    (plugin / "package.json").write_text('{"version": "0.1.0", "moonlightSteamSync": "0.3.0"}')
+    (plugin / "package.json").write_text('{"version": "0.1.0", "moonlightSteamSync": "0.4.0"}')
     info = run(backend.cli_version())
     assert info == {
         "ok": True,
-        "installed": "0.3.0",
+        "installed": "0.4.0",
         "bundled": None,
-        "minimum": "0.3.0",
+        "minimum": "0.4.0",
         "too_old": False,
         "installed_path": str(Path(backend.home) / ".local" / "bin" / "moonlight-steam-sync"),
         "bundled_path": str(plugin / "bin" / "moonlight-steam-sync.pyz"),
-        "pinned": "0.3.0",
+        "pinned": "0.4.0",
         "plugin_version": "0.1.0",
         "log_path": str(tmp_path / "logs" / "moonlight-sync.log"),
         "install_error": None,
@@ -844,7 +844,7 @@ def test_any_other_exit_1_from_host_show_is_still_a_failure(make_backend, tmp_pa
     fixture = tmp_path / "fx"
     fixture.mkdir()
     (fixture / "host.ndjson").write_text(
-        '{"event":"start","schema":1,"version":"0.3.0","command":"host"}\n'
+        '{"event":"start","schema":1,"version":"0.4.0","command":"host"}\n'
         '{"event":"error","exit":1,"message":"host: cannot read the host cache"}\n'
     )
     backend = make_backend(
@@ -946,7 +946,7 @@ def test_cli_too_old_short_circuits_without_a_child(make_backend) -> None:
     result = run(backend.status())
     assert result["error"] == "cli-too-old"
     assert result["installed"] == "0.2.0"
-    assert result["minimum"] == "0.3.0"
+    assert result["minimum"] == "0.4.0"
     assert run(backend.start_sync())["error"] == "cli-too-old"
     assert backend.harness.argv() == [["--version"]]
     assert run(backend.cli_version())["too_old"] is True
@@ -954,7 +954,7 @@ def test_cli_too_old_short_circuits_without_a_child(make_backend) -> None:
 
 def test_cli_protocol_when_the_cli_rejects_a_flag(backend) -> None:
     owned(backend)
-    backend.env["FAKE_CLI_VERSION"] = "0.2.0"  # reports 0.3.0 at startup, rejects now
+    backend.env["FAKE_CLI_VERSION"] = "0.2.0"  # reports 0.4.0 at startup, rejects now
     result = run(backend.status())
     assert result["ok"] is False
     assert result["error"] == "cli-protocol"

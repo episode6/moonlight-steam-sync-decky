@@ -1,7 +1,7 @@
 # Seven apps covering every kind: stream, fuzzy shortcut, plain shortcut
 # (unmatched), ignored, parked, duplicate (with duplicate_of) and one with
 # same_game_as on OFFICE-PC.
-{"event":"start","schema":1,"version":"0.3.0","command":"list"}
+{"event":"start","schema":1,"version":"0.4.0","command":"list"}
 {"event":"app","name":"Balatro","label":"added","kind":"stream","match":{"steam_appid":2379780,"sgdb_id":5431,"matched_name":"Balatro","how":"sgdb:exact-verified"},"fuzzy":false,"duplicate_of":null,"same_game_as":[{"name":"Balatro (Epic)","host":"OFFICE-PC"}],"cached":false,"cached_when":null}
 {"event":"app","name":"Desktop","label":"ignored","kind":"ignored","match":null,"fuzzy":false,"duplicate_of":null,"same_game_as":[],"cached":false,"cached_when":null}
 {"event":"app","name":"Hades II","label":"added","kind":"shortcut","match":{"steam_appid":1145360,"sgdb_id":36072,"matched_name":"Hades","how":"steamstore:fuzzy"},"fuzzy":true,"duplicate_of":null,"same_game_as":[],"cached":false,"cached_when":null}

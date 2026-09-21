@@ -149,7 +149,7 @@ def test_fixture_key_sets_match_the_schema(path: Path) -> None:
     first = events[0]
     assert first["event"] == "start"
     assert first["schema"] == 1
-    assert first["version"] == "0.3.0"
+    assert first["version"] == "0.4.0"
     command = first["command"]
     for event in events:
         name = event["event"]

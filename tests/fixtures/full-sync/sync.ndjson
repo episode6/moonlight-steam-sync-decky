@@ -1,6 +1,6 @@
 # A sync that adds two entries, replaces one, parks one and ends in a write
 # after the client exits (spec 3.4.6 / 3.5). Hand-written from the schema.
-{"event":"start","schema":1,"version":"0.3.0","command":"sync"}
+{"event":"start","schema":1,"version":"0.4.0","command":"sync"}
 {"event":"plan","host":"MY-GAMING-PC","published":6,"ignored":1,"present":2,"to_add":2,"to_replace":1,"to_park":1,"to_unpark":0,"to_remove":0,"pending":0,"limit":null,"stream":3,"shortcut":2,"parked":1,"duplicates":{}}
 {"event":"replace","name":"Balatro","old_appid":3141592653,"new_appid":2718281828,"reason":"kind-changed"}
 {"event":"title","index":1,"total":3,"name":"Balatro","kind":"stream","appid":2718281828,"match":{"steam_appid":2379780,"sgdb_id":5431,"matched_name":"Balatro","how":"sgdb:exact-verified"},"slots":{"portrait":"kept","landscape":"kept","hero":"kept","logo":"kept","icon":"kept"}}

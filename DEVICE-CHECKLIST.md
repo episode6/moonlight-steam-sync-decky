@@ -176,8 +176,8 @@ to `~/homebrew/logs/steam-input-probe/steam-input-probe.log` (the loader's
       hand-build) a CLI whose `art --help` lacks `--commit`. Expect
       *Re-fetch all art* to be disabled, and if pressed anyway from a stale
       state, the message to read "re-fetching art from Game Mode needs a
-      CLI whose art command accepts --commit" — never "CLI too old (0.3.0,
-      needs 0.3.0)".
+      CLI whose art command accepts --commit" — never "CLI too old (0.4.0,
+      needs 0.4.0)".
 - [ ] **Host subtitle with several hosts.** Add three hosts (one active,
       two not), sync the inactive ones once each so they have cached
       listings. Expect "active host · parked from MY-GAMING-PC (N titles),

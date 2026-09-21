@@ -36,7 +36,7 @@ Breaking any of these is a blocker, not a judgement call.
    paths (write `~` or `$HOME`).
 6. **No host-side component.** Nothing runs on the gaming PC.
 7. **Build against the spec's CLI contract** (§3.4 flags, §3.4.6 events),
-   never against CLI 0.2.0 behaviour. The minimum CLI is `0.3.0`
+   never against CLI 0.2.0 behaviour. The minimum CLI is `0.4.0`
    (`install.MIN_CLI_VERSION`, the one place it lives).
 8. **One pin.** The bundled CLI release is `package.json`'s
    `"moonlightSteamSync"`; every script reads it from there.
@@ -352,13 +352,16 @@ CLI's `v0.3.0` was released on 2026-09-20 and the plugin's `v0.1.0`
 follows it; the lenient path only matters again when the pin moves to a
 CLI release that does not exist yet.
 
-The pin moved to the CLI's `v0.4.0` (released 2026-09-20) ahead of the
-plugin half of spec §3.14.1. `v0.4.0` adds `--hide-host-apps`; the plugin
-does **not** pass it yet, so `MIN_CLI_VERSION` stays `0.3.0` and the
-fixtures and the fake CLI still speak 0.3.0. Passing the flag, the
-`host-app` kind and `MIN_CLI_VERSION = "0.4.0"` land together in that PR
-(an older CLI answers the unknown flag with exit 2, which is also
-`EXIT_STEAM_RUNNING`), and the next plugin release follows it.
+The pin **and** `MIN_CLI_VERSION` moved to the CLI's `v0.4.0` (released
+2026-09-20) together: one CLI version per plugin version, so the bundled,
+minimum and fake-CLI versions are all `0.4.0` and the fixtures' `start`
+events say so. The bundled-install path upgrades an older installed CLI, so
+the raised minimum is invisible to users. `v0.4.0` adds `--hide-host-apps`;
+the plugin does **not** pass it yet (the plugin half of spec §3.14.1: the
+flag, the `host-app` kind, counters, Choose layout, fixtures); that work
+is for a later release. The same PR prepared `v0.2.0` (`package.json`
+`"version"`, the dated CHANGELOG section), so steps 1-3 below are already
+done for it: what is left is the push and `gh release create v0.2.0`.
 
 Modelled on the CLI repo's own "Cutting a release", once `v0.3.0` exists
 and everything intended for `v0.1.0` has merged to `main`:

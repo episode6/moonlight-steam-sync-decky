@@ -35,7 +35,7 @@ describe("parsing the backend's fixtures", () => {
       .filter((line) => line.trim() && !line.startsWith("#"));
     const events = loadFixture(name);
     expect(events).toHaveLength(dataLines.length);
-    expect(events[0]).toMatchObject({ event: "start", schema: 1, version: "0.3.0" });
+    expect(events[0]).toMatchObject({ event: "start", schema: 1, version: "0.4.0" });
     for (const event of events) expect(EVENT_NAMES).toContain(event.event);
   });
 
