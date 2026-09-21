@@ -129,8 +129,12 @@ src/lib/                    pure modules (vitest)
                             active-controller watch),
                             overviewLoaded(), showControllerConfigurator() (globals only)
 src/routes/libraryApp.tsx   the /library/app/:appid patch (routerHook.addPatch, afterPatch
-                            on renderFunc, findInReactTree for the overview and the
-                            InnerContainer), written fresh; injects StreamButton
+                            on renderFunc, then on the returned element's
+                            renderChildrenFunc, then createReactTreePatcher on the
+                            app-details component -- the one with `overview` props -- whose
+                            own output is the first tree that holds the InnerContainer;
+                            renderFunc's output does not, found on device 2026-09-21),
+                            written fresh; injects StreamButton
 src/components/             QuickAccess (HostAppRow: the launch button plus the icon-only
                             layout button, plain ButtonItem when the client has no
                             configurator), SyncProgress, RestartModal, SettingsPage,
@@ -403,7 +407,10 @@ CHANGELOG section), as the earlier releases' PRs did. Plugin `v0.3.1` (the
 user asked for it on 2026-09-21) is a patch release for the boot-time
 "Loading your library…" hang; same CLI pin and minimum. Plugin `v0.3.2`
 (the user asked for it on 2026-09-21) is a patch release for the unbuffered
-CLI fix (`PYTHONUNBUFFERED=1`); same CLI pin and minimum.
+CLI fix (`PYTHONUNBUFFERED=1`); same CLI pin and minimum. Plugin `v0.3.3`
+(the user asked for it on 2026-09-21) is a patch release for the Stream
+button that never appeared (the library route patch); same CLI pin and
+minimum, and its steps 1-3 rode along in the fix's own PR.
 
 Modelled on the CLI repo's own "Cutting a release" (the example below is
 the plugin's first release, `v0.1.0`, which waited for the CLI's `v0.3.0`;
