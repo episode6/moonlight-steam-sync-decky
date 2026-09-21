@@ -1,9 +1,9 @@
 # Nothing to add or replace, but two titles got new images: no file write,
 # commit written:false (spec 3.5 step 7), a restart is still offered (3.9).
 {"event":"start","schema":1,"version":"0.4.0","command":"sync"}
-{"event":"plan","host":"MY-GAMING-PC","published":6,"ignored":1,"present":5,"to_add":0,"to_replace":0,"to_park":0,"to_unpark":0,"to_remove":0,"pending":0,"limit":null,"stream":3,"shortcut":2,"parked":1,"duplicates":{}}
+{"event":"plan","host":"MY-GAMING-PC","published":8,"ignored":1,"present":7,"to_add":0,"to_replace":0,"to_park":0,"to_unpark":0,"to_remove":0,"pending":0,"limit":null,"stream":3,"shortcut":2,"host_app":2,"parked":1,"duplicates":{}}
 {"event":"title","index":1,"total":2,"name":"Hades II","kind":"shortcut","appid":3000000011,"match":{"steam_appid":1145360,"sgdb_id":36072,"matched_name":"Hades","how":"steamstore:fuzzy"},"slots":{"portrait":"kept","landscape":"kept","hero":"kept","logo":"steam","icon":"kept"}}
 {"event":"title","index":2,"total":2,"name":"Tunic","kind":"shortcut","appid":3000000007,"match":{"steam_appid":553420,"sgdb_id":4102,"matched_name":"TUNIC","how":"steamstore:exact"},"slots":{"portrait":"kept","landscape":"kept","hero":"kept","logo":"kept","icon":"sgdb"}}
 {"event":"note","message":"restart Steam to see the new artwork"}
 {"event":"commit","written":false,"restarted":false,"backup":"","relaunch_error":""}
-{"event":"summary","added":0,"added_by_kind":{"stream":0,"shortcut":0},"replaced":0,"removed":0,"filled":2,"missing":0,"unmatched":[],"duplicates":{},"pending":0,"stopped_early":false,"stop_reason":null,"exit":0}
+{"event":"summary","added":0,"added_by_kind":{"stream":0,"shortcut":0,"host-app":0},"replaced":0,"removed":0,"filled":2,"missing":0,"unmatched":[],"duplicates":{},"pending":0,"stopped_early":false,"stop_reason":null,"exit":0}

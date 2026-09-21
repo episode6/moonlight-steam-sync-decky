@@ -52,7 +52,7 @@ describe("parsing the backend's fixtures", () => {
 
   it("types list, status, host and search events", () => {
     const apps = eventsOf(loadFixture("common/list.ndjson"), "app");
-    expect(apps).toHaveLength(7);
+    expect(apps).toHaveLength(9);
     expect(apps.find((a) => a.kind === "duplicate")?.duplicate_of).toBe("Sea of Stars");
     expect(apps.find((a) => a.fuzzy)?.name).toBe("Hades II");
     const entries = eventsOf(loadFixture("common/status.ndjson"), "entry");

@@ -70,7 +70,7 @@ function fakeBackend(calls: Calls, answers: Partial<Record<keyof Backend, unknow
       last_kind: null,
       events: [],
     },
-    get_ignored: { ok: true, ignored: ["Desktop"] },
+    get_ignored: { ok: true, ignored: ["Demo Launcher"] },
     write_owned_apps: { ok: true, count: 2 },
     status: { ok: true, entries: eventsOf(loadFixture("common/status.ndjson"), "entry"), notes: [] },
     check_host: {
@@ -89,7 +89,7 @@ function fakeBackend(calls: Calls, answers: Partial<Record<keyof Backend, unknow
     set_host: { ok: true, active: "OFFICE-PC" },
     layouts: { ok: true, version: 1, entries: {} },
     // upserts like the backend does, answering with the whole file
-    record_layout: (shortcut: number, real: number, result: string, url: string | null) => {
+    record_layout: (shortcut: number, real: number | null, result: string, url: string | null) => {
       layoutsFile[String(shortcut)] = { real_appid: real, result, url, when: "2026-09-18T14:02:00Z" };
       return { ok: true, version: 1, entries: { ...layoutsFile } };
     },
@@ -204,7 +204,7 @@ let calls: Calls;
 let steam: FakeSteam;
 let ui: FakeUi;
 /** What the fake backend's `record_layout` has written (reset per test). */
-let layoutsFile: Record<string, { real_appid: number; result: string; url: string | null; when: string }>;
+let layoutsFile: Record<string, { real_appid: number | null; result: string; url: string | null; when: string }>;
 
 beforeEach(() => {
   calls = [];
@@ -668,9 +668,11 @@ describe("runs and the restart flow (spec 3.9)", () => {
   });
 
   it("Desktop / Steam Big Picture run their shortcut, and only when the host has one", async () => {
-    const entries = eventsOf(loadFixture("common/status.ndjson"), "entry");
-    const desktop = { ...entries.find((e) => e.name === "Tunic")!, name: "Desktop", appid: 3000000101 };
-    const controller = await loaded({ status: { ok: true, entries: [...entries, desktop], notes: [] } });
+    // The fixture's pair is hidden (--hide-host-apps); the buttons are its only launcher.
+    const entries = eventsOf(loadFixture("common/status.ndjson"), "entry").filter(
+      (e) => e.name !== "Steam Big Picture",
+    );
+    const controller = await loaded({ status: { ok: true, entries, notes: [] } });
     expect(controller.openHostApp("desktop")).toBe(true);
     expect(controller.openHostApp("bigPicture")).toBe(false);
     expect(steam.launched).toEqual([3000000101]);
@@ -711,9 +713,9 @@ describe("the Titles page (spec 3.8)", () => {
     expect(load.ok).toBe(true);
     if (!load.ok) return;
     expect(load.data.source).toBe("live");
-    expect(load.data.apps).toHaveLength(7);
-    expect(load.data.entries).toHaveLength(6);
-    expect(load.data.ignored).toEqual(["Desktop"]);
+    expect(load.data.apps).toHaveLength(9);
+    expect(load.data.entries).toHaveLength(8);
+    expect(load.data.ignored).toEqual(["Demo Launcher"]);
     expect(load.data.host).toBe("MY-GAMING-PC");
     expect(load.data.unreachable).toBeNull();
     expect(load.data.cachedWhen).toBeNull();
@@ -870,7 +872,7 @@ describe("the Titles page (spec 3.8)", () => {
   });
 
   it("Ignore writes ignore.json and the Ignored counter follows it", async () => {
-    const controller = await loaded({ set_ignored: { ok: true, ignored: ["Desktop", "Tunic"] } });
+    const controller = await loaded({ set_ignored: { ok: true, ignored: ["Demo Launcher", "Tunic"] } });
     const reach = () => controller.state.reach;
     expect((reach() as { ignored?: number }).ignored).toBe(1);
     expect((await controller.setIgnored("Tunic", true)).ok).toBe(true);
@@ -979,6 +981,40 @@ describe("the Stream button and controller layouts (spec 3.9, 3.10)", () => {
     expect(controller.canChooseLayout()).toBe(false);
     expect(await controller.chooseLayout(BALATRO_SHORTCUT, BALATRO)).toBe(false);
     expect(recorded()).toHaveLength(1);
+  });
+
+  it("the panel's layout buttons open the hidden host app's picker, even while a game runs", async () => {
+    const controller = await loaded();
+    expect(controller.state.hostApps).toEqual({ desktop: 3000000101, bigPicture: 3000000102 });
+    controller.setInGame(true); // the launch is held back; the configurator starts nothing
+    expect(await controller.chooseHostAppLayout("desktop")).toBe(true);
+    expect(await controller.chooseHostAppLayout("bigPicture")).toBe(true);
+    expect(steam.configuratorOpened).toEqual([3000000101, 3000000102]);
+    // picker only: no game behind it, and Steam Input is never touched
+    expect(recorded()).toEqual([
+      [3000000101, null, "picker", null],
+      [3000000102, null, "picker", null],
+    ]);
+    expect(controller.state.layouts["3000000101"]).toMatchObject({ real_appid: null, result: "picker" });
+    expect(steam.launched).toEqual([]);
+    steam.configurator = false;
+    expect(await controller.chooseHostAppLayout("desktop")).toBe(false);
+    expect(recorded()).toHaveLength(2);
+  });
+
+  it("a host app the host does not publish has no layout button to press", async () => {
+    const entries = eventsOf(loadFixture("common/status.ndjson"), "entry").filter((e) => !e.host_app);
+    const controller = await loaded({ status: { ok: true, entries, notes: [] } });
+    expect(await controller.chooseHostAppLayout("desktop")).toBe(false);
+    expect(steam.configuratorOpened).toEqual([]);
+    expect(names()).not.toContain("record_layout");
+  });
+
+  it("Desktop's Steam match never makes it a Stream button or a copy target", async () => {
+    const controller = await loaded();
+    // status.ndjson: hidden, published, matched to Steam 226620 -- and host_app.
+    expect(controller.hasStream(226620)).toBe(false);
+    expect([...controller.state.streamMap.values()]).not.toContain(3000000101);
   });
 
   it("a remove run's sync_done re-reads layouts.json", async () => {

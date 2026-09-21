@@ -124,13 +124,30 @@ CLI release)" and you can install the CLI with its own `install.sh`.
   once to enable").
 - **Desktop** and **Steam Big Picture**: the two entries every Sunshine /
   Apollo host publishes by default get a button each, which launches that
-  entry's synced shortcut. A button only shows when the active host
-  publishes the entry and it is not ignored (an ignored entry has no
-  shortcut to launch). Like the Stream button, they do nothing while a
-  game is already running.
+  entry's synced shortcut. **These buttons replace the two library tiles:**
+  every sync the plugin runs passes `--hide-host-apps`, so the CLI keeps the
+  two shortcuts (Steam's controller layouts are per shortcut) but writes
+  them hidden. On an existing install the first sync hides the two tiles in
+  place: same appid, so their artwork and any controller layout you chose
+  are untouched. A button only shows when the active host publishes the
+  entry and it is not ignored (an ignored entry has no shortcut to launch).
+  Like the Stream button, they do nothing while a game is already running.
+  - The small **gamepad button** beside each one (*Choose controller layout
+    for Desktop* / *… Steam Big Picture*) opens Steam's controller
+    configurator for that hidden entry, which has no library page to reach
+    it from. It works while a game is running too, since it starts nothing,
+    and it is left out on a Steam client that cannot open the configurator.
+  - **Getting the tiles back.** There is no plugin setting for this. From a
+    terminal, run `moonlight-steam-sync sync --park-unpublished` (without
+    `--hide-host-apps`): the CLI sees two published, hidden shortcuts and
+    shows them again. The next sync from the plugin hides them again, so
+    this only lasts if you sync from the terminal from then on. A host whose
+    two entries were renamed is not affected: only the names `Desktop` and
+    `Steam Big Picture` (any case) are host apps.
 - Four counters from the last status: **Stream buttons** (hidden entries for
   games you own), **Shortcuts**, **Unmatched**, **Ignored**; and **Last
-  sync** ("Today 14:02 · 2 added, 1 removed").
+  sync** ("Today 14:02 · 2 added, 1 removed"). The two host apps count
+  toward none of the first three.
 
 On the very first run there is no host yet: the panel says "No host yet" and
 **Add a host** opens the Host page.
@@ -204,6 +221,12 @@ match line (`Balatro · Steam 2379780`, `Sea of Stars · SGDB 5322710`, or
   shortcut named after the game, whose library page gets the Stream button.
 - **shortcut**: a visible shortcut with artwork, as today.
 - **unmatched**: a shortcut without a Steam or SteamGridDB match.
+- **host app**: `Desktop` or `Steam Big Picture`, a hidden shortcut the
+  panel's button launches (see "The Quick Access panel"). It is listed
+  under *All* only. **Change match** still works and only changes its
+  artwork (every result reads **art only**: no match makes a host app a
+  Stream button); **Choose layout** opens its controller configurator;
+  **Ignore** removes the entry, and its panel button, on the next sync.
 - **ignored**: nothing is created for it.
 - **duplicate**: matched to the same owned game as another title (the line
   reads "same game as …"); the first title gets the hidden entry and this
@@ -230,7 +253,7 @@ the middle of the run, and re-lists on its own as soon as the run ends.
 the title's name; edit it and **Search** again) and shows the results as
 one list, the games this account owns first, then Steam's results before
 SteamGridDB's, each with what it would make of the title: **becomes stream
-button** for a game this account owns, **shortcut** otherwise. The current match is marked, and the last row is
+button** for a game this account owns, **shortcut** otherwise (**art only** for every result on a host-app row). The current match is marked, and the last row is
 **No match** (a plain shortcut with art found by name on SteamGridDB).
 Pressing a row pins it; **Cancel** (B) changes nothing. Changing a match is
 disabled while a sync runs.
@@ -363,7 +386,9 @@ Steam's:
   `pending.json` (a restart that is still pending, and whether the layout
   walk after a sync's restart is still due), `layouts.json` (the last
   layout result per hidden shortcut: `{"version": 1, "entries":
-  {"<shortcut appid>": {"real_appid", "result", "url", "when"}}}`).
+  {"<shortcut appid>": {"real_appid", "result", "url", "when"}}}`;
+  `real_appid` is `null` for *Choose layout* on Desktop / Steam Big
+  Picture, which have no Steam game behind them).
 - `~/homebrew/logs/Moonlight Sync/moonlight-sync.log`: every CLI call with
   its arguments, the CLI's own messages verbatim, and both CLI versions at
   startup.

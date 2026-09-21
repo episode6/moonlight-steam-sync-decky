@@ -25,6 +25,7 @@ backend's ``cli=`` seam. Everything is driven by environment variables:
     ``--version`` prints ``moonlight-steam-sync <v>``. Below 0.3.0 the new
     flags and subcommands are rejected the way argparse does: usage and
     ``error: unrecognized arguments`` on stderr, nothing on stdout, exit 2.
+    Below 0.4.0 ``--hide-host-apps`` is rejected the same way.
 ``FAKE_CLI_ART_COMMIT=1``
     ``art --help`` mentions ``--commit {restart,await-exit,refuse}``.
 ``FAKE_CLI_STEAM_GONE_FILE`` / ``FAKE_CLI_WAIT_S`` (default 5)
@@ -89,6 +90,10 @@ NEW_FLAGS = (
     "--defer-art",
     "--force-name",
 )
+#: What 0.4.0 added (spec 3.14). An older argparse rejects it the same way,
+#: which is why the plugin's minimum is 0.4.0 rather than a capability probe:
+#: argparse's exit 2 is also EXIT_STEAM_RUNNING.
+FLAGS_0_4_0 = ("--hide-host-apps",)
 NEW_SUBCOMMANDS = ("host", "search", "match", "client")
 
 ART_HELP_BASE = """usage: moonlight-steam-sync art [-h] [--force] [--retry-missing] [--limit N]
@@ -162,12 +167,16 @@ def _subcommand(argv: list[str]) -> str | None:
     return None
 
 
-def _reject_old(argv: list[str], subcommand: str | None) -> int | None:
-    """Reproduce argparse on a pre-0.3.0 CLI; ``None`` when nothing is rejected."""
-    bad = [token for token in argv if token in NEW_FLAGS]
-    if subcommand == "status" and "--host" in argv:
+def _reject_old(
+    argv: list[str], subcommand: str | None, version: tuple[int, int, int]
+) -> int | None:
+    """Reproduce an older CLI's argparse; ``None`` when nothing is rejected."""
+    pre_0_3 = version < (0, 3, 0)
+    flags = (*NEW_FLAGS, *FLAGS_0_4_0) if pre_0_3 else FLAGS_0_4_0
+    bad = [token for token in argv if token in flags]
+    if pre_0_3 and subcommand == "status" and "--host" in argv:
         bad.append("--host")
-    if subcommand in NEW_SUBCOMMANDS:
+    if pre_0_3 and subcommand in NEW_SUBCOMMANDS:
         _err("usage: moonlight-steam-sync [-h] [--version] {sync,list,art,status,...} ...")
         _err(f"moonlight-steam-sync: error: argument command: invalid choice: '{subcommand}'")
         return 2
@@ -350,8 +359,8 @@ def main(argv: list[str]) -> int:
         _out(f"moonlight-steam-sync {version}")
         return 0
     subcommand = _subcommand(argv)
-    if _version_tuple(version) < (0, 3, 0):
-        rejected = _reject_old(argv, subcommand)
+    if _version_tuple(version) < (0, 4, 0):
+        rejected = _reject_old(argv, subcommand, _version_tuple(version))
         if rejected is not None:
             return rejected
     if subcommand is None:

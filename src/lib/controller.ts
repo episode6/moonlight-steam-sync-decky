@@ -695,12 +695,25 @@ export class Controller {
    * *Choose layout* on a Titles row: Steam's own layout picker for the
    * hidden shortcut, recorded as `picker` (under either strategy; under
    * `picker` it is the only layout affordance). `false` when the client has
-   * no such method, in which case the pages hide the action.
+   * no such method, in which case the pages hide the action. `realAppid`
+   * is `null` for a default host app (the panel's layout buttons and its
+   * Titles row, spec 3.14.1): there is no game behind it, only the picker.
    */
-  async chooseLayout(shortcutAppid: number, realAppid: number): Promise<boolean> {
+  async chooseLayout(shortcutAppid: number, realAppid: number | null): Promise<boolean> {
     if (!this.steam.showControllerConfigurator(shortcutAppid)) return false;
     await this.recordLayout(shortcutAppid, realAppid, "picker", null);
     return true;
+  }
+
+  /**
+   * The panel's layout button beside *Desktop* / *Steam Big Picture* (spec
+   * 3.14.1, Decision 39): a hidden entry has no library page, so this is the
+   * way to its controller configurator. Unlike the launch it is not held
+   * back while a game runs: opening the configurator starts nothing.
+   */
+  chooseHostAppLayout(key: HostAppKey): Promise<boolean> {
+    const appid = this.state.hostApps[key];
+    return appid === null ? Promise.resolve(false) : this.chooseLayout(appid, null);
   }
 
   canChooseLayout(): boolean {
@@ -715,7 +728,7 @@ export class Controller {
 
   private async recordLayout(
     shortcutAppid: number,
-    realAppid: number,
+    realAppid: number | null,
     result: LayoutResult,
     url: string | null,
   ): Promise<void> {

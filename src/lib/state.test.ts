@@ -28,8 +28,29 @@ const entries = eventsOf(loadFixture("common/status.ndjson"), "entry");
 describe("counters from status (spec 3.8)", () => {
   it("counts stream buttons, shortcuts, unmatched and parked", () => {
     // Balatro + Sea of Stars hidden; Hades II + Tunic visible; Tunic unmatched;
-    // Spiritfarer parked; the client entry is not counted.
+    // Spiritfarer parked; the client entry is not counted. Neither are the two
+    // default host apps (spec 3.14.1): hidden, Desktop would read as a Stream
+    // button and the unmatched Steam Big Picture as a third one plus an
+    // `unmatched`.
     expect(countersFromStatus(entries)).toEqual({ stream: 2, shortcuts: 2, unmatched: 1, parked: 1 });
+  });
+
+  it("a host app counts toward none of stream / shortcuts / unmatched, hidden or not", () => {
+    const hostApps = entries.filter((e) => e.host_app);
+    expect(hostApps.map((e) => e.name)).toEqual(["Desktop", "Steam Big Picture"]);
+    const zeros = { stream: 0, shortcuts: 0, unmatched: 0, parked: 0 };
+    expect(countersFromStatus(hostApps)).toEqual(zeros);
+    // Before the first sync under the flag hides them they are visible tiles.
+    expect(countersFromStatus(hostApps.map((e) => ({ ...e, hidden: false })))).toEqual(zeros);
+    // Without the key (an entry from before the flag) the old rules apply.
+    const plain = hostApps.map(({ host_app: _, ...e }) => e);
+    expect(countersFromStatus(plain)).toEqual({ ...zeros, stream: 2, unmatched: 1 });
+  });
+
+  it("a parked host app still counts as parked", () => {
+    const desktop = entries.find((e) => e.name === "Desktop")!;
+    const parked = { ...desktop, parked: true, published: false };
+    expect(countersFromStatus([parked])).toEqual({ stream: 0, shortcuts: 0, unmatched: 0, parked: 1 });
   });
 
   it("an empty library is all zeros", () => {
@@ -37,7 +58,8 @@ describe("counters from status (spec 3.8)", () => {
   });
 
   it("a missing match counts as unmatched", () => {
-    const bare: EntryEvent = { ...entries[1], match: null, hidden: false };
+    const hades = entries.find((e) => e.name === "Hades II")!;
+    const bare: EntryEvent = { ...hades, match: null, hidden: false };
     expect(countersFromStatus([bare]).unmatched).toBe(1);
   });
 });
@@ -50,6 +72,15 @@ describe("stream map and client", () => {
     ]);
   });
 
+  it("never maps a host app, even one matched to a Steam game (spec 3.14.1)", () => {
+    const desktop = entries.find((e) => e.name === "Desktop")!;
+    expect(desktop).toMatchObject({ hidden: true, parked: false, published: true, host_app: true });
+    expect(desktop.match?.steam_appid).toBe(226620);
+    expect(streamMapFromStatus([desktop]).size).toBe(0);
+    // The same entry without the key is what a Stream button looks like.
+    expect([...streamMapFromStatus([{ ...desktop, host_app: false }])]).toEqual([[226620, 3000000101]]);
+  });
+
   it("finds the client entry for Open Moonlight", () => {
     expect(clientAppid(entries)).toBe(2400000001);
     expect(clientAppid(entries.filter((e) => !e.client))).toBeNull();
@@ -59,8 +90,11 @@ describe("stream map and client", () => {
     const tunic = entries.find((e) => e.name === "Tunic")!;
     const desktop: EntryEvent = { ...tunic, name: "desktop ", app_name: "Desktop (MY-GAMING-PC)", appid: 3000000101 };
     const bigPicture: EntryEvent = { ...tunic, name: "Steam Big Picture", appid: 3000000102, hidden: true };
-    expect(hostAppsFromStatus(entries)).toEqual({ desktop: null, bigPicture: null });
-    expect(hostAppsFromStatus([...entries, desktop, bigPicture])).toEqual({
+    const others = entries.filter((e) => !e.host_app);
+    expect(hostAppsFromStatus(others)).toEqual({ desktop: null, bigPicture: null });
+    // The fixture's pair is hidden (the CLI wrote it under --hide-host-apps).
+    expect(hostAppsFromStatus(entries)).toEqual({ desktop: 3000000101, bigPicture: 3000000102 });
+    expect(hostAppsFromStatus([...others, desktop, bigPicture])).toEqual({
       desktop: 3000000101,
       bigPicture: 3000000102,
     });

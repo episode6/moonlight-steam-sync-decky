@@ -19,8 +19,14 @@ export interface Match {
 
 export type SlotName = "portrait" | "landscape" | "hero" | "logo" | "icon";
 export type TitleSlotValue = "steam" | "sgdb" | "kept" | "missing" | "skipped" | "cached-miss";
-export type TitleKind = "stream" | "shortcut";
-export type AppKind = "stream" | "shortcut" | "ignored" | "parked" | "duplicate";
+/**
+ * `host-app` (spec 3.14): the host's default `Desktop` / `Steam Big Picture`,
+ * written hidden. `sync` and `list` only say it under `--hide-host-apps`,
+ * which the backend always passes; `art` says it for a hidden default host
+ * app whatever the flags.
+ */
+export type TitleKind = "stream" | "shortcut" | "host-app";
+export type AppKind = "stream" | "shortcut" | "host-app" | "ignored" | "parked" | "duplicate";
 export type RunKind = "sync" | "art" | "remove";
 
 export interface StartEvent {
@@ -45,6 +51,8 @@ export interface PlanEvent {
   limit: number | null;
   stream: number;
   shortcut: number;
+  /** Published `host-app` titles this run; only under `--hide-host-apps`. */
+  host_app?: number;
   parked: number;
   duplicates: Record<string, string>;
 }
@@ -99,7 +107,7 @@ export interface SummaryEvent {
    * `art` or `remove` one -- spec 3.4.6, spec 3.13 A3. Still optional here so
    * an older CLI's summary parses; the finish line only uses it when present.
    */
-  added_by_kind?: { stream: number; shortcut: number };
+  added_by_kind?: { stream: number; shortcut: number; "host-app"?: number };
 }
 
 export interface SameGameAs {
@@ -138,6 +146,11 @@ export interface EntryEvent {
   parked: boolean;
   published: boolean;
   client: boolean;
+  /**
+   * The entry's Moonlight name is a default host app, whatever `hidden`
+   * says (spec 3.14); only under `status --hide-host-apps`.
+   */
+  host_app?: boolean;
   match: Match | null;
   slots: EntrySlots;
   stale_art: boolean;
@@ -349,7 +362,8 @@ export interface KeyState {
 export type LayoutResult = "copied" | "kept" | "unavailable" | "picker";
 
 export interface LayoutEntry {
-  real_appid: number;
+  /** `null`: a host-app entry, *Choose layout* only, no game behind it (spec 3.14.1). */
+  real_appid: number | null;
   result: LayoutResult;
   url: string | null;
   when: string;
@@ -430,7 +444,7 @@ export interface Backend {
   /** Upsert one shortcut's layout result atomically; answers with the whole file. */
   record_layout(
     shortcut_appid: number,
-    real_appid: number,
+    real_appid: number | null,
     result: LayoutResult,
     url: string | null,
   ): Promise<Result<LayoutsInfo>>;

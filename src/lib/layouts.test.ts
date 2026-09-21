@@ -234,6 +234,16 @@ describe("the stream map feeds the walk (spec 3.9)", () => {
     ]);
   });
 
+  it("never walks a default host app: no layout is copied onto Desktop (spec 3.14.1)", () => {
+    const entries = eventsOf(loadFixture("common/status.ndjson"), "entry");
+    // Hidden, published and matched to Steam 226620: a Stream pair but for host_app.
+    const desktop = entries.find((e) => e.name === "Desktop")!;
+    expect(desktop.match?.steam_appid).toBe(226620);
+    const pairs = walkPairs(streamMapFromStatus(entries));
+    expect(pairs.map((p) => p.shortcutAppid)).not.toContain(desktop.appid);
+    expect(pairs.map((p) => p.realAppid)).not.toContain(226620);
+  });
+
   it("derives the map from the spec's filter", () => {
     const base = eventsOf(loadFixture("common/status.ndjson"), "entry")[0];
     const variants = [
@@ -243,6 +253,7 @@ describe("the stream map feeds the walk (spec 3.9)", () => {
       { ...base, client: true },
       { ...base, match: null },
       { ...base, match: { ...base.match!, steam_appid: null } },
+      { ...base, host_app: true },
     ];
     for (const entry of variants) expect(streamMapFromStatus([entry]).size).toBe(0);
     expect(streamMapFromStatus([base]).get(2379780)).toBe(base.appid);

@@ -1,11 +1,11 @@
 # A sync that adds two entries, replaces one, parks one and ends in a write
 # after the client exits (spec 3.4.6 / 3.5). Hand-written from the schema.
 {"event":"start","schema":1,"version":"0.4.0","command":"sync"}
-{"event":"plan","host":"MY-GAMING-PC","published":6,"ignored":1,"present":2,"to_add":2,"to_replace":1,"to_park":1,"to_unpark":0,"to_remove":0,"pending":0,"limit":null,"stream":3,"shortcut":2,"parked":1,"duplicates":{}}
+{"event":"plan","host":"MY-GAMING-PC","published":8,"ignored":1,"present":4,"to_add":2,"to_replace":1,"to_park":1,"to_unpark":0,"to_remove":0,"pending":0,"limit":null,"stream":3,"shortcut":2,"host_app":2,"parked":1,"duplicates":{}}
 {"event":"replace","name":"Balatro","old_appid":3141592653,"new_appid":2718281828,"reason":"kind-changed"}
 {"event":"title","index":1,"total":3,"name":"Balatro","kind":"stream","appid":2718281828,"match":{"steam_appid":2379780,"sgdb_id":5431,"matched_name":"Balatro","how":"sgdb:exact-verified"},"slots":{"portrait":"kept","landscape":"kept","hero":"kept","logo":"kept","icon":"kept"}}
 {"event":"title","index":2,"total":3,"name":"Cocoon","kind":"stream","appid":2862439841,"match":{"steam_appid":1497440,"sgdb_id":5,"matched_name":"COCOON","how":"sgdb:exact-verified"},"slots":{"portrait":"steam","landscape":"steam","hero":"steam","logo":"missing","icon":"sgdb"}}
 {"event":"title","index":3,"total":3,"name":"Tunic","kind":"shortcut","appid":3000000007,"match":{"steam_appid":553420,"sgdb_id":4102,"matched_name":"TUNIC","how":"steamstore:exact"},"slots":{"portrait":"steam","landscape":"steam","hero":"steam","logo":"steam","icon":"sgdb"}}
 {"event":"awaiting-steam-exit","timeout_s":60}
 {"event":"commit","written":true,"restarted":false,"backup":"shortcuts.vdf.bak-20260918T140200","relaunch_error":""}
-{"event":"summary","added":2,"added_by_kind":{"stream":1,"shortcut":1},"replaced":1,"removed":0,"filled":9,"missing":1,"unmatched":[],"duplicates":{},"pending":0,"stopped_early":false,"stop_reason":null,"exit":0}
+{"event":"summary","added":2,"added_by_kind":{"stream":1,"shortcut":1,"host-app":0},"replaced":1,"removed":0,"filled":9,"missing":1,"unmatched":[],"duplicates":{},"pending":0,"stopped_early":false,"stop_reason":null,"exit":0}

@@ -60,11 +60,13 @@ describe("joinTitles: list joined with status by name", () => {
   it("has one row per app, sorted by name, and never the client entry", () => {
     expect(names(rows)).toEqual([
       "Balatro",
+      "Demo Launcher",
       "Desktop",
       "Hades II",
       "Sea of Stars",
       "Sea of Stars (GOG)",
       "Spiritfarer",
+      "Steam Big Picture",
       "Tunic",
     ]);
     expect(rows.some((r) => r.name === "Moonlight")).toBe(false);
@@ -73,8 +75,9 @@ describe("joinTitles: list joined with status by name", () => {
   it("attaches the owned entry by name (none for ignored and duplicate titles)", () => {
     expect(byName(rows, "Balatro").entry?.appid).toBe(2718281828);
     expect(byName(rows, "Hades II").entry?.appid).toBe(3000000011);
-    expect(byName(rows, "Desktop").entry).toBeNull();
+    expect(byName(rows, "Demo Launcher").entry).toBeNull();
     expect(byName(rows, "Sea of Stars (GOG)").entry).toBeNull();
+    expect(byName(rows, "Desktop").entry?.appid).toBe(3000000101);
   });
 
   it("stream button: matched to an owned game, with the Steam capsule", () => {
@@ -137,13 +140,38 @@ describe("joinTitles: list joined with status by name", () => {
   });
 
   it("ignored: from config.toml unless it is in ignore.json", () => {
-    const fromConfig = byName(rows, "Desktop");
+    const fromConfig = byName(rows, "Demo Launcher");
     expect(fromConfig.kind).toBe("ignored");
     expect(fromConfig.badge).toEqual({ id: "ignored", text: "ignored", tone: "neutral" });
     expect(fromConfig.ignoredBy).toBe("config");
     expect(fromConfig.matchLine).toBe("—");
     expect(fromConfig.thumbnail).toBeNull();
-    expect(byName(rowsOf(["Desktop"]), "Desktop").ignoredBy).toBe("plugin");
+    expect(byName(rowsOf(["Demo Launcher"]), "Demo Launcher").ignoredBy).toBe("plugin");
+  });
+
+  it("host app: a neutral badge, never a stream button or unmatched, whatever its match", () => {
+    const desktop = byName(rows, "Desktop");
+    expect(desktop.kind).toBe("host-app");
+    expect(desktop.badge).toEqual({ id: "host-app", text: "host app", tone: "neutral" });
+    // Its match is a Steam game, which only feeds the art (spec 3.14).
+    expect(desktop.matchLine).toBe("Desktop Dungeons · Steam 226620");
+    expect(desktop.thumbnail).toBe(capsuleUrl(226620));
+    expect(desktop.chips).toEqual([]);
+    expect(desktop.entry?.hidden).toBe(true);
+
+    const bigPicture = byName(rows, "Steam Big Picture");
+    expect(bigPicture.kind).toBe("host-app");
+    expect(bigPicture.badge.text).toBe("host app");
+    expect(bigPicture.matchLine).toBe("no match");
+    expect(bigPicture.unmatched).toBe(false);
+  });
+
+  it("host app: Ignore stays, and wins over the kind", () => {
+    const row = byName(rowsOf(["Desktop"]), "Desktop");
+    expect(row.kind).toBe("ignored");
+    expect(row.badge.id).toBe("ignored");
+    expect(row.ignoredBy).toBe("plugin");
+    expect(row.layoutTarget).toBeNull();
   });
 
   it("a name in ignore.json is ignored before the next list says so", () => {
@@ -159,7 +187,7 @@ describe("joinTitles: list joined with status by name", () => {
     const all = rowsOf();
     const badges = new Set(all.map((r) => r.badge.text));
     expect([...badges].sort()).toEqual(
-      ["duplicate", "ignored", "parked", "shortcut", "stream button", "unmatched"].sort(),
+      ["duplicate", "host app", "ignored", "parked", "shortcut", "stream button", "unmatched"].sort(),
     );
     const chips = new Set(all.flatMap((r) => r.chips.map((c) => c.id)));
     expect([...chips].sort()).toEqual(["fuzzy", "pinned", "same-game", "stale-art"]);
@@ -190,7 +218,7 @@ describe("joinTitles: list joined with status by name", () => {
 
   it("with no status (it failed) rows still come from list", () => {
     const rows2 = joinTitles(apps, []);
-    expect(rows2).toHaveLength(7);
+    expect(rows2).toHaveLength(9);
     expect(byName(rows2, "Sea of Stars").chips.map((c) => c.id)).toEqual(["pinned"]);
   });
 
@@ -223,21 +251,31 @@ describe("filters and the Show parked chip", () => {
   it("All leaves the parked rows out until Show parked is on", () => {
     expect(names(filterRows(rows, "all"))).toEqual([
       "Balatro",
+      "Demo Launcher",
       "Desktop",
       "Hades II",
       "Sea of Stars",
       "Sea of Stars (GOG)",
+      "Steam Big Picture",
       "Tunic",
     ]);
     expect(names(filterRows(rows, "all", true))).toContain("Spiritfarer");
-    expect(filterRows(rows, "all", true)).toHaveLength(7);
+    expect(filterRows(rows, "all", true)).toHaveLength(9);
   });
 
   it("Stream buttons, Shortcuts, Unmatched, Ignored", () => {
     expect(names(filterRows(rows, "stream"))).toEqual(["Balatro", "Sea of Stars"]);
     expect(names(filterRows(rows, "shortcut"))).toEqual(["Hades II", "Tunic"]);
     expect(names(filterRows(rows, "unmatched"))).toEqual(["Tunic"]);
-    expect(names(filterRows(rows, "ignored"))).toEqual(["Desktop"]);
+    expect(names(filterRows(rows, "ignored"))).toEqual(["Demo Launcher"]);
+  });
+
+  it("a host-app row shows under All only (spec 3.14.1)", () => {
+    for (const filter of ["stream", "shortcut", "unmatched", "ignored"] as const) {
+      expect(names(filterRows(rows, filter, true))).not.toContain("Desktop");
+      // unmatched as it is, Steam Big Picture is no Unmatched row either
+      expect(names(filterRows(rows, filter, true))).not.toContain("Steam Big Picture");
+    }
   });
 
   it("parked rows only ever show under All", () => {
@@ -247,9 +285,9 @@ describe("filters and the Show parked chip", () => {
   });
 
   it("counts per filter, published and parked", () => {
-    expect(filterCounts(rows)).toEqual({ all: 6, stream: 2, shortcut: 2, unmatched: 1, ignored: 1 });
-    expect(filterCounts(rows, true).all).toBe(7);
-    expect(publishedCount(rows)).toBe(6);
+    expect(filterCounts(rows)).toEqual({ all: 8, stream: 2, shortcut: 2, unmatched: 1, ignored: 1 });
+    expect(filterCounts(rows, true).all).toBe(9);
+    expect(publishedCount(rows)).toBe(8);
     expect(parkedCount(rows)).toBe(1);
   });
 
@@ -289,7 +327,7 @@ describe("sorting and pages of 50", () => {
 
   it("a short list is one page with no load-more row", () => {
     const page = pageOf(rowsOf(), 1);
-    expect(page.rows).toHaveLength(7);
+    expect(page.rows).toHaveLength(9);
     expect(page.hasMore).toBe(false);
     expect(page.remaining).toBe(0);
   });
@@ -349,6 +387,18 @@ describe("the Change match modal's rows", () => {
       expect(row.outcome).toBe("shortcut");
       expect(row.tone).toBe("ok");
     }
+  });
+
+  it("on a host-app row every candidate is art only: no pin changes its kind", () => {
+    const rows = candidateRows(candidates, hades, true);
+    expect(rows.map((r) => r.key)).toEqual(candidateRows(candidates, hades).map((r) => r.key));
+    expect(rows.some((r) => r.detail.includes("owned on this account"))).toBe(true);
+    for (const row of rows) {
+      expect(row.outcome).toBe("art only");
+      expect(row.tone).toBe("neutral");
+    }
+    expect(noMatchRow(hades, true).detail).toBe("Search SteamGridDB by name for art");
+    expect(noMatchRow(hades).detail).toBe("Keep as a shortcut, search SteamGridDB by name for art");
   });
 
   it("marks the current match", () => {
@@ -490,7 +540,7 @@ describe("the layout text per row (spec 3.10)", () => {
   it("is null before any copy and for rows that have no hidden shortcut", () => {
     const rows = joinTitles(apps, entries, [], layouts);
     expect(byName(rowsOf(), "Balatro").layout).toBeNull(); // no layouts.json yet
-    for (const name of ["Hades II", "Tunic", "Desktop", "Sea of Stars (GOG)", "Spiritfarer"]) {
+    for (const name of ["Hades II", "Tunic", "Demo Launcher", "Sea of Stars (GOG)", "Spiritfarer"]) {
       expect(byName(rows, name).layout).toBeNull();
       expect(byName(rows, name).layoutTarget).toBeNull();
     }
@@ -503,5 +553,23 @@ describe("the layout text per row (spec 3.10)", () => {
     expect(layoutTargetOf("stream", null)).toBeNull();
     expect(layoutTargetOf("shortcut", entries[0])).toBeNull();
     expect(layoutTargetOf("stream", { ...entries[0], parked: true })).toBeNull();
+  });
+
+  it("a host-app row is picker only: a target with no real appid (spec 3.14.1)", () => {
+    const desktopEntry = entries.find((e) => e.name === "Desktop")!;
+    const rows = joinTitles(apps, entries, [], {
+      ...layouts,
+      "3000000101": { real_appid: null, result: "picker", url: null, when },
+    });
+    // Desktop's match has a Steam appid; it is still never the copy's source.
+    expect(desktopEntry.match?.steam_appid).toBe(226620);
+    expect(byName(rows, "Desktop").layoutTarget).toEqual({ shortcutAppid: 3000000101, realAppid: null });
+    expect(byName(rows, "Desktop").layout).toBe("picker opened");
+    expect(byName(rows, "Steam Big Picture").layoutTarget).toEqual({ shortcutAppid: 3000000102, realAppid: null });
+    expect(byName(rows, "Steam Big Picture").layout).toBeNull();
+    // Still a visible tile (not synced under the flag yet): its library page has the configurator.
+    expect(layoutTargetOf("host-app", { ...desktopEntry, hidden: false })).toBeNull();
+    expect(layoutTargetOf("host-app", { ...desktopEntry, parked: true })).toBeNull();
+    expect(layoutTargetOf("host-app", null)).toBeNull();
   });
 });

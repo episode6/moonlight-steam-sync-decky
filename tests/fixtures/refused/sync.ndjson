@@ -1,5 +1,5 @@
 # The run reaches the wait and the client never exits. The fixture ends at
 # awaiting-steam-exit; the fake itself prints the timeout error (exit 2).
 {"event":"start","schema":1,"version":"0.4.0","command":"sync"}
-{"event":"plan","host":"MY-GAMING-PC","published":6,"ignored":1,"present":4,"to_add":1,"to_replace":0,"to_park":0,"to_unpark":0,"to_remove":0,"pending":0,"limit":null,"stream":3,"shortcut":2,"parked":1,"duplicates":{}}
+{"event":"plan","host":"MY-GAMING-PC","published":8,"ignored":1,"present":6,"to_add":1,"to_replace":0,"to_park":0,"to_unpark":0,"to_remove":0,"pending":0,"limit":null,"stream":3,"shortcut":2,"host_app":2,"parked":1,"duplicates":{}}
 {"event":"awaiting-steam-exit","timeout_s":60}
