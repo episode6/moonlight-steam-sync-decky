@@ -784,7 +784,7 @@ class Backend:
     async def list_apps(self) -> Result:
         result, fail = await self._collect(
             "list",
-            [*self._list_args()],
+            self._list_args(),
             timeout=self.TIMEOUT_LONG,
             needs_owned=True,
         )

@@ -354,9 +354,12 @@ first (`moonlight-steam-sync --json status`).
 - [ ] **On a client without `SteamClient.Apps.ShowControllerConfigurator`**
       (if one turns up) the rows fall back to the plain full-width launch
       buttons and the Titles rows have no *Choose layout*.
-- [ ] **Counters.** *Stream buttons*, *Shortcuts* and *Unmatched* do not
-      move when the two are hidden, beyond *Shortcuts* dropping by two (and
-      *Unmatched* by however many of the two had no match).
+- [ ] **Counters.** Do this one *before* the first sync: `status` carries
+      the flag from the upgrade on, so the two still-visible tiles already
+      read `host_app: true`. Right after the upgrade *Shortcuts* is two
+      lower than before (and *Unmatched* lower by however many of the two
+      had no match); *Stream buttons* is unchanged. The sync that hides the
+      two then moves none of the three.
 - [ ] **Titles page.** Both rows read **host app**, show under *All* only,
       and have *Change match*, *Choose layout* and *Ignore*. *Choose
       layout* opens the same configurator and the row then says `layout:
@@ -374,9 +377,13 @@ first (`moonlight-steam-sync --json status`).
 - [ ] **Switching hosts.** With a second host that does not publish them,
       the two entries are parked (counted under parked, buttons gone); back
       on the first host they are unparked *hidden*, never as tiles.
-- [ ] **Getting the tiles back** (README): from a terminal,
-      `moonlight-steam-sync sync --park-unpublished` shows the two tiles
-      again with art and layout intact; the next *Sync now* hides them again.
+- [ ] **Getting the tiles back** (README, "The Quick Access panel"): the
+      full command there (`--owned-apps`, `--ignore-file`,
+      `--client-shortcut`, `--park-unpublished`, no `--hide-host-apps`), run
+      from a terminal, shows the two tiles again with art and layout intact
+      and changes nothing else: every Stream button stays hidden, no ignored
+      title comes back, the Moonlight client entry stays. The next *Sync
+      now* hides the two again.
 
 ## 7. Fixtures vs. real CLI
 

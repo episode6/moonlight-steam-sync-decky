@@ -394,8 +394,10 @@ fixtures) landed after it, in `[Unreleased]`. It is a user-visible feature,
 so by semver the release that carries it is `v0.3.0`; all of steps 1-4
 below are still to do for that one, and only when the user asks.
 
-Modelled on the CLI repo's own "Cutting a release", once `v0.3.0` exists
-and everything intended for `v0.1.0` has merged to `main`:
+Modelled on the CLI repo's own "Cutting a release" (the example below is
+the plugin's first release, `v0.1.0`, which waited for the CLI's `v0.3.0`;
+substitute the version being cut), once the pinned CLI release exists and
+everything intended for the plugin release has merged to `main`:
 
 ```sh
 git checkout main && git pull

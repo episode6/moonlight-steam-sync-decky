@@ -138,9 +138,23 @@ CLI release)" and you can install the CLI with its own `install.sh`.
     it from. It works while a game is running too, since it starts nothing,
     and it is left out on a Steam client that cannot open the configurator.
   - **Getting the tiles back.** There is no plugin setting for this. From a
-    terminal, run `moonlight-steam-sync sync --park-unpublished` (without
-    `--hide-host-apps`): the CLI sees two published, hidden shortcuts and
-    shows them again. The next sync from the plugin hides them again, so
+    terminal (Desktop Mode or SSH), run the plugin's own sync without
+    `--hide-host-apps`:
+
+    ```sh
+    cd ~/homebrew/settings/"Moonlight Sync"
+    moonlight-steam-sync sync --owned-apps owned-apps.json \
+      --ignore-file ignore.json --client-shortcut --park-unpublished
+    ```
+
+    The CLI sees two published, hidden shortcuts and shows them again (it
+    restarts Steam to write, as a terminal sync always does). Keep the other
+    flags: a bare `sync --park-unpublished` knows nothing of your owned
+    games or the plugin's ignore list, so it would also turn Stream buttons
+    back into visible tiles and re-add every title ignored on the Titles
+    page. The exact command the plugin last ran is in
+    `~/homebrew/logs/Moonlight Sync/moonlight-sync.log`. The next sync from
+    the plugin hides the two again, so
     this only lasts if you sync from the terminal from then on. A host whose
     two entries were renamed is not affected: only the names `Desktop` and
     `Steam Big Picture` (any case) are host apps.

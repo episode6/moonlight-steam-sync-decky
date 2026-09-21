@@ -26,9 +26,11 @@ project uses [semantic versioning](https://semver.org/).
   CLI's `--hide-host-apps`, so the two shortcuts are kept but written
   hidden. On an existing install the next sync hides the two tiles in
   place: same appid, so their artwork and any controller layout chosen on
-  them are untouched. To get the tiles back, run `moonlight-steam-sync sync
-  --park-unpublished` from a terminal (without `--hide-host-apps`); the
-  next sync from the plugin hides them again. There is no plugin setting.
+  them are untouched. To get the tiles back, run the plugin's sync from a
+  terminal without `--hide-host-apps` (the README's panel section has the
+  full command: it keeps `--owned-apps`, `--ignore-file`,
+  `--client-shortcut` and `--park-unpublished`); the next sync from the
+  plugin hides them again. There is no plugin setting.
   A host whose two entries were renamed keeps its ordinary tiles.
 - The panel's **Stream buttons**, **Shortcuts** and **Unmatched** counters
   no longer count the two host apps, no Stream button or layout copy is

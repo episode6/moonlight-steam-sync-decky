@@ -49,7 +49,11 @@ export function finishTitle(
   if (kind === "art") return "Artwork re-fetched";
   if (summary?.added_by_kind) {
     const { shortcut, stream } = summary.added_by_kind;
-    return `Sync finished: ${plural(shortcut, "shortcut", "shortcuts")}, ${plural(stream, "Stream button", "Stream buttons")}`;
+    // Only under --hide-host-apps, and only worth a mention when one was
+    // added: otherwise "0 shortcuts, 0 Stream buttons" beside "2 added".
+    const hostApps = summary.added_by_kind["host-app"] ?? 0;
+    const tail = hostApps > 0 ? `, ${plural(hostApps, "host app", "host apps")}` : "";
+    return `Sync finished: ${plural(shortcut, "shortcut", "shortcuts")}, ${plural(stream, "Stream button", "Stream buttons")}${tail}`;
   }
   if (!plan) return "Sync finished";
   const parts = [`${plan.to_add} added`, `${plan.to_replace} replaced`];
