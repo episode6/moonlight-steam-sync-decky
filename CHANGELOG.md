@@ -6,6 +6,8 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-09-21
+
 ### Fixed
 
 - **A sync's shortcuts are written when Steam restarts again.** The CLI's

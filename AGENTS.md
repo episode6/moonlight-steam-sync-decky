@@ -401,7 +401,9 @@ so a minor bump; the user asked for that release on 2026-09-21). Its
 release PR did steps 1-3 below (`package.json` `"version"`, the dated
 CHANGELOG section), as the earlier releases' PRs did. Plugin `v0.3.1` (the
 user asked for it on 2026-09-21) is a patch release for the boot-time
-"Loading your library…" hang; same CLI pin and minimum.
+"Loading your library…" hang; same CLI pin and minimum. Plugin `v0.3.2`
+(the user asked for it on 2026-09-21) is a patch release for the unbuffered
+CLI fix (`PYTHONUNBUFFERED=1`); same CLI pin and minimum.
 
 Modelled on the CLI repo's own "Cutting a release" (the example below is
 the plugin's first release, `v0.1.0`, which waited for the CLI's `v0.3.0`;
