@@ -123,8 +123,10 @@ def _version_tuple(text: str) -> tuple[int, int, int]:
 
 
 def _out(line: str) -> None:
+    # No flush, like the real CLI's Reporter: over a pipe Python block-buffers
+    # stdout, so an event only reaches the backend live because the backend
+    # spawns its children with PYTHONUNBUFFERED=1 (`Backend._child_env`).
     sys.stdout.write(line + "\n")
-    sys.stdout.flush()
 
 
 def _err(line: str) -> None:

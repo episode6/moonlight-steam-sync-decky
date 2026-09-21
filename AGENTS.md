@@ -197,7 +197,12 @@ probe: an older argparse answers the flag with exit 2, which is also
 plugin_loader's PyInstaller `LD_LIBRARY_PATH` (`/tmp/_MEI…`, an older
 bundled OpenSSL that breaks both `flatpak` and the CLI's `import ssl`):
 `Backend._child_env()` restores `LD_LIBRARY_PATH_ORIG` or drops the `_MEI*`
-entries, and any new subprocess the backend spawns must go through it. Long runs (`start_sync`,
+entries, and any new subprocess the backend spawns must go through it. It
+also sets `PYTHONUNBUFFERED=1`: the CLI prints its events without flushing,
+and over a pipe Python block-buffers stdout, so `awaiting-steam-exit` would
+otherwise arrive only with the exit, after the 60 s wait had already failed
+(found on device 2026-09-21; `tests/fake_cli.py` deliberately does not flush
+stdout either, so the suite fails without the variable). Long runs (`start_sync`,
 `start_art_refetch`, `start_remove_all`) share one busy guard and emit
 `sync_event {kind, event}` per stdout line and `sync_done {kind, exit,
 pending, summary, commit, failure}` at the end. `pending.json` says

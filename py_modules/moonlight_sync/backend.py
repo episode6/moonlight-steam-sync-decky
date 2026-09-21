@@ -281,6 +281,11 @@ class Backend:
             env.pop("LD_LIBRARY_PATH", None)
         env["MOONLIGHT_STEAM_SYNC_FROM_PLUGIN"] = "1"
         env["HOME"] = self.home
+        # The CLI prints its events without flushing, and over a pipe Python
+        # block-buffers stdout: `awaiting-steam-exit` would sit in the child's
+        # buffer for the whole 60 s wait and only arrive with the exit, so the
+        # client was never shut down in time and shortcuts.vdf never written.
+        env["PYTHONUNBUFFERED"] = "1"
         return env
 
     def _read_installed(self) -> install.Version | None:
