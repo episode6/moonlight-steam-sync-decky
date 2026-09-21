@@ -199,6 +199,7 @@ def test_argv_env_and_cwd_of_every_callable(make_backend) -> None:
         assert invocation["cwd"] == backend.home
         assert invocation["home"] == backend.home
         assert invocation["from_plugin"] == "1"
+        assert invocation["pythonunbuffered"] == "1"
 
 
 @pytest.mark.parametrize(
