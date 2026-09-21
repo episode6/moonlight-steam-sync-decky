@@ -1,4 +1,4 @@
 # match "Hades II" --steam 1145350 --defer-art
-{"event":"start","schema":1,"version":"0.3.0","command":"match"}
+{"event":"start","schema":1,"version":"0.4.0","command":"match"}
 {"event":"note","message":"art for Hades II will be re-fetched on the next sync"}
 {"event":"pinned","name":"Hades II","steam_appid":1145350,"sgdb_id":5406129,"override_line":"\"Hades II\" = { steam = 1145350 }"}

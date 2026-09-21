@@ -1,3 +1,3 @@
 # search "zzzz": no candidates is exit 0 with just start and end (spec 3.4.6).
-{"event":"start","schema":1,"version":"0.3.0","command":"search"}
+{"event":"start","schema":1,"version":"0.4.0","command":"search"}
 {"event":"end"}

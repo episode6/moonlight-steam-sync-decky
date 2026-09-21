@@ -1,6 +1,6 @@
 # art --force --commit await-exit where no icon field changed: no wait,
 # commit written:false, five images saved. title.kind comes from IsHidden.
-{"event":"start","schema":1,"version":"0.3.0","command":"art"}
+{"event":"start","schema":1,"version":"0.4.0","command":"art"}
 {"event":"title","index":1,"total":3,"name":"Balatro","kind":"stream","appid":2718281828,"match":{"steam_appid":2379780,"sgdb_id":5431,"matched_name":"Balatro","how":"sgdb:exact-verified"},"slots":{"portrait":"steam","landscape":"steam","hero":"kept","logo":"kept","icon":"kept"}}
 {"event":"title","index":2,"total":3,"name":"Hades II","kind":"shortcut","appid":3000000011,"match":{"steam_appid":1145360,"sgdb_id":36072,"matched_name":"Hades","how":"steamstore:fuzzy"},"slots":{"portrait":"steam","landscape":"kept","hero":"steam","logo":"kept","icon":"sgdb"}}
 {"event":"title","index":3,"total":3,"name":"Tunic","kind":"shortcut","appid":3000000007,"match":{"steam_appid":null,"sgdb_id":null,"matched_name":null,"how":"none"},"slots":{"portrait":"missing","landscape":"missing","hero":"missing","logo":"missing","icon":"missing"}}

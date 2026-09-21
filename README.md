@@ -14,17 +14,17 @@ Nothing runs on the gaming PC: the plugin needs only a stock
 Sunshine / Apollo / GeForce host that the Deck's Moonlight client is paired
 with.
 
-**Status:** released through `v0.1.1`. Its first device run (a generic
+**Status:** released through `v0.2.0`. Its first device run (a generic
 SteamOS machine) produced the `v0.1.1` fixes; it has **not been run on a
 Steam Deck yet** (`DEVICE-CHECKLIST.md`). It bundles moonlight-steam-sync
-**0.3.1** and needs 0.3.0 or newer.
+**0.4.0** and needs 0.4.0 or newer.
 
 ## Requirements
 
 - SteamOS (Steam Deck or a Deck-like) with Decky Loader.
 - A Moonlight client on the Deck (native `moonlight` or the Flathub
   flatpak), already paired with your host.
-- moonlight-steam-sync **0.3.0 or newer**. The plugin bundles the version it
+- moonlight-steam-sync **0.4.0 or newer**. The plugin bundles the version it
   was built for and installs it for you (below), so there is nothing to
   install separately.
 
@@ -99,9 +99,9 @@ compares that copy with `~/.local/bin/moonlight-steam-sync`:
 The plugin always runs the copy in `~/.local/bin`, through `python3`, so a
 shortcut made from Game Mode and one made from a terminal belong to the same
 tool. Settings → **About** shows both versions, the pinned release, the
-minimum the plugin needs (0.3.0) and any install error. If the installed CLI
-is missing or older than 0.3.0 the panel shows a single row, "CLI not
-installed — see About" or "CLI too old (0.2.0, needs 0.3.0) — see About",
+minimum the plugin needs (0.4.0) and any install error. If the installed CLI
+is missing or older than 0.4.0 the panel shows a single row, "CLI not
+installed — see About" or "CLI too old (0.2.0, needs 0.4.0) — see About",
 and every CLI action is disabled; the settings pages that only touch the
 plugin's own files keep working. A zip packaged before the CLI release
 existed has no bundle; About then says "bundled CLI: none (built before the

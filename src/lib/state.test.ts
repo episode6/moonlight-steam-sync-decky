@@ -186,13 +186,13 @@ describe("the store and derived flags", () => {
     let state = initialState();
     expect(actionsReady(state)).toBe(false);
     state = withCliVersion(state, {
-      installed: "0.3.0",
+      installed: "0.4.0",
       bundled: null,
-      minimum: "0.3.0",
+      minimum: "0.4.0",
       too_old: false,
       installed_path: "~/.local/bin/moonlight-steam-sync",
       bundled_path: "",
-      pinned: "0.3.0",
+      pinned: "0.4.0",
       plugin_version: "0.1.0",
       log_path: "",
       install_error: null,

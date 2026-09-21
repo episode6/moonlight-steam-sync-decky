@@ -16,7 +16,7 @@ section 5), not decided here.
    run build && backend/entrypoint.sh && python3 scripts/package.py`, or
    take the `Moonlight-Sync` artifact from a CI run, and install it by
    hand — `README.md`'s "Manual install". Either way Settings → About
-   should show the bundled and installed CLI both at `0.3.1`; the plugin
+   should show the bundled and installed CLI both at `0.4.0`; the plugin
    installs or upgrades `~/.local/bin/moonlight-steam-sync` on first load.
 2. SSH into the Deck while it sits in Game Mode (`passwd` once in Desktop
    Mode, then `sudo systemctl enable --now sshd`; see `probes/PROBES.md`
@@ -176,8 +176,8 @@ to `~/homebrew/logs/steam-input-probe/steam-input-probe.log` (the loader's
       hand-build) a CLI whose `art --help` lacks `--commit`. Expect
       *Re-fetch all art* to be disabled, and if pressed anyway from a stale
       state, the message to read "re-fetching art from Game Mode needs a
-      CLI whose art command accepts --commit" — never "CLI too old (0.3.0,
-      needs 0.3.0)".
+      CLI whose art command accepts --commit" — never "CLI too old (0.4.0,
+      needs 0.4.0)".
 - [ ] **Host subtitle with several hosts.** Add three hosts (one active,
       two not), sync the inactive ones once each so they have cached
       listings. Expect "active host · parked from MY-GAMING-PC (N titles),

@@ -12,8 +12,8 @@ const fail = (error: Failure["error"], extra: Partial<Failure> = {}): Failure =>
 describe("errorText (spec 3.8 error strings)", () => {
   it("maps every code once", () => {
     expect(errorText(fail("cli-missing"))).toBe("CLI not installed — see About");
-    expect(errorText(fail("cli-too-old", { installed: "0.2.0", minimum: "0.3.0" }))).toBe(
-      "CLI too old (0.2.0, needs 0.3.0) — see About",
+    expect(errorText(fail("cli-too-old", { installed: "0.2.0", minimum: "0.4.0" }))).toBe(
+      "CLI too old (0.2.0, needs 0.4.0) — see About",
     );
     expect(errorText(fail("cli-protocol"))).toBe(
       "The installed CLI did not understand the request (see the log)",
@@ -34,8 +34,8 @@ describe("errorText (spec 3.8 error strings)", () => {
     expect(
       errorText(
         fail("cli-too-old", {
-          installed: "0.3.0",
-          minimum: "0.3.0",
+          installed: "0.4.0",
+          minimum: "0.4.0",
           message: "re-fetching art from Game Mode needs a CLI whose art command accepts --commit",
         }),
       ),

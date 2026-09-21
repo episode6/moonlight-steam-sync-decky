@@ -168,12 +168,12 @@ def test_a_key_echoed_by_the_cli_is_scrubbed_at_the_spawn_seam(make_backend, tmp
     fixture = tmp_path / "fx"
     fixture.mkdir()
     (fixture / "search.ndjson").write_text(
-        '{"event":"start","schema":1,"version":"0.3.0","command":"search"}\n'
+        '{"event":"start","schema":1,"version":"0.4.0","command":"search"}\n'
         f'{{"event":"note","message":"search: SteamGridDB rejected key {KEY}"}}\n'
         '{"event":"end"}\n'
     )
     (fixture / "list.ndjson").write_text(
-        '{"event":"start","schema":1,"version":"0.3.0","command":"list"}\n'
+        '{"event":"start","schema":1,"version":"0.4.0","command":"list"}\n'
         f'{{"event":"note","message":"list: using key {KEY}"}}\n'
         f'{{"event":"error","exit":4,"message":"list: SteamGridDB rejected key {KEY}"}}\n'
     )
@@ -205,7 +205,7 @@ def test_test_sgdb_key_maps_401(make_backend, tmp_path) -> None:
     fixture = tmp_path / "fx"
     fixture.mkdir()
     (fixture / "search.ndjson").write_text(
-        '{"event":"start","schema":1,"version":"0.3.0","command":"search"}\n'
+        '{"event":"start","schema":1,"version":"0.4.0","command":"search"}\n'
         '{"event":"error","exit":4,"message":"search: SteamGridDB returned HTTP 401"}\n'
     )
     backend = make_backend(env={"FAKE_CLI_FIXTURES": str(fixture)}, start=False)
@@ -223,7 +223,7 @@ def test_test_sgdb_key_says_network_not_key_on_the_hard_stop(make_backend, tmp_p
     fixture = tmp_path / "fx"
     fixture.mkdir()
     (fixture / "search.ndjson").write_text(
-        '{"event":"start","schema":1,"version":"0.3.0","command":"search"}\n'
+        '{"event":"start","schema":1,"version":"0.4.0","command":"search"}\n'
         '{"event":"error","exit":4,"message":"search: 5 consecutive network failures; '
         'stopping."}\n'
     )
@@ -244,7 +244,7 @@ def test_search_and_pin_results_never_carry_the_key(make_backend, tmp_path) -> N
     """Hard rule 4: even a CLI that echoed the key only hands on its last four."""
     fixture = tmp_path / "fx"
     fixture.mkdir()
-    start = '{"event":"start","schema":1,"version":"0.3.0","command":"%s"}\n'
+    start = '{"event":"start","schema":1,"version":"0.4.0","command":"%s"}\n'
     (fixture / "search.ndjson").write_text(
         start % "search" + json.dumps({"event": "note", "message": f"using key {KEY}"}) + "\n"
     )
@@ -269,7 +269,7 @@ def test_search_and_pin_failures_never_carry_the_key(make_backend, tmp_path) -> 
     ``events`` as well as ``message``."""
     fixture = tmp_path / "fx"
     fixture.mkdir()
-    start = '{"event":"start","schema":1,"version":"0.3.0","command":"%s"}\n'
+    start = '{"event":"start","schema":1,"version":"0.4.0","command":"%s"}\n'
     note = json.dumps({"event": "note", "message": f"using key {KEY}"}) + "\n"
     (fixture / "search.ndjson").write_text(
         start % "search"

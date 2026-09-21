@@ -1,5 +1,5 @@
 # remove --all --client --commit await-exit: waits for the client, then writes.
-{"event":"start","schema":1,"version":"0.3.0","command":"remove"}
+{"event":"start","schema":1,"version":"0.4.0","command":"remove"}
 {"event":"awaiting-steam-exit","timeout_s":60}
 {"event":"commit","written":true,"restarted":false,"backup":"shortcuts.vdf.bak-20260918T150000","relaunch_error":""}
 {"event":"summary","added":0,"replaced":0,"removed":6,"filled":0,"missing":0,"unmatched":[],"duplicates":{},"pending":0,"stopped_early":false,"stop_reason":null,"exit":0}

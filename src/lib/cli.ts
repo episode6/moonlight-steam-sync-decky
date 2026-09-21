@@ -505,8 +505,8 @@ export function errorText(failure: Failure): string {
       return "CLI not installed — see About";
     case "cli-too-old":
       // The backend also answers `cli-too-old` for a CLI of the right version
-      // whose `art` command has no `--commit` (spec 3.13 Q1). "(0.3.0, needs
-      // 0.3.0)" would be nonsense there, so its own message stands.
+      // whose `art` command has no `--commit` (spec 3.13 Q1). "(0.4.0, needs
+      // 0.4.0)" would be nonsense there, so its own message stands.
       if (failure.installed && failure.minimum && failure.installed !== failure.minimum) {
         return `CLI too old (${failure.installed}, needs ${failure.minimum}) — see About`;
       }

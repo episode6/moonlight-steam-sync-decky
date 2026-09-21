@@ -2,7 +2,7 @@
 # duplicate has no entry), plus the client entry. Spiritfarer is parked and
 # Sea of Stars has stale_art after a pin. entry carries cached/cached_when
 # (the spec 3.4.6 schema note).
-{"event":"start","schema":1,"version":"0.3.0","command":"status"}
+{"event":"start","schema":1,"version":"0.4.0","command":"status"}
 {"event":"entry","name":"Balatro","app_name":"Balatro","appid":2718281828,"hidden":true,"parked":false,"published":true,"client":false,"match":{"steam_appid":2379780,"sgdb_id":5431,"matched_name":"Balatro","how":"sgdb:exact-verified"},"slots":{"portrait":"png","landscape":"png","hero":"png","logo":"png","icon":"png"},"stale_art":false,"cached":true,"cached_when":"2026-09-18T14:02:00Z"}
 {"event":"entry","name":"Hades II","app_name":"Hades II","appid":3000000011,"hidden":false,"parked":false,"published":true,"client":false,"match":{"steam_appid":1145360,"sgdb_id":36072,"matched_name":"Hades","how":"steamstore:fuzzy"},"slots":{"portrait":"jpg","landscape":"jpg","hero":"jpg","logo":"png","icon":"ico"},"stale_art":false,"cached":true,"cached_when":"2026-09-18T14:02:00Z"}
 {"event":"entry","name":"Sea of Stars","app_name":"Sea of Stars","appid":2987654321,"hidden":true,"parked":false,"published":true,"client":false,"match":{"steam_appid":1244090,"sgdb_id":5322710,"matched_name":"Sea of Stars","how":"pinned"},"slots":{"portrait":"png","landscape":"png","hero":"png","logo":null,"icon":"png"},"stale_art":true,"cached":true,"cached_when":"2026-09-18T14:02:00Z"}

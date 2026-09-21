@@ -1,6 +1,6 @@
 # search "Hades II" without a SteamGridDB key: the note, then Steam-store
 # candidates only (verified, id == steam_appid).
-{"event":"start","schema":1,"version":"0.3.0","command":"search"}
+{"event":"start","schema":1,"version":"0.4.0","command":"search"}
 {"event":"note","message":"no SteamGridDB API key configured; searching the Steam store only"}
 {"event":"candidate","source":"steam","id":1145350,"name":"Hades II","verified":true,"owned":true,"steam_appid":1145350}
 {"event":"candidate","source":"steam","id":1145360,"name":"Hades","verified":true,"owned":false,"steam_appid":1145360}
