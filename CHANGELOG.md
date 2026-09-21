@@ -6,6 +6,14 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The Stream button shows up on owned games' library pages.** The route
+  patch looked for the page's layout in what the route renders directly, but
+  the Steam client builds the page two components further down, so the
+  button was never added, however many Stream buttons the panel counted.
+  The patch now follows the page down to the component that lays it out.
+
 ## [0.3.2] - 2026-09-21
 
 ### Fixed

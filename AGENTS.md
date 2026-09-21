@@ -129,8 +129,12 @@ src/lib/                    pure modules (vitest)
                             active-controller watch),
                             overviewLoaded(), showControllerConfigurator() (globals only)
 src/routes/libraryApp.tsx   the /library/app/:appid patch (routerHook.addPatch, afterPatch
-                            on renderFunc, findInReactTree for the overview and the
-                            InnerContainer), written fresh; injects StreamButton
+                            on renderFunc, then on the returned element's
+                            renderChildrenFunc, then createReactTreePatcher on the
+                            app-details component -- the one with `overview` props -- whose
+                            own output is the first tree that holds the InnerContainer;
+                            renderFunc's output does not, found on device 2026-09-21),
+                            written fresh; injects StreamButton
 src/components/             QuickAccess (HostAppRow: the launch button plus the icon-only
                             layout button, plain ButtonItem when the client has no
                             configurator), SyncProgress, RestartModal, SettingsPage,
