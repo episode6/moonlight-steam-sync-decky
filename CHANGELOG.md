@@ -6,6 +6,8 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-09-21
+
 ### Fixed
 
 - **The Stream button shows up on owned games' library pages.** The route
