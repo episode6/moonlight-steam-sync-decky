@@ -798,6 +798,7 @@ def test_hosts_first_run(make_backend) -> None:
         "source": None,
         "cached_hosts": [],
         "known": [],
+        "wake": {},
     }
     assert run(backend.get_settings())["settings"]["hosts"] == []
 

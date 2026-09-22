@@ -27,6 +27,10 @@ describe("errorText (spec 3.8 error strings)", () => {
     expect(errorText(fail("owned-apps-empty"))).toBe("Steam library not loaded");
     expect(errorText(fail("bad-request"))).toBe("backend text");
     expect(errorText(fail("io"))).toBe("backend text");
+    expect(errorText(fail("no-mac"))).toBe("backend text");
+    expect(errorText(fail("no-mac", { message: "" }))).toBe(
+      "No MAC address known for this host — enter one under Settings → Host",
+    );
   });
 
   it("keeps the backend's own text when 'too old' is not about the version", () => {

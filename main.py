@@ -100,6 +100,12 @@ class Plugin:
     async def forget_host(self, name):
         return await (await self._ready()).forget_host(name)
 
+    async def wake_host(self, name):
+        return await (await self._ready()).wake_host(name)
+
+    async def set_wake_mac(self, name, mac=None):
+        return await (await self._ready()).set_wake_mac(name, mac)
+
     # -- plugin files ----------------------------------------------------
     async def get_settings(self):
         return await (await self._ready()).get_settings()
