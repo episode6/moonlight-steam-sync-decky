@@ -29,16 +29,14 @@ import { StreamingTab } from "../components/StreamingTab";
 import { streamingTabEnabled } from "../lib/library";
 import { controller } from "../instance";
 import { footerOf, hasStreamingTab, isLibraryTabs, STREAMING_TAB_ID, STREAMING_TAB_TITLE, templateOf } from "../lib/tabs";
+import { ensureLibraryContextMenuPatched } from "./libraryContextMenu";
+import type { TreeNode } from "./tree";
 
 export const LIBRARY_ROUTE = "/library";
 
 /** How many component levels below the route element the tab bar is looked for. */
 const MAX_DIG = 4;
 
-interface TreeNode {
-  type?: unknown;
-  props?: Record<string, unknown> & { tabs?: unknown; children?: unknown; renderFunc?: unknown };
-}
 
 /** Add the tab to a library `tabs` array; `true` when the array is the library's (with or without a change). */
 export function injectStreamingTab(tabs: unknown, enabled: boolean): boolean {
@@ -159,6 +157,8 @@ interface RenderableChild {
 export function patchLibraryTabs(): () => void {
   const patch = routerHook.addPatch(LIBRARY_ROUTE, (route) => {
     try {
+      // The gear menu's patch installs on the first library render, not at load.
+      ensureLibraryContextMenuPatched();
       const child = route.children as RenderableChild | undefined;
       if (!child || typeof child !== "object") return route;
       if (child.props && typeof child.props.renderFunc === "function") {

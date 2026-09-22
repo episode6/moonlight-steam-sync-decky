@@ -481,11 +481,19 @@ controller first" otherwise.
       Controller settings first.`; pick a `workshop://` layout under that
       menu's *Controller settings*, then the item again: expect the same
       confirm and toast as the Titles row gives. If the item never appears,
-      check the CEF console for `Moonlight Sync: the library context menu
-      was not found` and report it: the wrapper's marker
-      (`().appDetailsSpotlight`, `src/routes/libraryContextMenu.tsx`) has
-      to be re-measured on that client. Also long-press a streamed game's
-      tile in the library: the same menu, so the item should be there too.
+      open the library first (the menu patch installs on the first library
+      render, not at plugin load), then check the CEF console for
+      `Moonlight Sync: the library context menu was not found` and report
+      it: the wrapper's marker (`().appDetailsSpotlight`,
+      `src/routes/libraryContextMenu.tsx`) has to be re-measured on that
+      client. No warning but no item either means the menu class was
+      found but its `render` gave a tree without a `MenuItem` list, or
+      its `props` carry the page under neither `overview` nor `appid`:
+      in the console, `findLibraryContextMenu` is not exported, so read
+      the props from a patched instance (`console.log(this.props)` in a
+      temporary build) and report the keys. Also long-press a streamed
+      game's tile in the library: the same menu, so the item should be
+      there too.
 - [ ] **Adopt a `template://` layout [verify].** Pick one of Steam's own
       templates on a title, adopt it. Expect the same toast; check
       `layouts.json`: every other entry must read `"default"` with the

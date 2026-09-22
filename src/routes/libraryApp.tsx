@@ -28,25 +28,13 @@ import type { ReactElement } from "react";
 
 import { StreamButton } from "../components/StreamButton";
 import { SHORTCUT_APPID_FLOOR } from "../lib/steam";
+import { ensureLibraryContextMenuPatched } from "./libraryContextMenu";
+import { isOverview, type Overview, type TreeNode } from "./tree";
 
 export const LIBRARY_APP_ROUTE = "/library/app/:appid";
 
 /** The `key` of the injected row, so a re-render of an already patched tree adds nothing. */
 const STREAM_ROW_KEY = "moonlight-sync-stream";
-
-interface Overview {
-  appid: number;
-  display_name?: string;
-}
-
-interface TreeNode {
-  key?: string | null;
-  props?: Record<string, unknown> & { children?: unknown; className?: unknown; overview?: unknown };
-}
-
-function isOverview(value: unknown): value is Overview {
-  return typeof (value as Overview | null | undefined)?.appid === "number";
-}
 
 /** The app-details element: the one whose props carry the page's `overview`. */
 function overviewNodeOf(tree: unknown): TreeNode | null {
@@ -112,6 +100,12 @@ interface RenderableChild {
 /** Install the route patch; the returned function removes it (`onDismount`). */
 export function patchLibraryApp(): () => void {
   const patch = routerHook.addPatch(LIBRARY_APP_ROUTE, (route) => {
+    // The gear menu's patch installs on the first library render, not at load.
+    try {
+      ensureLibraryContextMenuPatched();
+    } catch (error) {
+      console.warn("Moonlight Sync: could not patch the library context menu", error);
+    }
     const child = route.children as RenderableChild | undefined;
     if (!child || typeof child !== "object" || !child.props || typeof child.props.renderFunc !== "function") {
       return route;

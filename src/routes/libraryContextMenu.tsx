@@ -14,19 +14,29 @@
  * `render` is then patched, and the handler appends the item to whatever
  * list of menu items the render returned, keyed so a re-render of the same
  * tree adds nothing twice. The item reads the store at render time (the
- * menu is rendered fresh each time it opens), so it needs no hook. Anything
- * unexpected -- the wrapper not found, a menu of another shape, a page
- * with no overview -- leaves the menu untouched; the patch never throws
- * into Steam's render. **[verify]**: the wrapper's marker and the menu's
- * shape are measured on no device yet.
+ * menu is rendered fresh each time it opens), so it needs no hook.
+ *
+ * The lookup is a scan of every export of every module, so it does not
+ * run at plugin load: `ensureLibraryContextMenuPatched()` runs it once,
+ * the first time a library route renders (`libraryApp.tsx`,
+ * `libraryTabs.tsx` call it from their route patches), which is the first
+ * moment the menu can be opened anyway. It is one attempt: `@decky/ui`'s
+ * module map is filled once when the library initialises and never sees
+ * a chunk Steam loads later, so a retry through it would find nothing
+ * new. Anything unexpected -- the wrapper not found, a menu of another
+ * shape, a page with no overview -- leaves the menu untouched, and the
+ * patch never throws into Steam's render. **[verify]**: the wrapper's
+ * marker, the menu's shape and the `overview` prop are measured on no
+ * device yet.
  */
 
-import { MenuItem, afterPatch, fakeRenderComponent, findInReactTree, findModuleChild } from "@decky/ui";
+import { MenuItem, afterPatch, fakeRenderComponent, findInReactTree, findModuleChild, type Patch } from "@decky/ui";
 import type { ReactElement } from "react";
 
 import { adoptAsDefault } from "../components/adoptDefault";
 import { controller } from "../instance";
 import { layoutStrategy, menuLayoutSourceOf } from "../lib/layouts";
+import { isOverview, type Overview, type TreeNode } from "./tree";
 
 /** The `key` of the injected item, so a re-render of an already patched menu adds nothing. */
 const MENU_ITEM_KEY = "moonlight-sync-default-layout";
@@ -36,24 +46,8 @@ const WRAPPER_MARKER = "().appDetailsSpotlight";
 
 export const MENU_ITEM_LABEL = "Use as Moonlight Sync default layout";
 
-interface Overview {
-  appid: number;
-  display_name?: string;
-}
-
-interface TreeNode {
-  key?: string | null;
-  type?: unknown;
-  props?: Record<string, unknown> & { children?: unknown; overview?: unknown };
-  _owner?: { pendingProps?: { overview?: unknown } } | null;
-}
-
 interface MenuClass {
   prototype: { render: () => unknown };
-}
-
-function isOverview(value: unknown): value is Overview {
-  return typeof (value as Overview | null | undefined)?.appid === "number";
 }
 
 /** The menu class, reached through its wrapper component; `null` when this client has neither in the expected shape. */
@@ -61,8 +55,13 @@ export function findLibraryContextMenu(): MenuClass | null {
   const wrapper: unknown = findModuleChild((module: unknown) => {
     if (typeof module !== "object" || module === null) return undefined;
     for (const name of Object.keys(module)) {
-      const value = (module as Record<string, unknown>)[name];
-      if (typeof value === "function" && value.toString().includes(WRAPPER_MARKER)) return value;
+      // A throwing getter on one export must not hide the wrapper behind it.
+      try {
+        const value = (module as Record<string, unknown>)[name];
+        if (typeof value === "function" && value.toString().includes(WRAPPER_MARKER)) return value;
+      } catch {
+        continue;
+      }
     }
     return undefined;
   });
@@ -79,7 +78,13 @@ export function findLibraryContextMenu(): MenuClass | null {
   return typeof candidate.prototype?.render === "function" ? (candidate as MenuClass) : null;
 }
 
-/** The array of menu items in a rendered menu: the first children array that holds a `MenuItem`, else the root's. */
+/**
+ * The array of menu items in a rendered menu: the first children array
+ * that holds a `MenuItem`. The fallback to the root's children array is a
+ * safety net for a client whose items are not `@decky/ui`'s `MenuItem`
+ * (that export is found by heuristics too); it is only as good as the
+ * root being the item list, which the device check settles.
+ */
 function menuItemsOf(rendered: unknown): unknown[] | null {
   const withItems = findInReactTree(
     rendered,
@@ -115,28 +120,65 @@ export function injectLayoutItem(rendered: unknown, overview: Overview | null): 
   return true;
 }
 
-/** The page's overview: the menu's own prop, else the owner's (a class's `render` has no args to read it from). */
-function overviewOf(instance: { props?: { overview?: unknown } } | undefined, rendered: unknown): Overview | null {
-  const own = instance?.props?.overview;
-  if (isOverview(own)) return own;
-  const owner = (rendered as TreeNode | null | undefined)?._owner?.pendingProps?.overview;
-  return isOverview(owner) ? owner : null;
+interface MenuProps {
+  overview?: unknown;
+  appid?: unknown;
 }
 
-/** Install the menu patch; the returned function removes it (`onDismount`). On a client not recognised it only warns. */
-export function patchLibraryContextMenu(): () => void {
+/**
+ * The page the menu is for, from the menu's own props: `overview` as the
+ * app-details component has it, else a bare `appid` (the name then falls
+ * back to the number in the toasts). A class's `render` has no args, and
+ * the element's `_owner` is this same instance, so there is nowhere else
+ * to read it from.
+ */
+export function overviewOf(props: MenuProps | undefined): Overview | null {
+  if (isOverview(props?.overview)) return props.overview;
+  return typeof props?.appid === "number" ? { appid: props.appid } : null;
+}
+
+/** The render patch, once installed; `attempted` stops a second scan when the first found nothing. */
+let installed: Patch | null = null;
+let attempted = false;
+
+/**
+ * Patch the menu class's `render` if it has not been tried yet: one scan,
+ * at the first library route render. `true` while the patch is in place.
+ */
+export function ensureLibraryContextMenuPatched(): boolean {
+  if (installed) return true;
+  if (attempted) return false;
+  attempted = true;
   const menu = findLibraryContextMenu();
   if (!menu) {
     console.warn("Moonlight Sync: the library context menu was not found; no gear-menu item");
-    return () => undefined;
+    return false;
   }
-  const patch = afterPatch(menu.prototype, "render", function (this: { props?: { overview?: unknown } }, _args: unknown[], rendered: unknown) {
+  installed = afterPatch(menu.prototype, "render", function (this: { props?: MenuProps }, _args: unknown[], rendered: unknown) {
     try {
-      injectLayoutItem(rendered, overviewOf(this, rendered));
+      injectLayoutItem(rendered, overviewOf(this?.props));
     } catch (error) {
       console.warn("Moonlight Sync: could not patch the library context menu", error);
     }
     return rendered;
   });
-  return () => patch.unpatch();
+  return true;
+}
+
+/**
+ * Arm the menu patch (it installs on the first library route render); the
+ * returned function removes it (`onDismount`) and lets a reload try again.
+ */
+export function patchLibraryContextMenu(): () => void {
+  attempted = false;
+  return () => {
+    const patch = installed;
+    installed = null;
+    attempted = false;
+    try {
+      patch?.unpatch();
+    } catch (error) {
+      console.warn("Moonlight Sync: could not unpatch the library context menu", error);
+    }
+  };
 }

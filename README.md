@@ -356,8 +356,8 @@ entry it manages starts on, and each title stays customisable on its own.
   Moonlight Sync default layout**. The item is there on every game you
   stream and on the plugin's own visible entries. The same action is on the
   Titles page as **Layout** → *Use as the default layout*, which reads the
-  layout the title's hidden shortcut has (set with **Layout** → *Choose
-  layout…*). Either way the plugin reads the layout for the controller in
+  layout the title's own entry has, hidden or visible (a hidden one is set
+  with **Layout** → *Choose layout…*). Either way the plugin reads the layout for the controller in
   use, asks you to confirm, and
   puts it on every entry that has no layout of its own: Stream buttons'
   hidden shortcuts, visible shortcuts, `Desktop` / `Steam Big Picture` and
