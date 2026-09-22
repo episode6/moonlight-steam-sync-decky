@@ -60,6 +60,13 @@ export function injectStreamingTab(tabs: unknown, enabled: boolean): boolean {
 
 let shapeReported = false;
 
+/** A prop value for the console: a string quoted, anything else by type (never stringified: a store object may hold a cycle). */
+function describe(value: unknown): string {
+  if (typeof value === "string") return JSON.stringify(value);
+  if (value === null || value === undefined) return String(value);
+  return `<${typeof value}>`;
+}
+
 /** The prop names of an element, `children` aside, for the console. */
 function propNames(props: unknown): string {
   if (!props || typeof props !== "object") return "-";
@@ -82,7 +89,7 @@ function reportShape(bar: TreeNode): void {
   const template = templateOf(tabs);
   console.info(
     `Moonlight Sync: library tabs found on ${typeName(bar.type)}: bar props [${propNames(bar.props)}], ` +
-      `activeTab ${JSON.stringify(bar.props?.activeTab ?? null)}, ` +
+      `activeTab ${describe(bar.props?.activeTab)}, ` +
       `a built-in tab has [${builtIn ? Object.keys(builtIn).join(",") : "-"}], ` +
       `template ${template ? typeName(template.type) : "-"} with props [${propNames(template?.props)}]`,
   );
@@ -100,7 +107,7 @@ function traceShowTab(bar: TreeNode): void {
   if (!traced) {
     const call = original as (...args: unknown[]) => unknown;
     traced = (...args: unknown[]) => {
-      console.debug(`Moonlight Sync: library tabs, onShowTab(${JSON.stringify(args[0] ?? null)})`);
+      console.debug(`Moonlight Sync: library tabs, onShowTab(${describe(args[0])})`);
       return call(...args);
     };
     tracedShowTab.set(original, traced);
@@ -127,8 +134,14 @@ function dig(tree: unknown, depth: number): void {
   const bar = findInReactTree(tree, (n: TreeNode) => Array.isArray(n?.props?.tabs)) as TreeNode | undefined;
   if (bar?.props) {
     if (injectStreamingTab(bar.props.tabs, streamingTabEnabled(controller.state.settings))) {
-      reportShape(bar);
-      traceShowTab(bar);
+      // Diagnostics only: a throw here must not read as a failed patch,
+      // the tab is in the bar by now.
+      try {
+        reportShape(bar);
+        traceShowTab(bar);
+      } catch (error) {
+        console.warn("Moonlight Sync: could not trace the library tabs", error);
+      }
     }
     return;
   }

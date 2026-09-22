@@ -9,13 +9,15 @@ project uses [semantic versioning](https://semver.org/).
 ### Fixed
 
 - **The *Streaming* tab could be seen but not reached**: navigating the
-  library's tab bar skipped it. A tab whose content has nothing to focus
-  is passed over by gamepad navigation, and the tab's own "nothing to
-  stream" line and its error box were exactly that. Both are focusable
-  now, and a grid that throws shows its error in the tab (and the
-  console, with the component stack) instead of the client's empty box.
-  The library patch also logs the tab bar's shape once and every tab it
-  is asked to show, so a tab that is still skipped can be traced
+  library's tab bar skipped it. The one way the plugin itself could cause
+  that is closed: a tab whose content has nothing to focus is passed over
+  by gamepad navigation, and the tab's own "nothing to stream" line and
+  its error box were exactly that. Both are focusable now, and a grid
+  that throws shows its error in the tab (and the console, with the
+  component stack) instead of the client's empty box, and is tried again
+  when the titles change. The cause is not measured on a device yet, so
+  the library patch also logs the tab bar's shape once and every tab it
+  is asked to show, for the case where the tab is still skipped
   (DEVICE-CHECKLIST §10).
 
 ## [0.6.0] - 2026-09-21

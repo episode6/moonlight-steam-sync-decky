@@ -26,8 +26,15 @@ import { useStore } from "./useStore";
 
 const TEXT_STYLE = { padding: "24px 32px", opacity: 0.7 } as const;
 
-/** Not in `@decky/ui`'s typings, but the client's `Focusable` honours it: a panel with no focusable child takes focus itself. */
+/**
+ * Not in `@decky/ui`'s typings, but the client's `Focusable` honours it: a
+ * panel with no focusable child takes focus itself. Unmeasured, so the
+ * panel also carries a no-op `onActivate`, which is what makes a container
+ * focusable on every client `@decky/ui` code relies on; either suffices.
+ */
 const FOCUSABLE_IF_EMPTY = { focusableIfNoChildren: true } as Record<string, unknown>;
+
+function noop(): void {}
 
 export function streamingEmptyText(active: string | null | undefined): string {
   return active ? `Nothing to stream from ${active} yet. Sync from the Moonlight Sync panel.` : "No host yet. Add one from the Moonlight Sync panel.";
@@ -41,7 +48,7 @@ export function streamingErrorText(error: unknown): string {
 /** A line of the plugin's own text, focusable so the tab can be reached and read. */
 function TextPanel({ children }: { children: ReactNode }) {
   return (
-    <Focusable style={TEXT_STYLE} {...FOCUSABLE_IF_EMPTY}>
+    <Focusable style={TEXT_STYLE} onActivate={noop} {...FOCUSABLE_IF_EMPTY}>
       {children}
     </Focusable>
   );
@@ -56,7 +63,9 @@ interface BoundaryState {
  * Catches a throw from the client's grid: logs it (the device report wants
  * the error, DEVICE-CHECKLIST §10) and shows it in a focusable line, so
  * the tab still opens. The client's own `ErrorBoundary` draws a box with
- * nothing to focus, which would keep the tab unreachable.
+ * nothing to focus, which would keep the tab unreachable. It never resets
+ * itself: `StreamingTab` keys it on the member set, so a new collection
+ * remounts it and the grid is tried again.
  */
 class TabErrorBoundary extends Component<{ children: ReactNode }, BoundaryState> {
   state: BoundaryState = { error: null, failed: false };
@@ -89,7 +98,7 @@ export function StreamingTab({ template }: { template: ElementLike }) {
   }, [key]);
   if (!collection) return <TextPanel>{streamingEmptyText(state.hosts?.active)}</TextPanel>;
   return (
-    <TabErrorBoundary>
+    <TabErrorBoundary key={key}>
       {cloneElement(template as ReactElement<{ collection: unknown }>, { collection })}
     </TabErrorBoundary>
   );

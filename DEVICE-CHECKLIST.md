@@ -589,7 +589,12 @@ guess at the client's `Collection`. Every item is a first measurement.
       none means the bar never asked for it (its navigation reads
       something other than `tabs`, or the tab's header is not
       focusable); one that does not open it means the library refused
-      the id.
+      the id. Also say whether Settings → About's log panel takes focus:
+      it is a plain `Focusable` over text, the shape the empty tab had,
+      and the tab's panels add `focusableIfNoChildren` and a no-op
+      `onActivate` on top (both unmeasured), so a log panel that focuses
+      means a plain `Focusable` already suffices, and one that does not
+      says the panels lean on those two.
 - [ ] The tab's tiles are the panel's **Stream buttons** + **Shortcuts**:
       an owned game opens the real game's page (with the Stream button),
       an unowned one is the shortcut. Sorting, the footer legend and the

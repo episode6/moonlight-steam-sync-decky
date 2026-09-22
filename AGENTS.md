@@ -259,9 +259,11 @@ src/components/             adoptDefault (inspectLayout -> refusal toasts -> Con
                             StreamingTab (the tab's content: cloneElement of the
                             template with a syntheticCollection of the loaded
                             streamingMembers, live from the store, inside its own
-                            TabErrorBoundary; the nothing-to-show line and the
-                            grid's error are each a Focusable with
-                            `focusableIfNoChildren`, since a panel with nothing
+                            TabErrorBoundary, keyed on the member set so a new
+                            collection retries the grid; the nothing-to-show line
+                            and the grid's error are each a Focusable with
+                            `focusableIfNoChildren` and a no-op `onActivate`
+                            (either suffices), since a panel with nothing
                             to focus is skipped under gamepad navigation and the
                             tab with it -- reported 2026-09-22, cause unmeasured;
                             libraryTabs.tsx logs the bar's shape once and every
