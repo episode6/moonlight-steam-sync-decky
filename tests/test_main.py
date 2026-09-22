@@ -189,7 +189,15 @@ def test_every_frontend_callable_exists_on_the_plugin(plugin) -> None:
     source = (ROOT / "src" / "lib" / "cli.ts").read_text()
     block = source.split("const CALLABLES = [", 1)[1].split("]", 1)[0]
     names = [part.strip().strip('"') for part in block.split(",") if part.strip()]
-    assert {"search", "pin", "unpin", "set_ignored", "layouts", "record_layout"} <= set(names)
+    assert {
+        "search",
+        "pin",
+        "unpin",
+        "set_ignored",
+        "layouts",
+        "record_layout",
+        "set_default_layout",
+    } <= set(names)
     missing = [name for name in names if not callable(getattr(instance, name, None))]
     assert missing == []
 
@@ -209,6 +217,23 @@ def test_layouts_through_main_py(plugin) -> None:
     assert after["entries"] == recorded["entries"]
     assert list(after["entries"]) == [str(0x80000000 + 7)]
     assert Path(tmp_path / "settings" / "layouts.json").exists()
+
+
+def test_set_default_layout_through_main_py(plugin) -> None:
+    """spec 3.16.2: the new callable is exposed."""
+    instance, _, tmp_path = plugin
+
+    async def scenario():
+        before = await instance.get_settings()
+        result = await instance.set_default_layout("workshop://1", "My Game")
+        return before, result
+
+    before, result = run(scenario())
+    assert before["settings"]["default_layout"] is None
+    assert result["ok"] is True
+    assert result["settings"]["default_layout"]["url"] == "workshop://1"
+    assert result["pending"]["layout_walk"] is True
+    assert Path(tmp_path / "settings" / "settings.json").exists()
 
 
 def test_pin_and_set_ignored_through_main_py(plugin) -> None:

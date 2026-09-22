@@ -433,9 +433,11 @@ Steam's:
   `pending.json` (a restart that is still pending, and whether the layout
   walk after a sync's restart is still due), `layouts.json` (the last
   layout result per hidden shortcut: `{"version": 1, "entries":
-  {"<shortcut appid>": {"real_appid", "result", "url", "when"}}}`;
-  `real_appid` is `null` for *Choose layout* on Desktop / Steam Big
-  Picture, which have no Steam game behind them).
+  {"<shortcut appid>": {"real_appid", "result", "url", "when",
+  "applied"}}}`; `real_appid` is `null` for an entry with no Steam game
+  behind it, such as Desktop / Steam Big Picture or the Moonlight client;
+  `applied` is the last layout URL the plugin itself put on that shortcut,
+  or `null` when the selection is one you made).
 - `~/homebrew/logs/Moonlight Sync/moonlight-sync.log`: every CLI call with
   its arguments, the CLI's own messages verbatim, and both CLI versions at
   startup.
@@ -444,9 +446,11 @@ Steam's:
 
 `settings.json` also carries `layout_strategy` (`"copy"` or `"picker"`),
 which has no UI: it is the hand-editable switch described under
-"Controller layouts", for trying the fallback on a device; and
+"Controller layouts", for trying the fallback on a device;
 `hide_stream_shortcuts` / `streaming_collection`, the two Advanced toggles
-above.
+above; and `default_layout` (`null`, or `{"url", "title", "when"}`, the
+adopted default controller layout), which the plugin changes only through
+its own `set_default_layout` call, never through the other settings.
 
 A pin from the Titles page is written by the CLI itself (`moonlight-steam-sync
 match … --defer-art`) into its own match cache,

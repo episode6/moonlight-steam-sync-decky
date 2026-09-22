@@ -6,6 +6,17 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Backend half of the default controller layout (spec §3.16, PR-9): a
+  `default_layout` setting, changed only through the new
+  `set_default_layout` callable (a `workshop://` or `template://` URL, or
+  `null` to clear); `layouts.json` entries gain an `applied` field (the last
+  URL the plugin itself set on a shortcut, which today's layout copy fills
+  in too, so a copy made now still moves to the default later) and a new
+  `default` result. No frontend behaviour changes yet — nothing calls the
+  new callable until PR-10.
+
 ## [0.4.0] - 2026-09-21
 
 ### Added

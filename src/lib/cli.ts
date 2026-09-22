@@ -270,9 +270,21 @@ export type Result<T extends object = object> = ({ ok: true } & T) | Failure;
 
 export type LayoutStrategy = "copy" | "picker";
 
+/** `settings.default_layout` (spec 3.16.2): the plugin's adopted layout, or unset. */
+export interface DefaultLayout {
+  url: string;
+  title: string;
+  /**
+   * When it was set; `null` when a hand-edited `settings.json` has none
+   * (the backend keys "no default" on `url` and `title` only, spec 3.16.2).
+   */
+  when: string | null;
+}
+
 export interface Settings {
   version: number;
   hosts: string[];
+  /** @deprecated spec 3.16 / Decision 47: replaced by `default_layout`; read by nothing. */
   copy_layouts: boolean;
   restart_countdown_s: number;
   retry_missing: boolean;
@@ -281,6 +293,8 @@ export interface Settings {
   hide_stream_shortcuts?: boolean;
   /** Keep the *Streaming* collection (spec 3.15); absent reads as on. */
   streaming_collection?: boolean;
+  /** The plugin's adopted controller layout (spec 3.16.2); `null` when unset. */
+  default_layout: DefaultLayout | null;
 }
 
 export type SettingsPatch = Partial<
@@ -370,15 +384,29 @@ export interface KeyState {
   config_parse_error: boolean;
 }
 
-/** What one layout copy (or *Choose layout*) recorded for a hidden shortcut (spec 3.10). */
-export type LayoutResult = "copied" | "kept" | "unavailable" | "picker";
+/**
+ * What one layout action recorded for a hidden shortcut (spec 3.10 / 3.16).
+ * `"default"`: the entry is on the plugin's default layout. `"copied"` is
+ * what the spec 3.10 copy (`copyLayout`) still writes on every Stream press
+ * and walk until PR-10 replaces it with `applyDefault`; it stays valid
+ * after that so an older file and an older frontend still round-trip.
+ */
+export type LayoutResult = "copied" | "kept" | "unavailable" | "picker" | "default";
 
 export interface LayoutEntry {
-  /** `null`: a host-app entry, *Choose layout* only, no game behind it (spec 3.14.1). */
+  /** `null` for any result now (spec 3.16.2): the walk covers entries with no Steam game. */
   real_appid: number | null;
   result: LayoutResult;
   url: string | null;
   when: string;
+  /**
+   * The last URL *the plugin itself* set on this shortcut, or `null`
+   * (spec 3.16.2, Decision 53): computed by the backend (`default` and
+   * `copied` set it, `kept` keeps it only for that same URL), so
+   * `layouts.ts`'s `appliedUrl` only needs to fall back for a record
+   * written before this field existed.
+   */
+  applied?: string | null;
 }
 
 /** `layouts.json`: `entries` keyed by the shortcut appid as a string. */
@@ -425,6 +453,11 @@ export interface Backend {
   forget_host(name: string): Promise<Result<{ known: string[] }>>;
   get_settings(): Promise<Result<{ settings: Settings }>>;
   set_settings(patch: SettingsPatch): Promise<Result<{ settings: Settings }>>;
+  /** Store (`url` starting with a `DEFAULT_LAYOUT_SCHEMES` prefix) or clear (`null`) the default layout (spec 3.16.2). */
+  set_default_layout(
+    url: string | null,
+    title: string | null,
+  ): Promise<Result<{ settings: Settings; pending: Pending }>>;
   get_ignored(): Promise<Result<{ ignored: string[] }>>;
   write_owned_apps(steamid3: number, apps: Record<string, string>): Promise<Result<{ count: number }>>;
   pending(): Promise<Result<Pending>>;
@@ -482,6 +515,7 @@ const CALLABLES = [
   "forget_host",
   "get_settings",
   "set_settings",
+  "set_default_layout",
   "get_ignored",
   "write_owned_apps",
   "pending",

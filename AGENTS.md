@@ -272,12 +272,39 @@ behind `--`, so argparse never reads it as an option. `set_ignored` needs no
 CLI and drops the `check_host` memo. `layouts()` / `record_layout(
 shortcut_appid, real_appid, result, url)` need no CLI either: they read and
 upsert `layouts.json` (`{version: 1, entries: {<shortcut appid>:
-{real_appid, result, url, when}}}`, `result` one of `copied` / `kept` /
-`unavailable` / `picker`; a broken file reads as empty), and
-`start_remove_all` deletes the file on `commit.written`. `real_appid` may be
-`null` for a `picker` result only: *Choose layout* on a default host app,
-which has no owned game behind it (every copy result names its game).
-Older builds never read that value for anything but the log line.
+{real_appid, result, url, when, applied}}}`, `result` one of `copied` /
+`kept` / `unavailable` / `picker` / `default`; a broken file reads as
+empty), and `start_remove_all` deletes the file on `commit.written`.
+`real_appid` may be `null` for any result now (spec 3.16.2: the walk covers
+entries with no Steam game behind them -- host apps, the client, a title
+never matched -- not only *Choose layout* on a default host app).
+`applied` is the last URL *the plugin itself* set on that shortcut,
+computed by `record_layout` so no caller has to (spec 3.16.2, Decision
+53): it is set to `url` on `default` *and* `copied` (both a URL the plugin
+just set), kept on `kept` only when the kept `url` is the previous
+`applied` (still the plugin's own selection, what the spec 3.10 copy
+reports on a title it copied earlier) and cleared to `null` for any other
+`kept` (a selection the plugin did not make), and carried forward unchanged
+on `unavailable` / `picker`; a legacy `copied` record with no `applied` key
+on disk migrates its `url` in as `applied` the first time it is touched
+again (Decision 46), so the first walk after a default is set can move it.
+The table holds under the current frontend, which still records `copied` /
+`kept` from `copyLayout` on every Stream press and walk until PR-10; under
+PR-10's `applyDefault` a `kept` never carries the plugin's own URL, so the
+rule reduces to `null` there. `settings.json`
+gains `default_layout`, `null` by default, else `{url, title, when}`; it
+is changed only through `set_default_layout(url, title)` (`@guarded`, no
+CLI, no busy guard), which needs no argument to validate but `url`, when
+not `null`, must start with `workshop://` or `template://`
+(`settings.DEFAULT_LAYOUT_SCHEMES`) and stay under 2048 characters, and
+`title` under 200; `set_settings` refuses the key outright
+(`"default_layout is changed with set_default_layout"`). Either a stored
+url or a clear always sets `pending.layout_walk = true`, so the walk (not
+built until PR-10) resumes at the next load even if the plugin unloads
+mid-write, and a hand-broken `default_layout` value reads back as `null`
+rather than failing `get_settings`. `copy_layouts` stays in
+`DEFAULT_SETTINGS` and `_validate_setting` for an older `settings.json` or
+frontend, and PR-10 stops reading it (Decision 47).
 `stop_sync` and `unload` also cover the moment between the busy guard and
 the spawn: they flag the run, the SIGINT goes out as soon as its child
 exists, and a run the signal killed before the CLI printed anything is
