@@ -610,6 +610,10 @@ CLI's `0.4.0` are a coincidence, not a coupling.
 Plugin `v0.5.0` (the user asked for it on 2026-09-21) is a minor release for
 spec §3.16, the default controller layout (PR-9 and PR-10), replacing the
 layout copy; same CLI pin and minimum.
+Plugin `v0.6.0` (the user asked for it on 2026-09-21) is a minor release for
+spec §3.17 (the *Streaming* tab replacing the collection, PR-11) and the
+gear-menu *Use as Moonlight Sync default layout* item (spec §3.16.5); same
+CLI pin and minimum.
 
 Modelled on the CLI repo's own "Cutting a release" (the example below is
 the plugin's first release, `v0.1.0`, which waited for the CLI's `v0.3.0`;

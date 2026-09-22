@@ -6,6 +6,8 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-21
+
 ### Added
 
 - **Use as Moonlight Sync default layout in the library gear menu** (spec
