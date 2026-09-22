@@ -6,6 +6,8 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-22
+
 ### Added
 
 - **Wake** next to **Retry** in the panel's host row when the host cannot
