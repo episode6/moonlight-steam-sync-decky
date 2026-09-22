@@ -6,6 +6,21 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Wake** next to **Retry** in the panel's host row when the host cannot
+  be reached (spec §3.18): sends the PC a Wake-on-LAN magic packet, to the
+  broadcast address and to every address Moonlight knows for the host, and
+  toasts "Give it a minute, then Retry". The MAC comes from Moonlight's
+  own host list when the client learned one, else from a new
+  **Wake-on-LAN MAC** field under each host in Settings → Host (for a
+  Sunshine host Moonlight has no MAC for); without either there is no
+  Wake button. Moonlight's *Wake PC* has no command-line action, so the
+  plugin sends the packet itself; nothing runs on the PC and nothing is
+  written. New callables `wake_host` and `set_wake_mac`, a `wake` map on
+  `hosts`, the `wake_macs` key in `settings.json` and the `no-mac` error
+  code.
+
 ### Fixed
 
 - **The *Streaming* tab could be seen but not reached**: selecting it,

@@ -19,6 +19,7 @@ import {
   runFromSyncState,
   Store,
   streamMapFromStatus,
+  wakeInfoOf,
   withCliVersion,
   withStatus,
 } from "./state";
@@ -276,5 +277,24 @@ describe("the store and derived flags", () => {
     expect(otherHostsLine(hosts, 198)).toBe(
       "active host · parked from OFFICE-PC (312 titles), LIVING-ROOM-PC",
     );
+  });
+});
+
+describe("Wake-on-LAN (spec 3.18)", () => {
+  it("finds a host's wake info in any case, and nothing without one", () => {
+    const wake = { mac: "aa:bb:cc:dd:ee:0f", source: "moonlight" as const, addresses: ["192.168.1.20"] };
+    const hosts = {
+      active: "my-gaming-pc",
+      source: "state" as const,
+      cached_hosts: [],
+      known: ["MY-GAMING-PC", "OFFICE-PC"],
+      wake: { "MY-GAMING-PC": wake },
+    };
+    expect(wakeInfoOf(hosts, "my-gaming-pc")).toBe(wake);
+    expect(wakeInfoOf(hosts, hosts.active)).toBe(wake);
+    expect(wakeInfoOf(hosts, "OFFICE-PC")).toBeNull();
+    expect(wakeInfoOf({ ...hosts, wake: undefined }, "MY-GAMING-PC")).toBeNull();
+    expect(wakeInfoOf(null, "MY-GAMING-PC")).toBeNull();
+    expect(wakeInfoOf(hosts, null)).toBeNull();
   });
 });

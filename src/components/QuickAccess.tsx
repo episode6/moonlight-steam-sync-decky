@@ -20,6 +20,7 @@ import {
   ignoredCounter,
   otherHostsLine,
   restartRowView,
+  wakeInfoOf,
   type AppState,
   type HostAppKey,
 } from "../lib/state";
@@ -187,9 +188,19 @@ function HostRow({ state }: { state: AppState }) {
       </PanelSectionRow>
       {reach && !reach.reachable ? (
         <PanelSectionRow>
-          <ButtonItem layout="below" onClick={() => void controller.checkHost(true)}>
-            Retry
-          </ButtonItem>
+          <Focusable style={{ display: "flex", gap: 8 }}>
+            <DialogButton style={{ minWidth: 0, flex: 1 }} onClick={() => void controller.checkHost(true)}>
+              Retry
+            </DialogButton>
+            {/* Wake-on-LAN (spec 3.18): only when a MAC is known for the host,
+                from the Host page or Moonlight's own list; otherwise the Host
+                page is where to enter one, so the button is not shown dead. */}
+            {wakeInfoOf(hosts, hosts.active) ? (
+              <DialogButton style={{ minWidth: 0, flex: 1 }} onClick={() => void controller.wakeHost()}>
+                Wake
+              </DialogButton>
+            ) : null}
+          </Focusable>
         </PanelSectionRow>
       ) : null}
     </>

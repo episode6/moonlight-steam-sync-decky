@@ -48,7 +48,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from . import events as ev
-from . import install, keys
+from . import install, keys, wake
 from .settings import SettingsError, Store
 
 Result = dict[str, Any]
@@ -905,13 +905,105 @@ class Backend:
                     seed.append(name)
             self.store.set_hosts(seed)
             self._log(f"seeded known hosts: {seed}")
+        known = self.store.settings()["hosts"]
+        # The active host too, when it is not among the known ones (set by
+        # `--host` or the CLI's config after the seed): the panel offers it
+        # in the dropdown, so it gets its Wake as well. Moonlight.conf is
+        # parsed once for the whole map.
+        entries = wake.moonlight_entries(self.home)
+        wanted: list[str] = []
+        for name in [active, *known]:
+            if isinstance(name, str) and name.lower() not in {w.lower() for w in wanted}:
+                wanted.append(name)
+        wake_map = {
+            name: info for name in wanted if (info := self._wake_info(name, entries)) is not None
+        }
         return {
             "ok": True,
             "active": active,
             "source": source,
             "cached_hosts": cached_hosts,
-            "known": self.store.settings()["hosts"],
+            "known": known,
+            "wake": wake_map,
         }
+
+    # ------------------------------------------------------------------
+    # Wake-on-LAN (spec 3.18)
+
+    def _wake_info(
+        self, name: str, entries: list[dict[str, Any]] | None = None
+    ) -> dict[str, Any] | None:
+        """``{mac, source, addresses}`` for ``name``: the setting first, else Moonlight's list.
+
+        ``entries`` is ``wake.moonlight_entries`` already read, for a caller
+        resolving several names; ``None`` reads it here.
+        """
+        if entries is None:
+            entries = wake.moonlight_entries(self.home)
+        entry = wake.find_host(entries, name)
+        addresses = list(entry["addresses"]) if entry is not None else []  # type: ignore[arg-type]
+        stored = self.store.wake_mac(name)
+        if stored is not None:
+            return {"mac": stored, "source": "settings", "addresses": addresses}
+        if entry is not None and isinstance(entry.get("mac"), str):
+            return {"mac": entry["mac"], "source": "moonlight", "addresses": addresses}
+        return None
+
+    @guarded
+    async def wake_host(self, name: str) -> Result:
+        """Send a Wake-on-LAN magic packet to ``name`` (spec 3.18). No CLI, no busy guard.
+
+        The MAC is the Host page's setting when one is stored, else the one
+        in Moonlight's own host list; with neither the answer is ``no-mac``.
+        The packet goes to the broadcast address and to every address
+        Moonlight knows for the host, in a worker thread (a hostname among
+        them resolves with a blocking ``getaddrinfo``); only when not one
+        datagram could be sent is it ``io``. Sending proves nothing about
+        the PC, so the result only says what went out; the panel's *Retry*
+        is the check.
+        """
+        if not isinstance(name, str) or not name.strip():
+            return failure("bad-request", "a host name is required")
+        name = name.strip()
+        info = self._wake_info(name)
+        if info is None:
+            return failure(
+                "no-mac",
+                f"No MAC address known for {name}: Moonlight has none for it; "
+                "enter one on the Host page",
+            )
+        # Off the loop: a hostname in Moonlight's address list (a manualaddress
+        # or DDNS name) resolves with a blocking getaddrinfo, and a stale one
+        # can take seconds per port, which must not stall a run's relay.
+        sent, errors = await asyncio.to_thread(
+            wake.send_magic_packet, info["mac"], info["addresses"]
+        )
+        for line in errors:
+            self._log(f"wake_host {name}: {line}")
+        if sent == 0:
+            why = errors[0] if errors else "no target"
+            return failure("io", f"could not send a Wake-on-LAN packet: {why}")
+        self._log(f"wake_host {name}: {sent} packets sent ({info['source']} MAC)")
+        self._host_memo.pop(name, None)
+        return {
+            "ok": True,
+            "host": name,
+            "mac": info["mac"],
+            "source": info["source"],
+            "sent": sent,
+        }
+
+    @guarded
+    async def set_wake_mac(self, name: str, mac: Any = None) -> Result:
+        """Store or drop (``mac`` ``None`` / empty) one known host's Wake-on-LAN MAC."""
+        if not isinstance(name, str) or not name.strip():
+            return failure("bad-request", "a host name is required")
+        name = name.strip()
+        known = self._known_match(name)
+        if known is None:
+            return failure("bad-request", f"{name} is not a known host; add it first")
+        stored = self.store.set_wake_mac(known, mac)
+        return {"ok": True, "host": known, "mac": stored, "wake": self._wake_info(known)}
 
     def _known_match(self, name: str) -> str | None:
         for known in self.store.settings()["hosts"]:

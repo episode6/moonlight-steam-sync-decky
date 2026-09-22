@@ -84,6 +84,18 @@ py_modules/moonlight_sync/  the backend (imports nothing from decky)
   settings.py               settings.json / ignore.json / owned-apps.json /
                             pending.json / layouts.json, all .tmp + os.replace
   keys.py                   SteamGridDB key sources (config -> env -> file), key file
+  wake.py                   Wake-on-LAN (spec 3.18): parse_mac(), magic_packet(),
+                            moonlight_hosts() / moonlight_entries() / find_host() /
+                            moonlight_host() (Moonlight.conf's [hosts] group, the
+                            flatpak path then the native one, read only: QSettings
+                            INI, the MAC an @ByteArray of 6 bytes or empty; hosts()
+                            reads the entries once for its whole map),
+                            send_magic_packet() (broadcast + every address Moonlight
+                            knows, WAKE_PORTS; the SOCKET seam so no test sends a
+                            datagram; run through asyncio.to_thread, since a hostname
+                            among the addresses resolves with a blocking
+                            getaddrinfo). Moonlight's CLI has no wake action
+                            (list / quit / stream / pair only), so the plugin sends it
   events.py                 parse_line(), restart_decision(), next_pending()
 backend/entrypoint.sh       the one CLI downloader (strict), also the Decky store hook
 backend/Dockerfile          template's holo-base image, only for `decky plugin build`
@@ -95,6 +107,7 @@ src/lib/                    pure modules (vitest)
                             errorText (the §3.8 strings)
   events.ts                 NDJSON parsing, lastOf/eventsOf
   state.ts                  AppState, Store, reducers (runs, counters, stream map),
+                            wakeInfoOf() (a host's `wake` entry, any case),
                             HOST_APPS / hostAppsFromStatus() (the panel's Desktop and
                             Steam Big Picture buttons, by Moonlight name, blind to
                             `hidden`); an `entry.host_app` entry counts toward none of
@@ -102,6 +115,8 @@ src/lib/                    pure modules (vitest)
                             map (spec §3.14.1); the layout walk reads `entries`, not
                             the map, so the host apps and the client are walked too
   controller.ts             load order, runs, restart flow, hosts, settings actions,
+                            wakeHost() (spec 3.18: `wake_host` on the active host, a
+                            toast either way, never held back), setWakeMac(),
                             loadTitles() (list -> list_cached fallback, and list_cached
                             while a run is going; `status` only reaches the shared store
                             when no run is going, the page always gets its entries),
@@ -261,8 +276,10 @@ src/components/             adoptDefault (inspectLayout -> refusal toasts -> Con
                             -> setDefaultLayout, shared by the Titles row and the gear
                             menu; the walk-running refusal), QuickAccess (HostAppRow: the launch button plus the icon-only
                             layout button, plain ButtonItem when the client has no
-                            configurator), SyncProgress, RestartModal, SettingsPage,
-                            HostPage, TitlesPage (layout text; the *Layout* menu:
+                            configurator; the unreachable row's *Retry* + *Wake*, the
+                            latter only when `wakeInfoOf` finds a MAC), SyncProgress,
+                            RestartModal, SettingsPage, HostPage (+ WakeMacRow per host:
+                            the entered MAC, or Moonlight's shown), TitlesPage (layout text; the *Layout* menu:
                             *Choose layout…* and *Use as the default layout*, which
                             inspects, toasts the refusal texts or confirms), ChangeMatchModal,
                             Pill, StreamButton (renders only when streamMap has the
@@ -364,7 +381,7 @@ only layout affordance.
 Every callable returns `{"ok": true, …}` or `{"ok": false, "error": <code>,
 "message": …}` (codes: `cli-missing`, `cli-too-old`, `cli-protocol`,
 `cli-error`, `timeout`, `busy`, `owned-apps-missing`, `owned-apps-empty`,
-`bad-request`, `io`) and never raises. Argv is `[python3, <installed cli>,
+`bad-request`, `io`, `no-mac`) and never raises. Argv is `[python3, <installed cli>,
 "--json", <subcommand>, …]` (`doctor`, `--version` and `art --help` have no
 `--json`), `cwd` and `HOME` are the deck user's home, and the child gets
 `MOONLIGHT_STEAM_SYNC_FROM_PLUGIN=1`. Every `sync`, `list` (live and
@@ -458,6 +475,21 @@ by nothing (Decision 47).
 the spawn: they flag the run, the SIGINT goes out as soon as its child
 exists, and a run the signal killed before the CLI printed anything is
 reported as exit 130 rather than as a protocol error.
+Wake-on-LAN (spec 3.18) needs no CLI and no busy guard: `hosts()` carries
+an additive `wake` map (`{<host>: {mac, source, addresses}}` over the known
+hosts plus the active one when it is not among them, the Host page's
+`wake_macs` setting first, else Moonlight's own `Moonlight.conf` entry,
+read once per call; a host with neither is absent, and the panel shows no
+*Wake* for it); `wake_host(name)` sends the magic packet to the broadcast
+address and every address Moonlight knows for the host on `WAKE_PORTS`, in
+a worker thread (a hostname among them resolves with a blocking
+`getaddrinfo`), answers `{host, mac, source, sent}`, `no-mac` when nothing knows a MAC,
+`io` only when not one datagram went out, and drops the `check_host` memo
+so the next *Retry* asks; `set_wake_mac(name, mac)` stores a known host's
+MAC normalised (`None` / empty drops it; `set_settings` refuses the
+`wake_macs` key) and `forget_host` drops the forgotten host's. Sending
+proves nothing about the PC, so the frontend's toast says to Retry in a
+minute rather than polling.
 
 ## Commands
 

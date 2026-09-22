@@ -25,6 +25,7 @@ import type {
   SyncDonePayload,
   SyncState,
   TitleEvent,
+  WakeInfo,
 } from "./cli";
 import { cliStatus, type CliStatus } from "./version";
 
@@ -114,6 +115,20 @@ export function hostAppsFromStatus(entries: readonly EntryEvent[]): Record<HostA
     if (entry) apps[app.key] = entry.appid;
   }
   return apps;
+}
+
+/**
+ * A host's Wake-on-LAN info (spec 3.18), by name in any case: `hosts()` keys
+ * `wake` by the known host's stored spelling while the active host's name
+ * comes from the CLI's state file.
+ */
+export function wakeInfoOf(hosts: HostsInfo | null, name: string | null): WakeInfo | null {
+  if (!hosts?.wake || !name) return null;
+  const wanted = name.toLowerCase();
+  for (const [host, info] of Object.entries(hosts.wake)) {
+    if (host.toLowerCase() === wanted) return info;
+  }
+  return null;
 }
 
 /**

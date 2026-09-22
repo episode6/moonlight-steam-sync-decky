@@ -113,7 +113,10 @@ CLI release)" and you can install the CLI with its own `install.sh`.
   green dot and "N apps" when `moonlight list` answered; a red dot, the
   error, and "last seen <when>" from the last successful listing when it did
   not (checked each time the menu opens, at most every 10 s; **Retry**
-  checks again). Choosing another host asks first ("Switch to OFFICE-PC?
+  checks again). Next to Retry, **Wake** sends the PC a Wake-on-LAN magic
+  packet when its MAC address is known (see "Hosts" below); it toasts
+  "Give it a minute, then Retry", since sending proves nothing about the
+  PC. Choosing another host asks first ("Switch to OFFICE-PC?
   MY-GAMING-PC's tiles are parked, not removed"), then switches and syncs.
 - **Sync now**: the full sync. While it runs the panel shows a progress bar
   over the titles, the last five titles and where their images came from,
@@ -271,6 +274,20 @@ count and when it was last seen, the active one marked:
   listing, no downloads and one restart.
 - **Forget**: removes a host from the list (not the active one). Its parked
   tiles stay until you remove everything.
+- **Wake-on-LAN MAC**: under each host, the MAC address the panel's
+  **Wake** button sends its magic packet to. Moonlight's own host list
+  (the Flatpak's `Moonlight.conf`, read, never written) supplies it when
+  the client learned one while pairing, and the field says so; a Sunshine
+  host that reports none leaves the field empty, so type the PC's MAC
+  (`aa:bb:cc:dd:ee:ff`, any usual spelling) and press **Save**. An entered
+  MAC overrides Moonlight's; clearing the field goes back to it. Without
+  either, the panel has no Wake button. Moonlight itself has *Wake PC* in
+  a host's menu but no command-line action for it, so the plugin sends the
+  packet itself: to the broadcast address and to every address Moonlight
+  knows for the host, on the usual Wake-on-LAN ports and the GameStream
+  ones. The PC's firmware and network adapter still have to allow
+  Wake-on-LAN (and the Deck has to be on the same network for a broadcast
+  to reach it).
 
 ## The Titles page
 
@@ -504,7 +521,9 @@ which has no UI: it is the hand-editable switch described under
 toggle: the key kept its name), the two Advanced toggles above; and
 `default_layout` (`null`, or `{"url", "title", "when"}`, the
 adopted default controller layout), which the plugin changes only through
-its own `set_default_layout` call, never through the other settings.
+its own `set_default_layout` call, never through the other settings; and
+`wake_macs` (`{"<host>": "aa:bb:cc:dd:ee:ff"}`, the Host page's entered
+Wake-on-LAN MACs, changed only through `set_wake_mac`).
 
 A pin from the Titles page is written by the CLI itself (`moonlight-steam-sync
 match … --defer-art`) into its own match cache,

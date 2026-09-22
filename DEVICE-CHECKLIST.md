@@ -649,3 +649,38 @@ measurements.
 - [ ] Unload the plugin (Decky → the plugin's menu → Uninstall, or a
       reload): leave the library and come back: the tab is gone, and the
       library still works if it had been the active tab.
+
+## 11. Wake-on-LAN (spec 3.18)
+
+Nothing here has run on a device. The MAC source and the packet were
+tested off-device against a hand-written `Moonlight.conf` and a recording
+socket (`tests/test_wake.py`); the Deck's own file, the network and the
+PC's firmware are what these check.
+
+- [ ] **Moonlight's MAC is read.** With the host paired in the Flathub
+      Moonlight, Settings → Host shows under it "<mac> from Moonlight's
+      host list". If it reads "Not known" instead, open
+      `~/.var/app/com.moonlight_stream.Moonlight/config/Moonlight Game
+      Streaming Project/Moonlight.conf` and note the host's `mac=` line:
+      `@ByteArray()` means Moonlight has none (a Sunshine host that
+      reports no MAC; enter it by hand); anything else that still reads
+      as unknown is a parser gap: paste the line's shape (hex masked)
+      into an issue.
+- [ ] **Wake appears and sends.** Shut the PC down (a sleep state
+      Wake-on-LAN is enabled for). Open the panel: the host row goes red
+      and shows **Retry** and **Wake** side by side. Press Wake: a toast
+      "Wake-on-LAN packet sent to <host>. Give it a minute, then Retry."
+      and, in `moonlight-sync.log`, `wake_host <host>: N packets sent
+      (moonlight MAC)` with N = (1 + the host's addresses) × 8. The PC
+      wakes; Retry after a minute goes green.
+- [ ] **An entered MAC overrides.** Type a MAC in the field, Save: a
+      toast "<host> wakes with aa:bb:cc:dd:ee:ff", the description reads
+      "Entered here; clear the field to go back to Moonlight's own", the
+      log says `(settings MAC)` on the next Wake. Clear and Save: back
+      to Moonlight's, or to "Not known" and no Wake button.
+- [ ] **A bad MAC is refused** in place ("a MAC address looks like
+      aa:bb:cc:dd:ee:ff") and nothing is stored.
+- [ ] **Forget drops it.** Forget a host with an entered MAC; re-add it:
+      the field is empty (or Moonlight's again).
+- [ ] **No MAC anywhere:** the unreachable row shows Retry alone, and
+      Settings → Host says where to enter one.

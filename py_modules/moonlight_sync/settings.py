@@ -19,6 +19,8 @@ import json
 import os
 from typing import Any
 
+from . import wake
+
 SETTINGS_FILE = "settings.json"
 IGNORE_FILE = "ignore.json"
 OWNED_APPS_FILE = "owned-apps.json"
@@ -39,6 +41,9 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     # collection while Stream shortcuts are shown; the key kept its name
     "streaming_collection": True,
     "default_layout": None,
+    # Wake-on-LAN (spec 3.18): {<host name>: "aa:bb:cc:dd:ee:ff"}, entered on
+    # the Host page for a host whose MAC Moonlight's own list does not carry
+    "wake_macs": {},
 }
 
 #: The countdown can never outlast the CLI's own await-exit wait (60 s),
@@ -148,6 +153,8 @@ class Store:
         for key, value in self._raw_settings().items():
             if key in merged:
                 merged[key] = value
+        macs = merged.get("wake_macs")
+        merged["wake_macs"] = dict(macs) if isinstance(macs, dict) else {}
         countdown = merged["restart_countdown_s"]
         if isinstance(countdown, int) and not isinstance(countdown, bool):
             merged["restart_countdown_s"] = max(0, min(countdown, RESTART_COUNTDOWN_MAX))
@@ -214,8 +221,46 @@ class Store:
         for key, value in DEFAULT_SETTINGS.items():
             raw.setdefault(key, value)
         raw["hosts"] = list(hosts)
+        keep = {h.lower() for h in hosts}
+        macs = raw.get("wake_macs")
+        if isinstance(macs, dict):
+            raw["wake_macs"] = {k: v for k, v in macs.items() if k.lower() in keep}
         write_json_atomic(self.path(SETTINGS_FILE), raw)
         return list(hosts)
+
+    def wake_mac(self, name: str) -> str | None:
+        """The stored Wake-on-LAN MAC for ``name`` (any case), normalised, or ``None``."""
+        macs = self.settings()["wake_macs"]
+        for host, mac in macs.items():
+            if host.lower() == name.lower():
+                return wake.parse_mac(mac)
+        return None
+
+    def set_wake_mac(self, name: str, mac: Any) -> str | None:
+        """Store (``mac`` a MAC in any usual spelling) or drop (``None`` / ``""``) one host's MAC.
+
+        Returns the normalised MAC now stored, or ``None`` after a drop. The
+        key is the host's name as given; an existing key of another case is
+        replaced.
+        """
+        if mac is None or (isinstance(mac, str) and not mac.strip()):
+            normalised = None
+        else:
+            normalised = wake.parse_mac(mac)
+            if normalised is None:
+                raise SettingsError("a MAC address looks like aa:bb:cc:dd:ee:ff")
+        raw = self._raw_settings()
+        for key, value in DEFAULT_SETTINGS.items():
+            raw.setdefault(key, value)
+        macs = raw.get("wake_macs")
+        if not isinstance(macs, dict):
+            macs = {}
+        macs = {k: v for k, v in macs.items() if k.lower() != name.lower()}
+        if normalised is not None:
+            macs[name] = normalised
+        raw["wake_macs"] = macs
+        write_json_atomic(self.path(SETTINGS_FILE), raw)
+        return normalised
 
     # -- ignore.json -----------------------------------------------------
 
@@ -398,6 +443,8 @@ def _validate_setting(key: str, value: Any) -> None:
         raise SettingsError("version is not a setting")
     if key == "default_layout":
         raise SettingsError("default_layout is changed with set_default_layout")
+    if key == "wake_macs":
+        raise SettingsError("wake_macs is changed with set_wake_mac")
     if key in ("copy_layouts", "retry_missing", "hide_stream_shortcuts", "streaming_collection"):
         if not isinstance(value, bool):
             raise SettingsError(f"{key} must be true or false")

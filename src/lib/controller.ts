@@ -25,6 +25,7 @@ import {
   type SettingsPatch,
   type SyncDonePayload,
   type SyncEventPayload,
+  type WakeResult,
 } from "./cli";
 import type { PinChoice } from "./join";
 import {
@@ -623,6 +624,31 @@ export class Controller {
   async forgetHost(name: string): Promise<Result<{ known: string[] }>> {
     const result = await this.backend.forget_host(name);
     await this.refreshHosts();
+    return result;
+  }
+
+  /** The panel's *Wake* on an unreachable host (spec 3.18): what its toast says, exactly. */
+  static wakeToast(result: WakeResult): string {
+    return `Wake-on-LAN packet sent to ${result.host}. Give it a minute, then Retry.`;
+  }
+
+  /**
+   * Send a magic packet to the active host (spec 3.18). A toast either way:
+   * the packet proves nothing about the PC, so the row's *Retry* stays the
+   * check. Never held back by a run or `inGame`: nothing is written.
+   */
+  async wakeHost(): Promise<Result<WakeResult> | null> {
+    const active = this.state.hosts?.active;
+    if (!active) return null;
+    const result = await this.backend.wake_host(active);
+    this.ui.toast("Moonlight Sync", isFailure(result) ? errorText(result) : Controller.wakeToast(result));
+    return result;
+  }
+
+  /** The Host page's MAC field (spec 3.18); `null` or empty drops it. */
+  async setWakeMac(name: string, mac: string | null): Promise<Result<{ mac: string | null }>> {
+    const result = await this.backend.set_wake_mac(name, mac);
+    if (!isFailure(result)) await this.refreshHosts();
     return result;
   }
 
