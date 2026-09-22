@@ -35,6 +35,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "retry_missing": False,
     "layout_strategy": "copy",
     "hide_stream_shortcuts": True,
+    # the *Streaming* group (spec 3.17): the library tab, or the fallback
+    # collection while Stream shortcuts are shown; the key kept its name
     "streaming_collection": True,
     "default_layout": None,
 }

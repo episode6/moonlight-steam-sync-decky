@@ -186,7 +186,7 @@ only thing the plugin changes on that page. Nothing is written to Steam's
 files by the plugin: the hidden shortcut is the CLI's, and the button just
 runs it.
 
-## Hidden shortcuts and the Streaming collection
+## Hidden shortcuts and the Streaming tab
 
 The CLI marks the shortcut behind every Stream button (and the Moonlight
 client entry, `Desktop` / `Steam Big Picture`, and another host's parked
@@ -205,15 +205,25 @@ only what differs:
   hidden either way. Because the CLI's word is final here, hide a Moonlight
   title with **Ignore** on the Titles page rather than Steam's own *Hide
   this game*, which the next sync would undo.
-- **The *Streaming* collection.** One tile for every title the active host
-  can stream right now: the real Steam game when it has a Stream button,
-  the Moonlight shortcut otherwise. It is found by its name, so renaming it
-  makes the plugin start a new one, and a collection you already have under
-  that name is taken over (anything else in it is removed at the first
-  sync); rename yours first, or turn the setting off before syncing. Settings → **Advanced** → *Streaming
-  collection* (on by default) turns it off, which deletes it; *Remove
-  everything* deletes it too. Collections sync through Steam Cloud, so it
-  shows up on your other machines, where the shortcuts in it do not exist.
+- **The *Streaming* tab.** A tab of the library's own tab bar, after
+  *Non-Steam*, with one tile for every title the active host can stream
+  right now: the real Steam game when it has a Stream button, the
+  Moonlight shortcut otherwise. It is drawn by the plugin from the client's
+  own grid and written nowhere: it is not a collection, so it does not
+  sync through Steam Cloud, and two devices synced to different hosts each
+  see their own. (Earlier versions kept a real *Streaming* collection; its
+  owned games synced to every machine, and two devices on different hosts
+  kept removing each other's. On upgrade the plugin takes this device's
+  games out of that collection and deletes it once it is empty.) Settings
+  → **Advanced** → *Streaming tab* (on by default) turns it off.
+- **The fallback collection.** With *Hide Stream shortcuts* off, the tab
+  stays out of the library and the group is a real *Streaming* collection
+  instead, holding this device's Moonlight shortcuts only, never an owned
+  game, so there is nothing for another device to fight over. It is found
+  by its name; the plugin only ever adds and removes its own entries, so
+  anything else in it (another device's shortcuts, a title you put there)
+  stays, and it is deleted once nothing is left in it. The *Streaming tab*
+  toggle governs it too: off takes this device's entries out.
 
 Right after a sync's restart both wait (up to 90 s) for the client to load
 its shortcut list; anything still missing then is picked up the next time.
@@ -449,7 +459,7 @@ newer CLI" otherwise.
 Settings → **Advanced** has *Default controller layout* with its **Clear**
 button (see "Controller layouts"; the default itself is adopted from a
 title's row on the Titles page), *Hide Stream shortcuts*, *Streaming
-collection*, the restart countdown (0-30 s), and **Remove everything
+tab*, the restart countdown (0-30 s), and **Remove everything
 this plugin created** (every shortcut, hidden entry and image the tool made;
 pins and ignored titles are kept; Steam restarts once; the layout records
 go with the entries).
@@ -479,8 +489,9 @@ Steam's:
 `settings.json` also carries `layout_strategy` (`"copy"` or `"picker"`),
 which has no UI: it is the hand-editable switch described under
 "Controller layouts", for trying the fallback on a device;
-`hide_stream_shortcuts` / `streaming_collection`, the two Advanced toggles
-above; and `default_layout` (`null`, or `{"url", "title", "when"}`, the
+`hide_stream_shortcuts` / `streaming_collection` (the *Streaming tab*
+toggle: the key kept its name), the two Advanced toggles above; and
+`default_layout` (`null`, or `{"url", "title", "when"}`, the
 adopted default controller layout), which the plugin changes only through
 its own `set_default_layout` call, never through the other settings.
 
@@ -495,8 +506,9 @@ writer); call Steam's live shortcut APIs (`AddShortcut`, `RemoveShortcut`,
 `SetShortcutName`, `SetAppLaunchOptions`, `SetCustomArtworkForApp`); write
 the CLI's `config.toml`; run as root; or install anything on the gaming PC.
 The one thing it changes in the running client is the hidden state of the
-CLI's own entries and the *Streaming* collection (above), because no file
-the CLI could write does either.
+CLI's own entries and the fallback *Streaming* collection (above), because
+no file the CLI could write does either; the *Streaming* tab is drawn, not
+stored.
 
 ## Developing
 

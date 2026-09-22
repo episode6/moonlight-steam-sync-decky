@@ -7,9 +7,10 @@
  * for) plus Steam's layout picker. Nothing here writes a Steam file: the plugin never
  * calls AddShortcut, RemoveShortcut, SetShortcutName, SetAppLaunchOptions
  * or SetCustomArtworkForApp. The one thing it does change in the client is
- * `libraryPort()` below (spec 3.15): the hidden state of the CLI's entries
- * and the *Streaming* collection, both through `collectionStore`, because
- * the client ignores `IsHidden` in `shortcuts.vdf`.
+ * `libraryPort()` below (spec 3.15, 3.17): the hidden state of the CLI's
+ * entries and the fallback *Streaming* collection, both through
+ * `collectionStore`, because the client ignores `IsHidden` in
+ * `shortcuts.vdf`; `loadedOverviews()` feeds the *Streaming* tab.
  *
  * Only globals are used here (`SteamClient`, `collectionStore`, `appStore`,
  * `ControllerStore`, `App`), so this module imports nothing from `@decky/*`;
@@ -336,6 +337,21 @@ function findCollection(name: string): CollectionLike | null {
 function overviews(appids: readonly number[]): unknown[] {
   const store = globals().appStore as AppStoreLike | undefined;
   return appids.map((appid) => store?.GetAppOverviewByAppID(appid)).filter((overview) => !!overview);
+}
+
+/**
+ * The loaded overviews behind `appids`, in order, for the *Streaming* tab's
+ * synthetic collection (spec 3.17, `tabs.ts`); an appid the client has not
+ * loaded is left out, and a store that throws yields none.
+ */
+export function loadedOverviews(appids: readonly number[]): { appid: number }[] {
+  try {
+    return overviews(appids).filter(
+      (overview): overview is { appid: number } => typeof (overview as { appid?: unknown }).appid === "number",
+    );
+  } catch {
+    return [];
+  }
 }
 
 /**

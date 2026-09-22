@@ -8,6 +8,7 @@ import { SETTINGS_ROUTE, TITLES_ROUTE, controller } from "./instance";
 import type { SyncDonePayload, SyncEventPayload } from "./lib/cli";
 import { watchControllers, watchRunningApps } from "./lib/steam";
 import { patchLibraryApp } from "./routes/libraryApp";
+import { patchLibraryTabs } from "./routes/libraryTabs";
 
 function runningAppids(): number[] {
   try {
@@ -73,6 +74,14 @@ export default definePlugin(() => {
     console.warn("Moonlight Sync: could not patch the library page", error);
   }
 
+  // The Streaming tab in the library's tab bar (spec 3.17).
+  let unpatchTabs: () => void = () => undefined;
+  try {
+    unpatchTabs = patchLibraryTabs();
+  } catch (error) {
+    console.warn("Moonlight Sync: could not patch the library tabs", error);
+  }
+
   // The load order runs here, not when the panel opens (spec 3.8); it starts
   // the post-restart layout walk when one is pending (spec 3.10).
   void controller.load();
@@ -88,6 +97,7 @@ export default definePlugin(() => {
       unwatch();
       unwatchControllers();
       unpatchLibrary();
+      unpatchTabs();
       routerHook.removeRoute(SETTINGS_ROUTE);
     },
   };

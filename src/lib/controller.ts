@@ -44,11 +44,12 @@ import {
 } from "./layouts";
 import {
   collectionDiff,
+  collectionMembers,
+  knownAppids,
   hiddenPlan,
   hideStreamEnabled,
   STREAMING_COLLECTION,
   streamingCollectionEnabled,
-  streamingMembers,
   type LibraryPort,
 } from "./library";
 import { restartDecision, unwrittenMessage, type RestartDecision } from "./restart";
@@ -1042,23 +1043,30 @@ export class Controller {
       }
     }
     // Off: the collection is left alone here; turning the setting off is
-    // what deletes it (setSettings), so a collection the user made under the
+    // what retires it (setSettings), so a collection the user made under the
     // same name afterwards is never touched.
     if (!library.canCollect() || !streamingCollectionEnabled(settings)) return;
+    // The fallback collection (spec 3.17): this device's shortcuts while
+    // Stream shortcuts are shown, nothing while the tab stands in for it --
+    // which is also what takes a v0.4.0 collection's owned games out.
+    await this.settleCollection(collectionMembers(entries, hideStreamEnabled(settings)), entries);
+  }
+
+  /**
+   * Bring the *Streaming* collection to `wanted`, touching only members
+   * this device's `status` knows (spec 3.17: another device's, and the
+   * user's, stay), and delete it once nothing is left in it. A collection
+   * somebody already had under the name keeps its members, so it stays.
+   */
+  private async settleCollection(wanted: readonly number[], entries: readonly EntryEvent[]): Promise<void> {
+    const library = this.steam.library();
     const current = library.collectionApps(STREAMING_COLLECTION);
-    const wanted = streamingMembers(entries);
-    if (!wanted.length) {
-      // Nothing to stream. After *Remove everything* the collection goes
-      // too; otherwise (a fresh install's empty `status`) only an empty one
-      // does, since a collection somebody already had under this name is
-      // not the plugin's to delete.
-      const removed = this.state.pending?.last_kind === "remove";
-      if (current && (removed || !current.length)) await library.deleteCollection(STREAMING_COLLECTION);
-      return;
-    }
-    const diff = collectionDiff(wanted, current ?? []);
-    const add = diff.add.filter(loaded);
+    if (current === null && !wanted.length) return;
+    const diff = collectionDiff(wanted, current ?? [], knownAppids(entries));
+    const add = diff.add.filter((id) => this.steam.overviewLoaded(id));
     if (add.length || diff.remove.length) await library.updateCollection(STREAMING_COLLECTION, add, diff.remove);
+    const left = library.collectionApps(STREAMING_COLLECTION);
+    if (left !== null && !left.length) await library.deleteCollection(STREAMING_COLLECTION);
   }
 
   async setSettings(patch: SettingsPatch): Promise<Result> {
@@ -1066,15 +1074,26 @@ export class Controller {
     if (isFailure(result)) return result;
     this.store.set({ settings: result.settings });
     if ("hide_stream_shortcuts" in patch || "streaming_collection" in patch) {
-      if (patch.streaming_collection === false) {
-        await this.steam
-          .library()
-          .deleteCollection(STREAMING_COLLECTION)
-          .catch((error) => console.warn("Moonlight Sync: deleting the Streaming collection failed", error));
-      }
+      if (patch.streaming_collection === false) await this.retireCollection();
       void this.reconcileLibrary();
     }
     return result;
+  }
+
+  /**
+   * The *Streaming* group turned off: this device's members leave the
+   * fallback collection and it is deleted once empty (serialised with the
+   * reconcile). Without a `status` nothing is known, so nothing moves.
+   */
+  private retireCollection(): Promise<void> {
+    this.reconciling = this.reconciling.then(async () => {
+      const entries = this.state.entries;
+      if (!entries || !this.steam.library().canCollect()) return;
+      await this.settleCollection([], entries).catch((error) =>
+        console.warn("Moonlight Sync: retiring the Streaming collection failed", error),
+      );
+    });
+    return this.reconciling;
   }
 
   setInGame(inGame: boolean): void {

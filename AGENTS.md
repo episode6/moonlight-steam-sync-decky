@@ -25,10 +25,13 @@ Breaking any of these is a blocker, not a judgement call.
    It never writes the CLI's `config.toml` either. **The one exception**
    (spec §3.15, the user's decision of 2026-09-21): the client ignores
    `IsHidden` in `shortcuts.vdf`, so the plugin mirrors `status`'s `hidden`
-   into the client and keeps the *Streaming* collection, both through
+   into the client and, while Stream shortcuts are shown, keeps the
+   fallback *Streaming* collection (spec §3.17), both through
    `collectionStore` and only in `steam.ts`'s `libraryPort()`
    (`tests/test_hard_rules.py` holds it there). It writes no file and
-   touches only the CLI's own entries plus that one collection.
+   touches only the CLI's own entries plus its own members of that one
+   collection. The *Streaming* tab (spec §3.17) is a route patch on the
+   library's tab bar and writes nothing anywhere.
 2. **No `_root`.** `plugin.json` `flags` stays `[]`: the backend must run as
    the deck user so `HOME` and the CLI's paths resolve.
 3. **No MoonDeck code.** MoonDeck is GPLv3, this repo is MIT. Do not open,
@@ -121,18 +124,20 @@ src/lib/                    pure modules (vitest)
                             null: the flag stays for the next load;
                             `walkTargets(entries)`, the default
                             read per target -> applyDefault, none -> unsetApplied;
-                            picker clears the flag at once), reconcileLibrary() (spec 3.15: after every
+                            picker clears the flag at once), reconcileLibrary() (spec 3.15, 3.17: after every
                             status that reaches the store -- load, run done, Titles,
                             Retry, the two settings -- never while a run is going;
                             serialised; differences only; the load's call waits up to
                             90 s for the shortcut list and runs *before* the walk;
                             an unloaded appid is skipped until next time; hiding and
-                            the collection fail independently; turning the collection
-                            setting off is the only thing that deletes it, besides an
-                            empty member list after a `remove` (`pending.last_kind`) or
-                            of an already empty collection -- never a non-empty one a
-                            fresh install finds under that name; `entries` and the run
-                            guard are read *after* the wait)
+                            the collection fail independently; `entries` and the run
+                            guard are read *after* the wait), settleCollection()
+                            (the fallback collection: `collectionMembers` wanted,
+                            removals limited to `knownAppids`, deleted once empty --
+                            so a v0.4.0 collection loses its owned games at the first
+                            load and a collection somebody had under the name keeps
+                            its members), retireCollection() (the setting turned
+                            off: wanted = [] over the same rule)
   layouts.ts                DEFAULT_LAYOUT_STRATEGY (the one switch), layoutStrategy(),
                             DEFAULT_LAYOUT_SCHEMES / isShareableUrl() (workshop://,
                             template://), defaultLayoutOf() (null under picker or unset),
@@ -151,14 +156,27 @@ src/lib/                    pure modules (vitest)
   layouts.test.ts           applyDefault's cases + idempotence, unsetApplied, the
                             shareable schemes, defaultLayoutOf, walkTargets over the
                             status fixture, the index by type, the strategy switch
-  library.ts                spec 3.15, the pure half: STREAMING_COLLECTION (found by
+  library.ts                spec 3.15 / 3.17, the pure half: STREAMING_COLLECTION (found by
                             name, no id stored), the LibraryPort seam, streamingMembers()
-                            (the stream map's real appids + visible published shortcuts;
-                            never the client, a host app, a parked entry), hiddenPlan()
+                            (the tab's tiles: the stream map's real appids + visible
+                            published shortcuts; never the client, a host app, a
+                            parked entry), streamingTabEnabled() (group on and
+                            Stream shortcuts hidden), collectionMembers() (the
+                            fallback collection: shortcuts only, and only while
+                            Stream shortcuts are shown), knownAppids(), hiddenPlan()
                             (`hidden` from status is the truth; *Hide Stream shortcuts*
                             governs Stream entries only, the client / host apps / parked
                             are hidden regardless; a visible entry is shown, which is
-                            what unparks it), collectionDiff()
+                            what unparks it), collectionDiff(wanted, current, known)
+                            (removes only known members)
+  tabs.ts                   spec 3.17, the Streaming tab's pure half: STREAMING_TAB_ID,
+                            findElement() (a React-element walk with no React),
+                            templateOf() (the first built-in tab's element with a
+                            `collection` prop: the grid to clone), isLibraryTabs()
+                            (a `tabs` array is the library's, not Settings'),
+                            footerOf(), syntheticCollection() (the Collection surface
+                            over overviews: allApps / visibleApps / apps, read-only)
+  tabs.test.ts              the walk, the template, the synthetic collection
   join.ts                   the Titles page: list + status joined by name into rows
                             (badge, chips, match line, capsule), filters, Show parked,
                             pages of 50, applyPin; the Change match rows (candidateRows,
@@ -184,6 +202,17 @@ src/lib/                    pure modules (vitest)
                             userCollections / NewUnsavedCollection / AsDragDropCollection
                             / Save / Delete, every one feature-detected, none probed on
                             a device yet) (globals only)
+src/routes/libraryTabs.tsx  the /library patch (spec 3.17): digs from the route element
+                            for a `tabs` array some tab of which renders a collection
+                            (`isLibraryTabs`), patching the first component element
+                            of each level's output on the way (afterPatch on a
+                            function, wrapReactClass + prototype render on a class,
+                            wrapReactType on memo / forwardRef; one WeakMap cache per
+                            level, four levels at most), then injectStreamingTab():
+                            appends {id, "Streaming", <StreamingTab template>, the
+                            template's footer}, or removes it when the setting is off.
+                            Unmeasured on a device: the tree shape is a guess
+                            (DEVICE-CHECKLIST §10)
 src/routes/libraryApp.tsx   the /library/app/:appid patch (routerHook.addPatch, afterPatch
                             on renderFunc, then on the returned element's
                             renderChildrenFunc, then createReactTreePatcher on the
@@ -199,9 +228,15 @@ src/components/             QuickAccess (HostAppRow: the launch button plus the 
                             inspects, toasts the refusal texts or confirms), ChangeMatchModal,
                             Pill, StreamButton (renders only when streamMap has the
                             appid; the layout line only while a default is set), ArtworkPage,
+                            StreamingTab (the tab's content: cloneElement of the
+                            template with a syntheticCollection of the loaded
+                            streamingMembers, live from the store, inside the client's
+                            ErrorBoundary; a line of text when there is nothing),
                             AdvancedPage (*Default controller layout* + *Clear*
                             with its confirm, *Hide Stream shortcuts* and *Streaming
-                            collection*, disabled on a client without the calls), AboutPage
+                            tab* (the `streaming_collection` key; its text says which
+                            of tab / fallback collection is in effect), disabled on a
+                            client without the calls), AboutPage
 src/test/fixtures.ts        loads tests/fixtures for vitest
 tests/                      pytest: fake_cli.py, fixtures/, conftest.py, test_*.py,
                             test_install_sh.py (install.sh end to end via
@@ -595,7 +630,7 @@ Then walk `DEVICE-CHECKLIST.md` from the top.
 ## Docs to keep current
 
 README (install, panel, restart, hosts, Titles page, hidden shortcuts and
-the Streaming collection, key, files,
+the Streaming tab, key, files,
 developing), this file (module map, harness, release), `CHANGELOG.md`
 `[Unreleased]`, `DEVICE-CHECKLIST.md`, and docstrings, in the same PR as
 the change.

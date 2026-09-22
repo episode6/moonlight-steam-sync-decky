@@ -1,14 +1,25 @@
 /**
  * What the plugin keeps in step inside the Steam client's own library state
- * after every `status` (spec 3.15): the **Streaming** collection and the
- * hidden state of the CLI's entries.
+ * after every `status` (spec 3.15, 3.17): the hidden state of the CLI's
+ * entries, and the **Streaming** group -- a synthetic library tab (spec
+ * 3.17, `tabs.ts` and `routes/libraryTabs.tsx`), or, while *Hide Stream
+ * shortcuts* is off, a real *Streaming* collection of this device's
+ * Moonlight shortcuts only.
  *
- * Both exist because of one device finding (2026-09-21): the current client
- * ignores `IsHidden` in `shortcuts.vdf`. Hidden state lives in the client's
- * own "hidden" collection, which only the running client can change, so the
- * CLI cannot hide anything and the plugin mirrors `status`'s `hidden` into
- * the client instead. This is the one exception to "the CLI is the only
- * writer", and it touches no file: both go through `collectionStore`.
+ * Hiding exists because of one device finding (2026-09-21): the current
+ * client ignores `IsHidden` in `shortcuts.vdf`. Hidden state lives in the
+ * client's own "hidden" collection, which only the running client can
+ * change, so the CLI cannot hide anything and the plugin mirrors `status`'s
+ * `hidden` into the client instead. This is the one exception to "the CLI
+ * is the only writer", and it touches no file: everything goes through
+ * `collectionStore`.
+ *
+ * The tab replaced a collection of the streamable titles (Decision 55): a
+ * user collection syncs through Steam Cloud, so one holding owned games was
+ * fought over by two devices on different hosts, each reconcile removing
+ * the other's members. The fallback collection holds shortcuts only, and
+ * the reconcile removes only members this device's `status` knows: another
+ * device's members, and anything the user put there, are left alone.
  *
  * This module is the pure half (what should be where); `steam.ts` holds the
  * `LibraryPort` over the real globals and `Controller.reconcileLibrary()`
@@ -41,6 +52,7 @@ export function hideStreamEnabled(settings: Pick<Settings, "hide_stream_shortcut
   return settings?.hide_stream_shortcuts !== false;
 }
 
+/** The *Streaming* group (tab or fallback collection) is wanted at all: the `streaming_collection` setting. */
 export function streamingCollectionEnabled(
   settings: Pick<Settings, "streaming_collection"> | null | undefined,
 ): boolean {
@@ -48,10 +60,22 @@ export function streamingCollectionEnabled(
 }
 
 /**
- * Every title that can be streamed from the active host, one appid each: the
- * real Steam game for a title with a Stream button (the stream map's keys),
- * the Moonlight shortcut itself for a visible one. Never the client, a
- * default host app, a parked or an unpublished entry.
+ * The synthetic *Streaming* tab is shown (spec 3.17): the group is wanted
+ * and Stream shortcuts are hidden. With them shown, the group is the
+ * fallback collection instead and the tab stays out of the library.
+ */
+export function streamingTabEnabled(
+  settings: Pick<Settings, "streaming_collection" | "hide_stream_shortcuts"> | null | undefined,
+): boolean {
+  return streamingCollectionEnabled(settings) && hideStreamEnabled(settings);
+}
+
+/**
+ * The *Streaming* tab's tiles (spec 3.17): every title that can be streamed
+ * from the active host, one appid each -- the real Steam game for a title
+ * with a Stream button (the stream map's keys), the Moonlight shortcut
+ * itself for a visible one. Never the client, a default host app, a parked
+ * or an unpublished entry.
  */
 export function streamingMembers(entries: readonly EntryEvent[]): number[] {
   const members = new Set<number>(streamMapFromStatus(entries).keys());
@@ -60,6 +84,34 @@ export function streamingMembers(entries: readonly EntryEvent[]): number[] {
     members.add(entry.appid);
   }
   return [...members];
+}
+
+/**
+ * The fallback collection's members (spec 3.17): only while Stream
+ * shortcuts are shown (`hideStream` false), every Moonlight shortcut the
+ * client shows -- published, not parked, not the client, not a host app --
+ * whether `status` calls it hidden (a Stream entry) or not. Never a real
+ * Steam appid: those are what synced across devices and fought.
+ */
+export function collectionMembers(entries: readonly EntryEvent[], hideStream: boolean): number[] {
+  if (hideStream) return [];
+  const members: number[] = [];
+  for (const entry of entries) {
+    if (entry.client || entry.host_app || entry.parked || !entry.published) continue;
+    members.push(entry.appid);
+  }
+  return members;
+}
+
+/**
+ * Every appid this device's `status` accounts for: each entry's shortcut and
+ * the real game behind each Stream button. A collection member outside this
+ * set is not the plugin's to remove (another device's, or the user's).
+ */
+export function knownAppids(entries: readonly EntryEvent[]): Set<number> {
+  const known = new Set<number>(streamMapFromStatus(entries).keys());
+  for (const entry of entries) known.add(entry.appid);
+  return known;
 }
 
 export interface HiddenPlan {
@@ -84,12 +136,20 @@ export function hiddenPlan(entries: readonly EntryEvent[], hideStream: boolean):
   return plan;
 }
 
-/** `wanted` against `current`: what to add and what to remove. */
+/**
+ * `wanted` against `current`: what to add, and what to remove -- only
+ * members in `known` (this device's own entries), so a member another
+ * device or the user added stays.
+ */
 export function collectionDiff(
   wanted: readonly number[],
   current: readonly number[],
+  known: ReadonlySet<number>,
 ): { add: number[]; remove: number[] } {
   const want = new Set(wanted);
   const have = new Set(current);
-  return { add: wanted.filter((id) => !have.has(id)), remove: current.filter((id) => !want.has(id)) };
+  return {
+    add: wanted.filter((id) => !have.has(id)),
+    remove: current.filter((id) => !want.has(id) && known.has(id)),
+  };
 }
