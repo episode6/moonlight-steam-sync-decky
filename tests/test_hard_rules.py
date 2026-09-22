@@ -42,7 +42,7 @@ def test_frontend_never_calls_the_live_shortcut_apis() -> None:
 def test_the_client_library_is_only_touched_in_steam_ts() -> None:
     """Spec 3.15's one exception: hidden state and the fallback Streaming
     collection, through collectionStore, in `libraryPort()` and nowhere
-    else. Calls only (`.Name`): `tabs.py`'s synthetic collection *defines*
+    else. Calls only (`.Name`): `tabs.ts`'s synthetic collection *defines*
     an `AsDragDropCollection` of its own, which is no write."""
     call = re.compile(r"\.(SetAppsAsHidden|NewUnsavedCollection|AsDragDropCollection)\b")
     users = {

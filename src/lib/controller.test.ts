@@ -188,12 +188,24 @@ class FakeLibrary implements LibraryPort {
     const apps = this.collections.get(name);
     return apps ? [...apps] : null;
   }
+  /** `true`: a just-added member is not listed until the next read (an unmeasured client). */
+  lateAdds = false;
+  private late: [string, number[]] | null = null;
   async updateCollection(name: string, add: readonly number[], remove: readonly number[]) {
     this.log.push(`update +${[...add].sort().join(",")} -${[...remove].sort().join(",")}`);
     const apps = this.collections.get(name) ?? new Set<number>();
-    for (const appid of add) apps.add(appid);
+    if (this.lateAdds) this.late = [name, [...add]];
+    else for (const appid of add) apps.add(appid);
     for (const appid of remove) apps.delete(appid);
     this.collections.set(name, apps);
+  }
+  /** The client's next tick: the late adds land. */
+  settle() {
+    if (!this.late) return;
+    const [name, add] = this.late;
+    this.late = null;
+    const apps = this.collections.get(name);
+    if (apps) for (const appid of add) apps.add(appid);
   }
   async deleteCollection(name: string) {
     if (this.collections.delete(name)) this.log.push("delete");
@@ -1582,7 +1594,7 @@ describe("hidden state and the Streaming group (spec 3.15, 3.17)", () => {
   });
 
   it("deletes the collection once nothing of it is left", async () => {
-    steam.lib.collections.set(STREAMING_COLLECTION, new Set([BALATRO, HADES]));
+    steam.lib.collections.set(STREAMING_COLLECTION, new Set([BALATRO, SEA]));
     await loaded();
     expect(steam.lib.collections.has(STREAMING_COLLECTION)).toBe(false);
   });
@@ -1599,16 +1611,41 @@ describe("hidden state and the Streaming group (spec 3.15, 3.17)", () => {
     expect(sorted(steam.lib.hidden)).toEqual(sorted([DESKTOP, SPIRITFARER, BIG_PICTURE, CLIENT]));
     // the Stream shortcuts and the visible ones; never the client, a host app, a parked entry
     expect(members()).toEqual(sorted([BALATRO_S, SEA_S, HADES, TUNIC]));
-    // hidden again: the tab takes over and the shortcuts leave the collection
+    // hidden again: the tab is alone, and the shortcuts stay (another
+    // device keeping the collection shares their appids; only the group
+    // turned off takes them out)
     await controller.setSettings({ hide_stream_shortcuts: true });
     await controller.reconcileLibrary();
-    expect(steam.lib.collections.has(STREAMING_COLLECTION)).toBe(false);
+    expect(members()).toEqual(sorted([BALATRO_S, SEA_S, HADES, TUNIC]));
   });
 
-  it("turning the group off takes this device's members out and leaves the rest alone afterwards", async () => {
-    steam.lib.collections.set(STREAMING_COLLECTION, new Set([570]));
+  it("with the tab alone, removes only the real games and leaves shortcuts, parked or not", async () => {
+    // a v0.4.0 collection plus shortcuts another device (or this one, earlier) put in
+    steam.lib.collections.set(STREAMING_COLLECTION, new Set([BALATRO, HADES, SPIRITFARER, 570]));
+    await loaded();
+    expect(members()).toEqual(sorted([HADES, SPIRITFARER, 570]));
+  });
+
+  it("with Stream shortcuts shown, leaves a parked title alone: it may be live on another device", async () => {
+    steam.lib.collections.set(STREAMING_COLLECTION, new Set([SPIRITFARER]));
+    await loaded({ get_settings: shown() });
+    expect(members()).toEqual(sorted([BALATRO_S, SEA_S, HADES, TUNIC, SPIRITFARER]));
+  });
+
+  it("never deletes a collection on the pass that filled it, even when the client lists the adds late", async () => {
+    steam.lib.lateAdds = true;
+    const controller = await loaded({ get_settings: shown() });
+    expect(steam.lib.collections.has(STREAMING_COLLECTION)).toBe(true);
+    expect(steam.lib.log).not.toContain("delete");
+    steam.lib.settle();
+    await controller.reconcileLibrary();
+    expect(members()).toEqual(sorted([BALATRO_S, SEA_S, HADES, TUNIC]));
+  });
+
+  it("turning the group off takes every member this device knows out, parked too, and leaves the rest alone afterwards", async () => {
+    steam.lib.collections.set(STREAMING_COLLECTION, new Set([570, SPIRITFARER]));
     const controller = await loaded({ set_settings: patched, get_settings: shown() });
-    expect(members()).toEqual(sorted([BALATRO_S, SEA_S, HADES, TUNIC, 570]));
+    expect(members()).toEqual(sorted([BALATRO_S, SEA_S, HADES, TUNIC, 570, SPIRITFARER]));
     await controller.setSettings({ streaming_collection: false });
     await controller.reconcileLibrary();
     expect(members()).toEqual([570]);

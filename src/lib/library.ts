@@ -105,12 +105,33 @@ export function collectionMembers(entries: readonly EntryEvent[], hideStream: bo
 /**
  * Every appid this device's `status` accounts for: each entry's shortcut and
  * the real game behind each Stream button. A collection member outside this
- * set is not the plugin's to remove (another device's, or the user's).
+ * set is not the plugin's to remove (another device's, or the user's). This
+ * is what the group being turned off takes out (`retireCollection`): after
+ * that the device never touches the collection again, so no loop can start.
  */
 export function knownAppids(entries: readonly EntryEvent[]): Set<number> {
   const known = new Set<number>(streamMapFromStatus(entries).keys());
   for (const entry of entries) known.add(entry.appid);
   return known;
+}
+
+/**
+ * What the reconcile may remove from the collection (spec 3.17). Shortcut
+ * appids hash from the exe and the name, so two devices under one account
+ * share them for the titles both hosts have; a device that removed every
+ * shortcut it knew would fight a device that keeps the collection. So: the
+ * real games behind Stream buttons always (v0.4.0 put them in; no device
+ * wants them now), and this device's shortcuts only while it keeps the
+ * collection itself (`hideStream` false) and only the non-parked ones -- a
+ * parked title is another host's, and maybe live on another device. With
+ * the tab alone in effect the shortcuts stay, hidden and out of sight,
+ * until the group is turned off.
+ */
+export function removableAppids(entries: readonly EntryEvent[], hideStream: boolean): Set<number> {
+  const removable = new Set<number>(streamMapFromStatus(entries).keys());
+  if (hideStream) return removable;
+  for (const entry of entries) if (!entry.parked) removable.add(entry.appid);
+  return removable;
 }
 
 export interface HiddenPlan {

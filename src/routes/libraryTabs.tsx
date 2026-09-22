@@ -86,6 +86,16 @@ function dig(tree: unknown, depth: number): void {
   patchType(next, depth + 1);
 }
 
+/** A component's name for the console, so a device report can say what the dig went through. */
+function typeName(type: unknown): string {
+  const t = type as { displayName?: unknown; name?: unknown; type?: unknown; render?: unknown } | null;
+  if (!t) return String(type);
+  if (typeof t.displayName === "string") return t.displayName;
+  if (typeof t.name === "string" && t.name) return t.name;
+  if (typeof t === "object") return typeName(t.render ?? t.type);
+  return "anonymous";
+}
+
 /** Patch `node.type`'s render so its output is dug at `depth`, through the cache. */
 function patchType(node: TreeNode, depth: number): void {
   const cache = caches[depth];
@@ -95,6 +105,9 @@ function patchType(node: TreeNode, depth: number): void {
     node.type = cached;
     return;
   }
+  // Once per type and depth (the cache misses only the first time), so the
+  // §10 device check can report the path the dig took when no bar was found.
+  console.debug(`Moonlight Sync: library tabs, digging through ${typeName(original)} at depth ${depth}`);
   const handler = (_args: unknown[], rendered: unknown) => {
     try {
       dig(rendered, depth);
@@ -126,6 +139,9 @@ function patchRender(holder: Record<string, unknown>, prop: string, handler: Han
       afterPatch(holder, prop, handler);
     }
   } else if (target && typeof target === "object") {
+    // A memo / forwardRef another plugin already wrapped is handed back as
+    // is (`__DECKY_WRAPPED`), so that patch lands on their copy and
+    // outlives this plugin's unload; accepted, it only ever adds the tab.
     wrapReactType(holder, prop);
     const inner = holder[prop] as Record<string, unknown>;
     patchRender(inner, typeof inner.render === "function" ? "render" : "type", handler);

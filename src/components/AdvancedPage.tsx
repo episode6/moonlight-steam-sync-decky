@@ -45,7 +45,8 @@ export function AdvancedPage() {
   const defaultLayout = defaultLayoutOf(settings);
   const canHide = controller.canHideShortcuts();
   const canCollect = controller.canKeepCollection();
-  const hideStream = canHide && hideStreamEnabled(settings);
+  // the setting alone, as the reconcile and the tab read it (not `canHide`)
+  const hideStream = hideStreamEnabled(settings);
 
   const clearDefault = () =>
     showModal(

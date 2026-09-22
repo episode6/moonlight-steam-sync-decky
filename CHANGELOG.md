@@ -16,8 +16,11 @@ project uses [semantic versioning](https://semver.org/).
   client's grid and stored nowhere. With *Hide Stream shortcuts* off a
   real *Streaming* collection comes alongside it, but of this device's
   Moonlight shortcuts only, never an owned game, and the plugin only adds
-  and removes its own entries in it. On upgrade, the old
-  collection loses this device's owned games and is deleted once empty.
+  and removes its own entries in it (and removes shortcuts only while it
+  keeps the collection itself, since two devices share a shortcut's
+  appid). On upgrade, the old collection loses this device's owned games
+  and is deleted once empty; a device still on the old version puts them
+  back until it is upgraded too.
   Settings → Advanced → *Streaming collection* is now *Streaming tab*
   (same key in `settings.json`).
 

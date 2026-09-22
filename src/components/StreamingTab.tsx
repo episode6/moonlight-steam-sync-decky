@@ -9,7 +9,7 @@
  */
 
 import { ErrorBoundary } from "@decky/ui";
-import { cloneElement, type ReactElement } from "react";
+import { cloneElement, useMemo, type ReactElement } from "react";
 
 import { controller } from "../instance";
 import { streamingMembers } from "../lib/library";
@@ -26,8 +26,15 @@ export function streamingEmptyText(active: string | null | undefined): string {
 export function StreamingTab({ template }: { template: ElementLike }) {
   const state = useStore(controller.store);
   const members = state.entries ? streamingMembers(state.entries) : [];
-  const overviews = loadedOverviews(members);
-  if (!overviews.length) return <div style={EMPTY_STYLE}>{streamingEmptyText(state.hosts?.active)}</div>;
-  const collection = syntheticCollection(overviews);
+  // One collection object per member set, not per render: the store changes
+  // on every progress line, and a fresh object each time could re-sort the
+  // grid or reset its scroll.
+  const key = members.join(",");
+  const collection = useMemo(() => {
+    const overviews = loadedOverviews(members);
+    return overviews.length ? syntheticCollection(overviews) : null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `key` stands for `members`
+  }, [key]);
+  if (!collection) return <div style={EMPTY_STYLE}>{streamingEmptyText(state.hosts?.active)}</div>;
   return <ErrorBoundary>{cloneElement(template as ReactElement<{ collection: unknown }>, { collection })}</ErrorBoundary>;
 }

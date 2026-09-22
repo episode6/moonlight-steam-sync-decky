@@ -578,11 +578,17 @@ guess at the client's `Collection`. Every item is a first measurement.
 - [ ] *Hide Stream shortcuts* off: the Streaming tab stays (its tiles
       unchanged) and a *Streaming* collection appears within a moment
       with the Stream shortcuts and the visible shortcuts, no owned game.
-      On again: the shortcuts leave the collection and it is deleted; the
-      tab is untouched.
+      On again: the collection and its shortcuts stay (hidden, so the
+      collection looks empty in the library), and the tab is untouched.
 - [ ] *Streaming tab* off: the tab is gone (leave the library and come
-      back) and, with *Hide Stream shortcuts* off, this device's shortcuts
-      leave the collection (deleted once empty). On: both back.
+      back) and this device's shortcuts leave the collection, parked ones
+      too (deleted once empty). On: both back.
+- [ ] The first sync with the collection in effect on a fresh install
+      creates it with every member in it: whether the client lists a
+      just-added member at once is unmeasured, so the reconcile never
+      deletes on the pass that added; if the collection is there but
+      empty after that pass, the next reconcile (open the Titles page)
+      must **not** delete it.
 - [ ] Switch hosts and sync: the tab shows the new host's titles only.
 - [ ] *Remove everything*: after the restart the tab reads "Nothing to
       stream from … yet" and, with the collection in effect, the

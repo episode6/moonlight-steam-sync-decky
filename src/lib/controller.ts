@@ -46,6 +46,7 @@ import {
   collectionDiff,
   collectionMembers,
   knownAppids,
+  removableAppids,
   hiddenPlan,
   hideStreamEnabled,
   STREAMING_COLLECTION,
@@ -1046,25 +1047,30 @@ export class Controller {
     // what retires it (setSettings), so a collection the user made under the
     // same name afterwards is never touched.
     if (!library.canCollect() || !streamingCollectionEnabled(settings)) return;
-    // The fallback collection (spec 3.17): this device's shortcuts while
-    // Stream shortcuts are shown, nothing while the tab stands in for it --
-    // which is also what takes a v0.4.0 collection's owned games out.
-    await this.settleCollection(collectionMembers(entries, hideStreamEnabled(settings)), entries);
+    // The shortcut collection (spec 3.17): this device's shortcuts while
+    // Stream shortcuts are shown, nothing wanted while the tab is alone --
+    // and only the real games (v0.4.0's) removable then, so a device on the
+    // tab never fights one keeping the collection over shared shortcuts.
+    const hideStream = hideStreamEnabled(settings);
+    await this.settleCollection(collectionMembers(entries, hideStream), removableAppids(entries, hideStream));
   }
 
   /**
-   * Bring the *Streaming* collection to `wanted`, touching only members
-   * this device's `status` knows (spec 3.17: another device's, and the
-   * user's, stay), and delete it once nothing is left in it. A collection
-   * somebody already had under the name keeps its members, so it stays.
+   * Bring the *Streaming* collection to `wanted`, removing only members in
+   * `removable` (spec 3.17: another device's, and the user's, stay), and
+   * delete it once nothing is left in it -- never on a pass that added
+   * something, since whether the client lists a just-added member at once
+   * is unmeasured (a next pass deletes an empty one). A collection somebody
+   * already had under the name keeps its members, so it stays.
    */
-  private async settleCollection(wanted: readonly number[], entries: readonly EntryEvent[]): Promise<void> {
+  private async settleCollection(wanted: readonly number[], removable: ReadonlySet<number>): Promise<void> {
     const library = this.steam.library();
     const current = library.collectionApps(STREAMING_COLLECTION);
     if (current === null && !wanted.length) return;
-    const diff = collectionDiff(wanted, current ?? [], knownAppids(entries));
+    const diff = collectionDiff(wanted, current ?? [], removable);
     const add = diff.add.filter((id) => this.steam.overviewLoaded(id));
     if (add.length || diff.remove.length) await library.updateCollection(STREAMING_COLLECTION, add, diff.remove);
+    if (add.length) return;
     const left = library.collectionApps(STREAMING_COLLECTION);
     if (left !== null && !left.length) await library.deleteCollection(STREAMING_COLLECTION);
   }
@@ -1089,7 +1095,7 @@ export class Controller {
     this.reconciling = this.reconciling.then(async () => {
       const entries = this.state.entries;
       if (!entries || !this.steam.library().canCollect()) return;
-      await this.settleCollection([], entries).catch((error) =>
+      await this.settleCollection([], knownAppids(entries)).catch((error) =>
         console.warn("Moonlight Sync: retiring the Streaming collection failed", error),
       );
     });

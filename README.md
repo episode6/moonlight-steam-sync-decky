@@ -218,12 +218,19 @@ only what differs:
   → **Advanced** → *Streaming tab* (on by default) turns it off.
 - **The shortcut collection.** With *Hide Stream shortcuts* off, the tab
   stays and a real *Streaming* collection comes alongside it, holding this
-  device's Moonlight shortcuts only, never an owned game, so there is
-  nothing for another device to fight over. It is found
-  by its name; the plugin only ever adds and removes its own entries, so
-  anything else in it (another device's shortcuts, a title you put there)
-  stays, and it is deleted once nothing is left in it. The *Streaming tab*
-  toggle governs it too: off takes this device's entries out.
+  device's Moonlight shortcuts only, never an owned game. It is found by
+  its name; the plugin only ever adds its own entries and removes them
+  again while it keeps the collection (that is, while *Hide Stream
+  shortcuts* is off), so anything else in it (another device's shortcuts,
+  a title you put there) stays, and it is deleted once nothing is left in
+  it. Two devices under one account get the same appid for a shortcut of
+  the same title, so a device with the tab alone leaves shortcut members
+  where they are (hidden, so out of sight) rather than fight a device
+  that keeps the collection; a parked title is left alone for the same
+  reason. The *Streaming tab* toggle turned off takes every entry this
+  device knows out. While another device still runs a version with the
+  old collection, it keeps putting its owned games back and this one
+  keeps taking them out; upgrade both.
 
 Right after a sync's restart both wait (up to 90 s) for the client to load
 its shortcut list; anything still missing then is picked up the next time.

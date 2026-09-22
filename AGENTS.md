@@ -132,12 +132,16 @@ src/lib/                    pure modules (vitest)
                             an unloaded appid is skipped until next time; hiding and
                             the collection fail independently; `entries` and the run
                             guard are read *after* the wait), settleCollection()
-                            (the fallback collection: `collectionMembers` wanted,
-                            removals limited to `knownAppids`, deleted once empty --
-                            so a v0.4.0 collection loses its owned games at the first
-                            load and a collection somebody had under the name keeps
-                            its members), retireCollection() (the setting turned
-                            off: wanted = [] over the same rule)
+                            (the shortcut collection: `collectionMembers` wanted,
+                            removals limited to `removableAppids` -- real appids
+                            always, this device's non-parked shortcuts only while
+                            Stream shortcuts are shown -- deleted once empty but
+                            never on a pass that added, since a just-added member
+                            may be listed late; so a v0.4.0 collection loses its
+                            owned games at the first load and a collection somebody
+                            had under the name keeps its members),
+                            retireCollection() (the setting turned off: wanted = []
+                            with every `knownAppids` removable)
   layouts.ts                DEFAULT_LAYOUT_STRATEGY (the one switch), layoutStrategy(),
                             DEFAULT_LAYOUT_SCHEMES / isShareableUrl() (workshop://,
                             template://), defaultLayoutOf() (null under picker or unset),
@@ -163,12 +167,16 @@ src/lib/                    pure modules (vitest)
                             parked entry), streamingTabEnabled() (the group
                             setting alone: the tab is there in both hide states), collectionMembers() (the
                             fallback collection: shortcuts only, and only while
-                            Stream shortcuts are shown), knownAppids(), hiddenPlan()
+                            Stream shortcuts are shown), knownAppids() (the retire
+                            set), removableAppids() (the reconcile's: shortcuts
+                            only while the device keeps the collection, never a
+                            parked one, so devices sharing shortcut appids do not
+                            fight), hiddenPlan()
                             (`hidden` from status is the truth; *Hide Stream shortcuts*
                             governs Stream entries only, the client / host apps / parked
                             are hidden regardless; a visible entry is shown, which is
-                            what unparks it), collectionDiff(wanted, current, known)
-                            (removes only known members)
+                            what unparks it), collectionDiff(wanted, current, removable)
+                            (removes only removable members)
   tabs.ts                   spec 3.17, the Streaming tab's pure half: STREAMING_TAB_ID,
                             findElement() (a React-element walk with no React),
                             templateOf() (the first built-in tab's element with a
