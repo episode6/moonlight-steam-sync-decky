@@ -779,10 +779,10 @@ describe("runs and the restart flow (spec 3.9)", () => {
     expect(controller.openHostApp("desktop")).toBe(true);
     expect(controller.openHostApp("bigPicture")).toBe(false);
     expect(steam.launched).toEqual([3000000101]);
-    // Like the Stream button: nothing is launched over a running game.
+    // Like the Stream button: a running game does not hold the launch back.
     controller.setInGame(true);
-    expect(controller.openHostApp("desktop")).toBe(false);
-    expect(steam.launched).toEqual([3000000101]);
+    expect(controller.openHostApp("desktop")).toBe(true);
+    expect(steam.launched).toEqual([3000000101, 3000000101]);
   });
 });
 
@@ -1063,13 +1063,13 @@ describe("the Stream button and the default controller layout (spec 3.9, 3.10, 3
     expect(names()).not.toContain("record_layout");
   });
 
-  it("while something is running a press only toasts", async () => {
+  it("a press while something is running still launches (Moonlight's UI handles it)", async () => {
     const controller = await loaded({ get_settings: withDefault() });
     controller.setInGame(true);
-    expect(await controller.streamPress(BALATRO)).toBe(false);
-    expect(ui.toasts).toEqual(["Moonlight Sync"]);
-    expect(steam.launched).toEqual([]);
-    expect(names()).not.toContain("record_layout");
+    expect(await controller.streamPress(BALATRO)).toBe(true);
+    expect(ui.toasts).toEqual([]);
+    expect(steam.launched).toEqual([BALATRO_SHORTCUT]);
+    expect(names()).toContain("record_layout");
   });
 
   it("a game without a Stream button is not launched", async () => {
@@ -1106,7 +1106,7 @@ describe("the Stream button and the default controller layout (spec 3.9, 3.10, 3
   it("the panel's layout buttons open the hidden host app's picker, even while a game runs", async () => {
     const controller = await loaded();
     expect(controller.state.hostApps).toEqual({ desktop: 3000000101, bigPicture: 3000000102 });
-    controller.setInGame(true); // the launch is held back; the configurator starts nothing
+    controller.setInGame(true); // neither the launch nor the configurator is held back
     expect(await controller.chooseHostAppLayout("desktop")).toBe(true);
     expect(await controller.chooseHostAppLayout("bigPicture")).toBe(true);
     expect(steam.configuratorOpened).toEqual([3000000101, 3000000102]);

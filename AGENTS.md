@@ -121,10 +121,13 @@ src/lib/                    pure modules (vitest)
                             while a run is going; `status` only reaches the shared store
                             when no run is going, the page always gets its entries),
                             pinTitle, setIgnored,
-                            streamPress() (guard, applyDefault when a default is set,
+                            streamPress() (the stream-map guard only, never inGame --
+                            Decision 57, the user's 2026-09-22: Moonlight's UI handles a
+                            stream already going; applyDefault when a default is set,
                             record, run; never an unset), chooseLayout() (a `null`
                             real appid = a host app: picker only), chooseHostAppLayout()
-                            (the panel's layout buttons; not held back by inGame),
+                            (the panel's layout buttons; not held back by inGame, and
+                            neither is openHostApp()),
                             inspectLayout() (one getConfig: url + title, or
                             no-controller / unselected / not-shareable),
                             setDefaultLayout(url, title) (spec 3.16.4: serialised on

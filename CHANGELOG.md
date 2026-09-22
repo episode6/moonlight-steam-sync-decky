@@ -6,6 +6,15 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **The Stream button and the panel's Desktop / Steam Big Picture buttons
+  are no longer held back while a game is running.** A press launches the
+  shortcut as usual; Moonlight's own UI handles a stream that is already
+  going, and Steam handles the switch. The "Something is already running"
+  toast and the disabled panel rows ("A game is running; exit it first")
+  are gone. The restart row's in-game guard is unchanged.
+
 ## [0.7.0] - 2026-09-22
 
 ### Added
