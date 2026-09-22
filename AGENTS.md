@@ -218,9 +218,20 @@ src/routes/libraryTabs.tsx  the /library patch (spec 3.17): digs from the route 
                             wrapReactType on memo / forwardRef; one WeakMap cache per
                             level, four levels at most), then injectStreamingTab():
                             appends {id, "Streaming", <StreamingTab template>, the
-                            template's footer}, or removes it when the setting is off.
-                            Unmeasured on a device: the tree shape is a guess
-                            (DEVICE-CHECKLIST §10)
+                            template's footer}, or removes it when the setting is off,
+                            and activeTabFor(): the dig carries the rendering
+                            component's props, and when the library page's `tab`
+                            prop asked for the Streaming tab but the bar's
+                            `activeTab` is another (the page validates the id
+                            against its memoised tab array in its own render,
+                            before the injection, and falls back to its first
+                            tab), the bar element gets the Streaming id back.
+                            Measured on a device 2026-09-22 (route element -> the
+                            library home, which reads the route's tab id -> the
+                            page with `tab` -> the tabbed page {tabs, activeTab,
+                            onShowTab} behind an observer wrapper -> the tab row,
+                            which renders and cycles over `tabs`); the dig stays
+                            for a client that adds a level (DEVICE-CHECKLIST §10)
 src/routes/libraryApp.tsx   the /library/app/:appid patch (routerHook.addPatch, afterPatch
                             on renderFunc, then on the returned element's
                             renderChildrenFunc, then createReactTreePatcher on the
@@ -258,8 +269,16 @@ src/components/             adoptDefault (inspectLayout -> refusal toasts -> Con
                             appid; the layout line only while a default is set), ArtworkPage,
                             StreamingTab (the tab's content: cloneElement of the
                             template with a syntheticCollection of the loaded
-                            streamingMembers, live from the store, inside the client's
-                            ErrorBoundary; a line of text when there is nothing),
+                            streamingMembers, live from the store, inside its own
+                            TabErrorBoundary, keyed on the member set so a new
+                            collection retries the grid; the nothing-to-show line
+                            and the grid's error are each a Focusable with
+                            `focusableIfNoChildren` and a no-op `onActivate`
+                            (either suffices), since a panel with nothing
+                            to focus is skipped under gamepad navigation and the
+                            tab with it -- reported 2026-09-22, cause unmeasured;
+                            libraryTabs.tsx logs the bar's shape once and every
+                            `onShowTab` call for the §10 report),
                             AdvancedPage (*Default controller layout* + *Clear*
                             with its confirm, *Hide Stream shortcuts* and *Streaming
                             tab* (the `streaming_collection` key; its text adds the

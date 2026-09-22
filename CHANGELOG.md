@@ -6,6 +6,21 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The *Streaming* tab could be seen but not reached**: selecting it,
+  with the bumpers or on the tab row, landed on the first tab instead.
+  Measured on a device: the library page checks the tab id it was asked
+  for against its own list of tabs while it renders, before the plugin
+  has added the Streaming tab to that list, and falls back to its first
+  tab. The plugin now puts the requested Streaming tab back on the tab
+  bar, whose own lookup sees the added tab. Alongside: the tab's own
+  "nothing to stream" line and its error state are focusable, a grid
+  that throws shows its error in the tab (and the console, with the
+  component stack) instead of the client's empty box and is tried again
+  when the titles change, and the library patch logs the tab bar's shape
+  once and every tab it is asked to show (DEVICE-CHECKLIST §10).
+
 ## [0.6.0] - 2026-09-21
 
 ### Added

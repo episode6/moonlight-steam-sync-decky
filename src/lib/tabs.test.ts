@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  activeTabFor,
   findElement,
   footerOf,
   hasStreamingTab,
@@ -63,6 +64,20 @@ describe("the Streaming tab's pure half (spec 3.17)", () => {
   it("knows its own tab", () => {
     expect(hasStreamingTab([installed, nonSteam])).toBe(false);
     expect(hasStreamingTab([installed, { id: STREAMING_TAB_ID }])).toBe(true);
+  });
+
+  it("puts the requested Streaming tab back after the library's fallback to its first tab", () => {
+    const withOurs = [installed, nonSteam, { id: STREAMING_TAB_ID }];
+    // the page asked for ours and answered with its first tab: ours
+    expect(activeTabFor(STREAMING_TAB_ID, "Installed", withOurs)).toBe(STREAMING_TAB_ID);
+    // already ours: unchanged
+    expect(activeTabFor(STREAMING_TAB_ID, STREAMING_TAB_ID, withOurs)).toBe(STREAMING_TAB_ID);
+    // the page asked for another tab, or for none: whatever it decided
+    expect(activeTabFor("NonSteam", "NonSteam", withOurs)).toBe("NonSteam");
+    expect(activeTabFor(undefined, "Installed", withOurs)).toBe("Installed");
+    expect(activeTabFor(null, "Installed", withOurs)).toBe("Installed");
+    // ours requested but not in the bar (the setting off, no template): left alone
+    expect(activeTabFor(STREAMING_TAB_ID, "Installed", [installed, nonSteam])).toBe("Installed");
   });
 
   it("builds a read-only collection over the overviews, deduped", () => {

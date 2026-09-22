@@ -99,6 +99,22 @@ export function hasStreamingTab(tabs: readonly TabLike[]): boolean {
   return tabs.some((tab) => tab?.id === STREAMING_TAB_ID);
 }
 
+/**
+ * The `activeTab` the tab bar should get. Measured on a device
+ * (2026-09-22): the library page reads the tab id the route asked for
+ * (its `tab` prop), and, in its own render, falls back to its first tab
+ * when its memoised tab array has no such id -- which it never has for
+ * the Streaming tab, since the tab is added to the array only once that
+ * render is out. The tabbed page below resolves `activeTab` against the
+ * array as it is *after* the injection, so putting the requested id back
+ * on the bar element is all it takes. Anything else is left as the page
+ * decided.
+ */
+export function activeTabFor(requested: unknown, current: unknown, tabs: readonly TabLike[]): unknown {
+  if (requested !== STREAMING_TAB_ID || current === STREAMING_TAB_ID) return current;
+  return hasStreamingTab(tabs) ? STREAMING_TAB_ID : current;
+}
+
 /** The tab whose `footer` the Streaming tab borrows (its content is the same grid): the template's. */
 export function footerOf(tabs: readonly TabLike[]): unknown {
   const template = templateOf(tabs);

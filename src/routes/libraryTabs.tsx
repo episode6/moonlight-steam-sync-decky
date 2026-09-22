@@ -6,11 +6,22 @@
  * template). Written from `@decky/ui`'s primitives -- `afterPatch`,
  * `findInReactTree`, `wrapReactType`, `wrapReactClass` -- and nothing else.
  *
- * The tree between the route element and the tab bar is not known for this
- * client (none was measured before this was built), so the patch digs:
- * at each level it looks for a `tabs` array that holds a library grid; when
- * there is none it patches the render of the first component element in
- * that level's output and looks again there, a few levels deep at most.
+ * The tree was measured on a device on 2026-09-22 (route element -> the
+ * library home, which reads the route's tab id -> the library page, whose
+ * `tab` prop is that id and whose output holds the tab bar element:
+ * `{tabs, activeTab, onShowTab, …}` on an observer-wrapped tabbed page ->
+ * the tab row, which renders and cycles over `tabs`), but the patch was
+ * written before that and still digs, so a client that adds a level keeps
+ * working: at each level it looks for a `tabs` array that holds a library
+ * grid; when there is none it patches the render of the first component
+ * element in that level's output and looks again there, a few levels
+ * deep at most. The same measurement found why the tab could be seen but
+ * not reached: the page validates the requested id against its memoised
+ * tab array in its own render, before this patch has added the tab to
+ * it, and falls back to its first tab. The dig therefore carries the
+ * rendering component's props, and `activeTabFor` puts the requested
+ * Streaming tab back on the bar element, whose own lookup runs over the
+ * array as extended.
  * Every patched type is cached (`WeakMap`, original -> patched) so the
  * client sees a stable component type and nothing remounts per render; a
  * class component is patched on a subclass of its own (`wrapReactClass`),
@@ -28,7 +39,16 @@ import type { ReactElement } from "react";
 import { StreamingTab } from "../components/StreamingTab";
 import { streamingTabEnabled } from "../lib/library";
 import { controller } from "../instance";
-import { footerOf, hasStreamingTab, isLibraryTabs, STREAMING_TAB_ID, STREAMING_TAB_TITLE, templateOf } from "../lib/tabs";
+import {
+  activeTabFor,
+  footerOf,
+  hasStreamingTab,
+  isLibraryTabs,
+  STREAMING_TAB_ID,
+  STREAMING_TAB_TITLE,
+  templateOf,
+  type TabLike,
+} from "../lib/tabs";
 import { ensureLibraryContextMenuPatched } from "./libraryContextMenu";
 import type { TreeNode } from "./tree";
 
@@ -58,6 +78,64 @@ export function injectStreamingTab(tabs: unknown, enabled: boolean): boolean {
   return true;
 }
 
+let shapeReported = false;
+
+/** A prop value for the console: a string quoted, anything else by type (never stringified: a store object may hold a cycle). */
+function describe(value: unknown): string {
+  if (typeof value === "string") return JSON.stringify(value);
+  if (value === null || value === undefined) return String(value);
+  return `<${typeof value}>`;
+}
+
+/** The prop names of an element, `children` aside, for the console. */
+function propNames(props: unknown): string {
+  if (!props || typeof props !== "object") return "-";
+  return Object.keys(props).filter((k) => k !== "children").join(",") || "-";
+}
+
+/**
+ * Once per session, what the tab bar and its tabs look like on this client
+ * (DEVICE-CHECKLIST §10): the injection is written against a guessed
+ * shape, and a tab that is in the bar but cannot be reached (2026-09-22)
+ * is told apart by these -- a tab key the built-in tabs have and ours
+ * lacks, a template prop tied to its own tab, or the bar's `onShowTab`
+ * never being asked for the Streaming tab (traced below).
+ */
+function reportShape(bar: TreeNode): void {
+  if (shapeReported) return;
+  shapeReported = true;
+  const tabs = bar.props?.tabs as TabLike[];
+  const builtIn = tabs.find((tab) => tab?.id !== STREAMING_TAB_ID) as object | undefined;
+  const template = templateOf(tabs);
+  console.info(
+    `Moonlight Sync: library tabs found on ${typeName(bar.type)}: bar props [${propNames(bar.props)}], ` +
+      `activeTab ${describe(bar.props?.activeTab)}, ` +
+      `a built-in tab has [${builtIn ? Object.keys(builtIn).join(",") : "-"}], ` +
+      `template ${template ? typeName(template.type) : "-"} with props [${propNames(template?.props)}]`,
+  );
+}
+
+/** original `onShowTab` -> the traced one, so the bar sees one stable callback per original. */
+const tracedShowTab = new WeakMap<object, (...args: unknown[]) => unknown>();
+
+/** Log every tab the bar asks its owner to show, so a skipped Streaming tab says whether it was ever asked for. */
+function traceShowTab(bar: TreeNode): void {
+  const props = bar.props as Record<string, unknown> | undefined;
+  const original = props?.onShowTab;
+  if (!props || typeof original !== "function") return;
+  let traced = tracedShowTab.get(original);
+  if (!traced) {
+    const call = original as (...args: unknown[]) => unknown;
+    traced = (...args: unknown[]) => {
+      console.debug(`Moonlight Sync: library tabs, onShowTab(${describe(args[0])})`);
+      return call(...args);
+    };
+    tracedShowTab.set(original, traced);
+    tracedShowTab.set(traced, traced); // seen again on a re-render: left as is
+  }
+  props.onShowTab = traced;
+}
+
 function isComponentElement(node: TreeNode): boolean {
   const type = node?.type;
   if (typeof type === "function") return true;
@@ -68,14 +146,31 @@ function isComponentElement(node: TreeNode): boolean {
 /** original type -> patched type, one cache per level so a type seen at two depths is patched for each. */
 const caches: WeakMap<object, unknown>[] = Array.from({ length: MAX_DIG + 1 }, () => new WeakMap());
 
+/** The tab id the library page was asked for: its `tab` prop (measured 2026-09-22), when `props` are the page's. */
+function requestedTab(props: unknown): unknown {
+  return props && typeof props === "object" ? (props as { tab?: unknown }).tab : undefined;
+}
+
 /**
- * Look for the tab bar in `tree`; when it is not there yet, patch the first
- * component below and look in its output, `depth` levels down at most.
+ * Look for the tab bar in `tree`, the output of a component rendered with
+ * `props`; when it is not there yet, patch the first component below and
+ * look in its output, `depth` levels down at most.
  */
-function dig(tree: unknown, depth: number): void {
+function dig(tree: unknown, depth: number, props: unknown): void {
   const bar = findInReactTree(tree, (n: TreeNode) => Array.isArray(n?.props?.tabs)) as TreeNode | undefined;
   if (bar?.props) {
-    injectStreamingTab(bar.props.tabs, streamingTabEnabled(controller.state.settings));
+    if (injectStreamingTab(bar.props.tabs, streamingTabEnabled(controller.state.settings))) {
+      const active = activeTabFor(requestedTab(props), bar.props.activeTab, bar.props.tabs as TabLike[]);
+      if (active !== bar.props.activeTab) bar.props.activeTab = active;
+      // Diagnostics only: a throw here must not read as a failed patch,
+      // the tab is in the bar by now.
+      try {
+        reportShape(bar);
+        traceShowTab(bar);
+      } catch (error) {
+        console.warn("Moonlight Sync: could not trace the library tabs", error);
+      }
+    }
     return;
   }
   if (depth >= MAX_DIG) return;
@@ -106,9 +201,9 @@ function patchType(node: TreeNode, depth: number): void {
   // Once per type and depth (the cache misses only the first time), so the
   // §10 device check can report the path the dig took when no bar was found.
   console.debug(`Moonlight Sync: library tabs, digging through ${typeName(original)} at depth ${depth}`);
-  const handler = (_args: unknown[], rendered: unknown) => {
+  const handler = (args: unknown[], rendered: unknown) => {
     try {
-      dig(rendered, depth);
+      dig(rendered, depth, args[0]);
     } catch (error) {
       console.warn("Moonlight Sync: could not patch the library tabs", error);
     }
@@ -165,9 +260,9 @@ export function patchLibraryTabs(): () => void {
         // a route like /library/app/:appid: the page comes out of renderFunc
         if (!patchedProps.has(child.props)) {
           patchedProps.add(child.props);
-          afterPatch(child.props, "renderFunc", (_args: unknown[], rendered: unknown) => {
+          afterPatch(child.props, "renderFunc", (args: unknown[], rendered: unknown) => {
             try {
-              dig(rendered, 0);
+              dig(rendered, 0, args[0]);
             } catch (error) {
               console.warn("Moonlight Sync: could not patch the library tabs", error);
             }
