@@ -1,6 +1,6 @@
 {
   "name": "moonlight-steam-sync-decky",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Moonlight Sync: a Decky plugin that runs moonlight-steam-sync from Game Mode.",
   "type": "module",
   "private": true,

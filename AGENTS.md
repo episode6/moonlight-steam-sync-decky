@@ -665,6 +665,10 @@ Plugin `v0.6.0` (the user asked for it on 2026-09-21) is a minor release for
 spec §3.17 (the *Streaming* tab replacing the collection, PR-11) and the
 gear-menu *Use as Moonlight Sync default layout* item (spec §3.16.5); same
 CLI pin and minimum.
+Plugin `v0.7.0` (the user asked for it on 2026-09-22) is a minor release for
+spec §3.18, *Wake* in the panel's unreachable host row (Wake-on-LAN, with
+the Host page's MAC field), plus the fix that makes the *Streaming* tab
+reachable; same CLI pin and minimum.
 
 Modelled on the CLI repo's own "Cutting a release" (the example below is
 the plugin's first release, `v0.1.0`, which waited for the CLI's `v0.3.0`;
