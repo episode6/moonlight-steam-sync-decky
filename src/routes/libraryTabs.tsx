@@ -28,7 +28,7 @@ import type { ReactElement } from "react";
 import { StreamingTab } from "../components/StreamingTab";
 import { streamingTabEnabled } from "../lib/library";
 import { controller } from "../instance";
-import { footerOf, hasStreamingTab, isLibraryTabs, STREAMING_TAB_ID, STREAMING_TAB_TITLE, templateOf } from "../lib/tabs";
+import { footerOf, hasStreamingTab, isLibraryTabs, STREAMING_TAB_ID, STREAMING_TAB_TITLE, templateOf, type TabLike } from "../lib/tabs";
 import { ensureLibraryContextMenuPatched } from "./libraryContextMenu";
 import type { TreeNode } from "./tree";
 
@@ -58,6 +58,57 @@ export function injectStreamingTab(tabs: unknown, enabled: boolean): boolean {
   return true;
 }
 
+let shapeReported = false;
+
+/** The prop names of an element, `children` aside, for the console. */
+function propNames(props: unknown): string {
+  if (!props || typeof props !== "object") return "-";
+  return Object.keys(props).filter((k) => k !== "children").join(",") || "-";
+}
+
+/**
+ * Once per session, what the tab bar and its tabs look like on this client
+ * (DEVICE-CHECKLIST §10): the injection is written against a guessed
+ * shape, and a tab that is in the bar but cannot be reached (2026-09-22)
+ * is told apart by these -- a tab key the built-in tabs have and ours
+ * lacks, a template prop tied to its own tab, or the bar's `onShowTab`
+ * never being asked for the Streaming tab (traced below).
+ */
+function reportShape(bar: TreeNode): void {
+  if (shapeReported) return;
+  shapeReported = true;
+  const tabs = bar.props?.tabs as TabLike[];
+  const builtIn = tabs.find((tab) => tab?.id !== STREAMING_TAB_ID) as object | undefined;
+  const template = templateOf(tabs);
+  console.info(
+    `Moonlight Sync: library tabs found on ${typeName(bar.type)}: bar props [${propNames(bar.props)}], ` +
+      `activeTab ${JSON.stringify(bar.props?.activeTab ?? null)}, ` +
+      `a built-in tab has [${builtIn ? Object.keys(builtIn).join(",") : "-"}], ` +
+      `template ${template ? typeName(template.type) : "-"} with props [${propNames(template?.props)}]`,
+  );
+}
+
+/** original `onShowTab` -> the traced one, so the bar sees one stable callback per original. */
+const tracedShowTab = new WeakMap<object, (...args: unknown[]) => unknown>();
+
+/** Log every tab the bar asks its owner to show, so a skipped Streaming tab says whether it was ever asked for. */
+function traceShowTab(bar: TreeNode): void {
+  const props = bar.props as Record<string, unknown> | undefined;
+  const original = props?.onShowTab;
+  if (!props || typeof original !== "function") return;
+  let traced = tracedShowTab.get(original);
+  if (!traced) {
+    const call = original as (...args: unknown[]) => unknown;
+    traced = (...args: unknown[]) => {
+      console.debug(`Moonlight Sync: library tabs, onShowTab(${JSON.stringify(args[0] ?? null)})`);
+      return call(...args);
+    };
+    tracedShowTab.set(original, traced);
+    tracedShowTab.set(traced, traced); // seen again on a re-render: left as is
+  }
+  props.onShowTab = traced;
+}
+
 function isComponentElement(node: TreeNode): boolean {
   const type = node?.type;
   if (typeof type === "function") return true;
@@ -75,7 +126,10 @@ const caches: WeakMap<object, unknown>[] = Array.from({ length: MAX_DIG + 1 }, (
 function dig(tree: unknown, depth: number): void {
   const bar = findInReactTree(tree, (n: TreeNode) => Array.isArray(n?.props?.tabs)) as TreeNode | undefined;
   if (bar?.props) {
-    injectStreamingTab(bar.props.tabs, streamingTabEnabled(controller.state.settings));
+    if (injectStreamingTab(bar.props.tabs, streamingTabEnabled(controller.state.settings))) {
+      reportShape(bar);
+      traceShowTab(bar);
+    }
     return;
   }
   if (depth >= MAX_DIG) return;

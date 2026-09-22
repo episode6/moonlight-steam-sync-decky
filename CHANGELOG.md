@@ -6,6 +6,18 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The *Streaming* tab could be seen but not reached**: navigating the
+  library's tab bar skipped it. A tab whose content has nothing to focus
+  is passed over by gamepad navigation, and the tab's own "nothing to
+  stream" line and its error box were exactly that. Both are focusable
+  now, and a grid that throws shows its error in the tab (and the
+  console, with the component stack) instead of the client's empty box.
+  The library patch also logs the tab bar's shape once and every tab it
+  is asked to show, so a tab that is still skipped can be traced
+  (DEVICE-CHECKLIST §10).
+
 ## [0.6.0] - 2026-09-21
 
 ### Added

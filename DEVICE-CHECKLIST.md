@@ -577,13 +577,28 @@ guess at the client's `Collection`. Every item is a first measurement.
       library tabs` names a throw; silence means the walk never found a
       `tabs` array (report the route element's shape: `typeof
       route.children.type`, whether `props.renderFunc` exists).
+- [ ] The tab can be **reached**: L1/R1 from *Non-Steam* lands on it, and
+      moving along the tab row with the D-pad stops on it (found
+      2026-09-22: the tab was in the bar and both skipped it; the plugin's
+      own empty and error panels are focusable since, the grid is the
+      client's). If it is still skipped, report from the CEF console
+      the one `Moonlight Sync: library tabs found on …` line (the bar's
+      prop names, `activeTab`, a built-in tab's keys, the template's type
+      and prop names) and whether a `Moonlight Sync: library tabs,
+      onShowTab("MoonlightSyncStreaming")` line appears when you try:
+      none means the bar never asked for it (its navigation reads
+      something other than `tabs`, or the tab's header is not
+      focusable); one that does not open it means the library refused
+      the id.
 - [ ] The tab's tiles are the panel's **Stream buttons** + **Shortcuts**:
       an owned game opens the real game's page (with the Stream button),
       an unowned one is the shortcut. Sorting, the footer legend and the
-      focus ring behave like *Non-Steam*'s. A blank tab or a red error
-      inside it (the client's error boundary) means the grid read
-      something the synthetic collection lacks: report the console error,
-      do not guess at the field.
+      focus ring behave like *Non-Steam*'s. A blank tab, or a line that
+      starts *Moonlight Sync could not draw this tab on this client*
+      (the plugin's own error boundary; the console has the same error
+      with its component stack), means the grid read something the
+      synthetic collection lacks: report the console error, do not guess
+      at the field.
 - [ ] Steam's own tabs are unchanged, and Settings → Moonlight Sync's
       tab bar has no Streaming tab (the injection only takes a tab bar
       some tab of which renders a collection).
