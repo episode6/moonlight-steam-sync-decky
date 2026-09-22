@@ -404,7 +404,10 @@ first (`moonlight-steam-sync --json status`).
 None of `collectionStore.SetAppsAsHidden`, `BIsHidden`, `userCollections`,
 `NewUnsavedCollection`, `AsDragDropCollection` or a collection's `Save` /
 `Delete` was probed before this was built; every item here is a first
-measurement.
+measurement. **Spec 3.17 changed the collection items below:** the
+collection now exists only with *Hide Stream shortcuts* off, beside the tab, and holds
+shortcuts only; §10 has the items that replace the collection ones here,
+and the hiding items still stand.
 
 - [ ] In the CEF console: `typeof collectionStore.SetAppsAsHidden`,
       `typeof collectionStore.BIsHidden`, `typeof
@@ -538,3 +541,59 @@ controller first" otherwise.
       and the plugin have drifted from the spec's §3.4.6 schema on one side
       or the other — escalate to a Fable-class model rather than editing
       either side ad hoc.
+
+## 10. The Streaming tab (spec 3.17)
+
+The `/library` route's render tree was never measured: the patch digs for
+the tab bar's `tabs` array (four component levels at most) and clones a
+built-in tab's grid element with a synthetic collection whose surface is a
+guess at the client's `Collection`. Every item is a first measurement.
+
+- [ ] With an install that has synced: the library's tab bar has a
+      **Streaming** tab after *Non-Steam*, and it opens. If there is no
+      tab, note the CEF console: `Moonlight Sync: could not patch the
+      library tabs` names a throw; silence means the walk never found a
+      `tabs` array (report the route element's shape: `typeof
+      route.children.type`, whether `props.renderFunc` exists).
+- [ ] The tab's tiles are the panel's **Stream buttons** + **Shortcuts**:
+      an owned game opens the real game's page (with the Stream button),
+      an unowned one is the shortcut. Sorting, the footer legend and the
+      focus ring behave like *Non-Steam*'s. A blank tab or a red error
+      inside it (the client's error boundary) means the grid read
+      something the synthetic collection lacks: report the console error,
+      do not guess at the field.
+- [ ] Steam's own tabs are unchanged, and Settings → Moonlight Sync's
+      tab bar has no Streaming tab (the injection only takes a tab bar
+      some tab of which renders a collection).
+- [ ] Nothing remounts: switching between library tabs and back does not
+      flash or reload the grid (each patched component type is cached).
+- [ ] The tab is not a collection: *Collections* has no *Streaming* entry,
+      and on a second machine signed into the account nothing appears.
+- [ ] **Upgrade from v0.4.0**: the old *Streaming* collection loses this
+      device's owned games and shortcuts at the first load and is gone
+      once empty; a member the plugin never made (add one by hand first)
+      stays, and so does the collection.
+- [ ] After a sync that adds or removes a title, the tab follows without
+      reopening the library (its content reads the store).
+- [ ] *Hide Stream shortcuts* off: the Streaming tab stays (its tiles
+      unchanged) and a *Streaming* collection appears within a moment
+      with the Stream shortcuts and the visible shortcuts, no owned game.
+      On again: the collection and its shortcuts stay (hidden, so the
+      collection looks empty in the library), and the tab is untouched.
+- [ ] *Streaming tab* off: the tab is gone (leave the library and come
+      back) and this device's shortcuts leave the collection, parked ones
+      too (deleted once empty). On: both back.
+- [ ] The first sync with the collection in effect on a fresh install
+      creates it with every member in it: whether the client lists a
+      just-added member at once is unmeasured, so the reconcile never
+      deletes on the pass that added; if the collection is there but
+      empty after that pass, the next reconcile (open the Titles page)
+      must **not** delete it.
+- [ ] Switch hosts and sync: the tab shows the new host's titles only.
+- [ ] *Remove everything*: after the restart the tab reads "Nothing to
+      stream from … yet" and, with the collection in effect, the
+      collection is gone once the client has dropped the removed
+      shortcuts.
+- [ ] Unload the plugin (Decky → the plugin's menu → Uninstall, or a
+      reload): leave the library and come back: the tab is gone, and the
+      library still works if it had been the active tab.

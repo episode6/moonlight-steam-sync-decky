@@ -4,6 +4,7 @@ import { controller } from "../instance";
 import { relativeTime } from "../lib/format";
 import { defaultLayoutOf, layoutKindText, layoutStrategy } from "../lib/layouts";
 import { hideStreamEnabled, STREAMING_COLLECTION, streamingCollectionEnabled } from "../lib/library";
+import { STREAMING_TAB_TITLE } from "../lib/tabs";
 import { actionsReady } from "../lib/state";
 import { useStore } from "./useStore";
 
@@ -21,11 +22,20 @@ export function defaultLayoutDescription(
   return `${def.title} · ${layoutKindText(def.url)}${set}`;
 }
 
+/** The *Streaming tab* toggle's text: the tab, or the fallback collection while Stream shortcuts are shown. */
+export function streamingGroupDescription(hideStream: boolean, canCollect: boolean): string {
+  const tab = `A "${STREAMING_TAB_TITLE}" tab in the library with every title the active host can stream: the game's own page when you own it, the shortcut otherwise. Nothing is written to your collections`;
+  if (hideStream) return tab;
+  if (!canCollect) return `${tab}. With Stream shortcuts shown there would also be a collection, but this Steam client has none a plugin can edit`;
+  return `${tab}. With Stream shortcuts shown, also a "${STREAMING_COLLECTION}" collection of this device's Moonlight shortcuts (it syncs through Steam Cloud, so only shortcuts go in it)`;
+}
+
 /**
  * Settings → Advanced (spec 3.8): the default controller layout (spec 3.16:
  * shown, and cleared, here; adopted from a title's row on the Titles page),
- * *Hide Stream shortcuts* and the *Streaming* collection (spec 3.15), the
- * restart countdown, and *Remove everything this plugin created*.
+ * *Hide Stream shortcuts* (spec 3.15) and the *Streaming* tab (spec 3.17,
+ * a collection of shortcuts while Stream shortcuts are shown), the restart
+ * countdown, and *Remove everything this plugin created*.
  */
 export function AdvancedPage() {
   const state = useStore(controller.store);
@@ -35,6 +45,8 @@ export function AdvancedPage() {
   const defaultLayout = defaultLayoutOf(settings);
   const canHide = controller.canHideShortcuts();
   const canCollect = controller.canKeepCollection();
+  // the setting alone, as the reconcile and the tab read it (not `canHide`)
+  const hideStream = hideStreamEnabled(settings);
 
   const clearDefault = () =>
     showModal(
@@ -88,14 +100,10 @@ export function AdvancedPage() {
         onChange={(checked) => void controller.setSettings({ hide_stream_shortcuts: checked })}
       />
       <ToggleField
-        label="Streaming collection"
-        description={
-          canCollect
-            ? `Keep a "${STREAMING_COLLECTION}" collection of every title the active host can stream, updated after each sync. Off: the collection is deleted`
-            : "This Steam client has no collections a plugin can edit"
-        }
-        checked={canCollect && streamingCollectionEnabled(settings)}
-        disabled={!settings || !canCollect}
+        label="Streaming tab"
+        description={streamingGroupDescription(hideStream, canCollect)}
+        checked={streamingCollectionEnabled(settings)}
+        disabled={!settings}
         onChange={(checked) => void controller.setSettings({ streaming_collection: checked })}
       />
       <SliderField
