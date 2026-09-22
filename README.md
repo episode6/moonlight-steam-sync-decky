@@ -366,7 +366,11 @@ entry it manages starts on, and each title stays customisable on its own.
   loaded the shortcut list, polled every 2 s for up to 90 s; anything that
   never loads is recorded as unavailable and gets it on its next press),
   and at once when the default is set or cleared. Changing the default is
-  not held back by a running game or a sync.
+  not held back by a running game or a sync. While that walk is running,
+  *Use as the default layout* answers "A layout walk is still running" and
+  **Clear** is disabled; if the plugin has not loaded your titles yet (its
+  status check failed), the change is kept and the toast says the layout is
+  applied, or taken off, once they have loaded.
 - **Clearing.** Settings → **Advanced** → *Default controller layout* shows
   the current default and has **Clear**, which takes the plugin's layout off
   every title that still has it (they go back to Steam's default; titles

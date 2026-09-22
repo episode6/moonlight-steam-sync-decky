@@ -111,10 +111,15 @@ src/lib/                    pure modules (vitest)
                             no-controller / unselected / not-shareable),
                             setDefaultLayout(url, title) (spec 3.16.4: serialised on
                             its own chain, awaits a walk in progress *before* the
-                            backend call, stores settings + pending, layoutWalk(),
-                            toasts the counts; `null` clears and the walk is the unset
-                            pass; not held back by inGame or a run), layoutWalk()
-                            (returns WalkCounts; `walkTargets(entries)`, the default
+                            backend call, stores settings + pending, awaits a walk
+                            that began *during* the call (it leaves the flag: doWalk
+                            skips clearWalk when `defaultChanges` moved under it),
+                            layoutWalk(), toasts the counts -- or the deferred text
+                            when the walk resolved `null`; `null` clears and the walk
+                            is the unset pass; not held back by inGame or a run),
+                            layoutWalk() (WalkCounts, or `null` when `entries` is
+                            null: the flag stays for the next load;
+                            `walkTargets(entries)`, the default
                             read per target -> applyDefault, none -> unsetApplied;
                             picker clears the flag at once), reconcileLibrary() (spec 3.15: after every
                             status that reaches the store -- load, run done, Titles,
@@ -239,6 +244,16 @@ layout off entries whose explicit `applied` is still selected, through
 **unmeasured**, feature-detected: without it the default is still cleared
 and titles keep what they have); the legacy-`copied` fallback is never
 unset. `copy_layouts` is a dead, still-valid settings key (Decision 47).
+Two edges of `setDefaultLayout`: a walk that begins during its backend
+call (the load's, once its wait for the shortcut list ends) passed its
+flag check under the old default, so `doWalk` leaves the flag set when
+`defaultChanges` moved under it and the change walks again after it; and
+with `status` unavailable (`entries === null`) the walk is deferred
+(`layoutWalk()` resolves `null`, the flag stays) and the toast says the
+layout is applied, or taken off, once the titles have loaded (Decision
+54) rather than counting a walk that never ran. *Use as the default
+layout* is refused with a toast while `state.walking` (the Titles row
+cannot say why, as Advanced's disabled *Clear* cannot either).
 
 **The layout strategy switch (spec §3.10).** PR-7 was built before the PR-0
 probes ran. `DEFAULT_LAYOUT_STRATEGY = "copy"` in `src/lib/layouts.ts` is

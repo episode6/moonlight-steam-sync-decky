@@ -1,9 +1,10 @@
 /**
  * The Steam-client touchpoints (spec 3.9, 3.10): the owned-apps map, the
  * current user's steamid3, running a shortcut, shutting Steam down, the
- * running-app watch, and the Steam Input seam for the layout copy (read a
- * selection, set a selection, the index of the controller to copy for) plus
- * Steam's layout picker. Nothing here writes a Steam file: the plugin never
+ * running-app watch, and the Steam Input seam for the default layout (spec
+ * 3.16: read a selection, set one, clear one where the client has
+ * `ClearSelectedConfigForApp`, and the index of the controller to set it
+ * for) plus Steam's layout picker. Nothing here writes a Steam file: the plugin never
  * calls AddShortcut, RemoveShortcut, SetShortcutName, SetAppLaunchOptions
  * or SetCustomArtworkForApp. The one thing it does change in the client is
  * `libraryPort()` below (spec 3.15): the hidden state of the CLI's entries

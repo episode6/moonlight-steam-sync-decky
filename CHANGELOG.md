@@ -25,6 +25,10 @@ project uses [semantic versioning](https://semver.org/).
   **Clear**, which takes the plugin's layout off every title that still has
   it (through a Steam client call not yet measured on a device; on a client
   without it the default is still cleared and titles keep their layout).
+  A change made before the plugin has loaded your titles is kept and
+  applied once they load (the toast says so), and one made while a layout
+  walk is running waits for it or, on the Titles page, asks you to try
+  again when it finishes.
   Backend: a `default_layout` setting, changed only through the new
   `set_default_layout` callable; `layouts.json` entries gain an `applied`
   field (the last URL the plugin itself set on a shortcut) and a `default`

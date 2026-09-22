@@ -176,14 +176,28 @@ export function appliedToast({ applied, kept, unavailable }: WalkCounts): string
   return text;
 }
 
+const CANNOT_UNSET_TOAST =
+  "Default layout cleared. This Steam client cannot unset a layout, so titles keep the one they have.";
+
 /** The toast after a clear (spec 3.16.4); `canClear` is whether the client has `clearConfig`. */
 export function clearedToast({ unset, unavailable }: WalkCounts, canClear: boolean): string {
-  if (!canClear) {
-    return "Default layout cleared. This Steam client cannot unset a layout, so titles keep the one they have.";
-  }
+  if (!canClear) return CANNOT_UNSET_TOAST;
   let text = `Default layout cleared · removed from ${unset} titles`;
   if (unavailable > 0) text += ` · ${unavailable} unavailable`;
   return text;
+}
+
+/**
+ * The toast when the walk could not run because `status` has not answered
+ * (spec 3.16.4, Decision 54): the default is stored, `pending.layout_walk`
+ * stays set, and the next load walks. A clear on a client without
+ * `clearConfig` keeps its own text, since nothing is unset later either.
+ */
+export function deferredToast(cleared: boolean, canClear: boolean): string {
+  if (cleared && !canClear) return CANNOT_UNSET_TOAST;
+  return cleared
+    ? "Default layout cleared. It is taken off your titles once they have loaded."
+    : "Default layout set. It is applied once your titles have loaded.";
 }
 
 export class Controller {
@@ -195,7 +209,13 @@ export class Controller {
   /** The run a `start_*` call is starting, until the call answers. */
   private starting: { kind: RunKind; immediate: boolean } | null = null;
   /** The layout walk in progress (spec 3.10: never two at once). */
-  private walking: Promise<WalkCounts> | null = null;
+  private walking: Promise<WalkCounts | null> | null = null;
+  /**
+   * Bumped on every stored change of the default (spec 3.16.4): a walk that
+   * began before a bump leaves `pending.layout_walk` set, since the targets
+   * it passed before the change got the old default.
+   */
+  private defaultChanges = 0;
   /** The tail of the library reconciles (spec 3.15: one after the other, never two at once). */
   private reconciling: Promise<void> = Promise.resolve();
   /** The tail of the default-layout changes (spec 3.16.4: serialised, each one's walk before the next). */
@@ -833,8 +853,14 @@ export class Controller {
    * off the old one) and a toast says what happened. Calls are serialised,
    * and each waits for a walk already in progress *before* the backend
    * call, so that walk's `clearWalk` cannot clear the flag this one sets.
-   * Not held back by a running game or a run: it changes no file the CLI
-   * writes, and appids do not move until the restart, which re-walks.
+   * A walk that begins *during* the call (the load's, once its wait for the
+   * shortcut list ends) is waited for too, and this change then walks
+   * again: that walk leaves the flag set (`defaultChanges`), since the
+   * targets it passed before the store update got the old default. When
+   * `status` has not answered the walk is deferred to the next load and the
+   * toast says so (Decision 54). Not held back by a running game or a run:
+   * it changes no file the CLI writes, and appids do not move until the
+   * restart, which re-walks.
    */
   setDefaultLayout(url: string | null, title: string | null): Promise<Failure | null> {
     const next = this.settingDefault.then(() => this.doSetDefaultLayout(url, title));
@@ -850,8 +876,18 @@ export class Controller {
       return result;
     }
     this.store.set({ settings: result.settings, pending: result.pending });
+    this.defaultChanges++;
+    // A walk that began while the call was in flight passed its flag check
+    // before this change: wait it out (it does not clear the flag, see
+    // doWalk), then walk as this change's own.
+    if (this.walking) await this.walking;
     const counts = await this.layoutWalk();
-    this.ui.toast("Moonlight Sync", url === null ? clearedToast(counts, !!this.steam.input().clearConfig) : appliedToast(counts));
+    const cleared = url === null;
+    const canClear = !!this.steam.input().clearConfig;
+    let text: string;
+    if (counts === null) text = deferredToast(cleared, canClear);
+    else text = cleared ? clearedToast(counts, canClear) : appliedToast(counts);
+    this.ui.toast("Moonlight Sync", text);
     return null;
   }
 
@@ -873,8 +909,10 @@ export class Controller {
    * layout off each entry that still has it -- then clear the flag. Under
    * the `picker` strategy the flag is cleared at once. Never runs twice at
    * the same time: a call while one is going returns that walk's promise.
+   * Resolves `null` when the walk had to be deferred: `status` has not
+   * answered, so the flag is left for the next load.
    */
-  layoutWalk(): Promise<WalkCounts> {
+  layoutWalk(): Promise<WalkCounts | null> {
     if (!this.walking) {
       this.walking = this.doWalk().finally(() => {
         this.walking = null;
@@ -883,7 +921,7 @@ export class Controller {
     return this.walking;
   }
 
-  private async doWalk(): Promise<WalkCounts> {
+  private async doWalk(): Promise<WalkCounts | null> {
     if (!this.state.pending?.layout_walk) return NO_WALK;
     if (layoutStrategy(this.state.settings) !== "copy") {
       await this.clearWalk();
@@ -894,8 +932,9 @@ export class Controller {
       // are no targets for want of data rather than because there is
       // nothing to walk. Leave pending.layout_walk set and do nothing: the
       // next load, or the panel's Retry, walks once status is in.
-      return NO_WALK;
+      return null;
     }
+    const changes = this.defaultChanges;
     const counts: WalkCounts = { ...NO_WALK };
     this.store.set({ walking: true });
     try {
@@ -933,7 +972,10 @@ export class Controller {
         }
         await this.timing.sleep(WALK_STEP_MS);
       }
-      await this.clearWalk();
+      // The default changed under this walk (setDefaultLayout stored it
+      // after the walk began): the targets passed before then got the old
+      // one, so the flag stays for the walk that change runs next.
+      if (changes === this.defaultChanges) await this.clearWalk();
     } finally {
       this.store.set({ walking: false });
     }

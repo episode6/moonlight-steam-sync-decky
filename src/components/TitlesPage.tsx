@@ -73,6 +73,14 @@ export function inspectionToast(name: string, reason: Exclude<LayoutInspection, 
 }
 
 /**
+ * *Use as the default layout* while a layout walk is going (spec 3.16.5):
+ * the change would wait for the walk, up to its 90 s readiness poll, with
+ * nothing to show for it, so it is refused with this toast, as Advanced's
+ * *Clear* is disabled meanwhile.
+ */
+export const WALK_RUNNING_TOAST = "A layout walk is still running. Try again when it finishes.";
+
+/**
  * *Use as the default layout* (spec 3.16.5, Decision 43): read the title's
  * selection, refuse what cannot be shared, and confirm before every entry
  * gets it.
@@ -80,6 +88,10 @@ export function inspectionToast(name: string, reason: Exclude<LayoutInspection, 
 async function adoptAsDefault(row: TitleRow) {
   const source = row.layoutSource;
   if (source === null) return;
+  if (controller.state.walking) {
+    toaster.toast({ title: "Moonlight Sync", body: WALK_RUNNING_TOAST });
+    return;
+  }
   const found = await controller.inspectLayout(source);
   if (!found.ok) {
     toaster.toast({ title: "Moonlight Sync", body: inspectionToast(row.name, found.reason) });

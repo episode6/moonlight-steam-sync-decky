@@ -1234,7 +1234,7 @@ describe("the Stream button and the default controller layout (spec 3.9, 3.10, 3
         instantTiming(),
       );
       await controller.load();
-      await controller.layoutWalk();
+      expect(await controller.layoutWalk()).toBeNull();
       expect(controller.state.entries).toBeNull();
       expect(names()).not.toContain("clear_pending");
       expect(names()).not.toContain("record_layout");
@@ -1397,6 +1397,55 @@ describe("the Stream button and the default controller layout (spec 3.9, 3.10, 3
       expect(order.indexOf("clear_pending")).toBeLessThan(order.indexOf("set_default_layout"));
       expect(calls.filter(([n]) => n === "clear_pending")).toHaveLength(2);
       expect(controller.state.pending?.layout_walk).toBe(false);
+    });
+
+    it("waits for a walk that began during the backend call, then walks again as its own", async () => {
+      // The load's walk fires once its wait for the shortcut list ends,
+      // which can be while set_default_layout is in flight: it passed the
+      // flag check under the old default and would clear the flag this
+      // change just set.
+      const controller = await loaded({
+        get_settings: withDefault(),
+        set_default_layout: async (url: string | null, title: string | null) => {
+          void controller.layoutWalk();
+          // the intruding walk has put the old default on its first target
+          while (!calls.some(([n]) => n === "record_layout")) await Promise.resolve();
+          settingsFile.default_layout = { url: url!, title: title ?? "", when: "2026-09-21T10:00:00Z" };
+          return { ok: true, settings: { ...settingsFile }, pending: { ...PENDING, layout_walk: true } };
+        },
+      });
+      controller.store.set({ pending: { ...PENDING, layout_walk: true, last_kind: "sync" } }); // a sync's restart
+      expect(await controller.setDefaultLayout("workshop://2", "Two")).toBeNull();
+      expect(recorded()[0]).toEqual([BALATRO_SHORTCUT, BALATRO, "default", DEFAULT.url]); // the race was real
+      // one clear, by this change's own walk; the intruder left the flag
+      expect(calls.filter(([n]) => n === "clear_pending")).toHaveLength(1);
+      expect(calls.findIndex(([n]) => n === "clear_pending")).toBeGreaterThan(calls.findIndex(([n]) => n === "set_default_layout"));
+      expect(controller.state.pending?.layout_walk).toBe(false);
+      for (const [shortcut] of TARGETS) {
+        expect(controller.state.layouts[String(shortcut)]).toMatchObject({ result: "default", url: "workshop://2", applied: "workshop://2" });
+      }
+      expect(ui.bodies).toEqual(["Default layout applied to 7 titles"]);
+    });
+
+    it("with status unavailable the walk is deferred and the toast says so", async () => {
+      const controller = await loaded({ status: { ok: false, error: "io", message: "status: could not run the CLI" } });
+      expect(controller.state.entries).toBeNull();
+      expect(await controller.setDefaultLayout(DEFAULT.url, DEFAULT.title)).toBeNull();
+      expect(controller.state.settings?.default_layout).toMatchObject({ url: DEFAULT.url });
+      expect(controller.state.pending?.layout_walk).toBe(true); // the next load walks
+      expect(names()).not.toContain("record_layout");
+      expect(names()).not.toContain("clear_pending");
+      expect(steam.steamInput.sets).toEqual([]);
+      expect(await controller.setDefaultLayout(null, null)).toBeNull();
+      expect(controller.state.pending?.layout_walk).toBe(true);
+      expect(steam.steamInput.clears).toEqual([]);
+      delete steam.steamInput.clearConfig;
+      expect(await controller.setDefaultLayout(null, null)).toBeNull();
+      expect(ui.bodies).toEqual([
+        "Default layout set. It is applied once your titles have loaded.",
+        "Default layout cleared. It is taken off your titles once they have loaded.",
+        "Default layout cleared. This Steam client cannot unset a layout, so titles keep the one they have.",
+      ]);
     });
 
     it("serialises two calls: each one's walk finishes before the next stores", async () => {
