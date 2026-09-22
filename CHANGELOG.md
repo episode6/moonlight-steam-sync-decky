@@ -6,6 +6,8 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-21
+
 ### Added
 
 - **A default controller layout** (spec §3.16). Everything the plugin
