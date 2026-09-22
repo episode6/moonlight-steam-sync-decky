@@ -228,7 +228,27 @@ src/routes/libraryApp.tsx   the /library/app/:appid patch (routerHook.addPatch, 
                             own output is the first tree that holds the InnerContainer;
                             renderFunc's output does not, found on device 2026-09-21),
                             written fresh; injects StreamButton
-src/components/             QuickAccess (HostAppRow: the launch button plus the icon-only
+src/routes/libraryContextMenu.tsx  the library gear menu patch (spec 3.16.5, Decision 56):
+                            the menu class is reached through its wrapper component
+                            (findModuleChild on the `().appDetailsSpotlight` marker,
+                            fakeRenderComponent, the element's `type`), its `render`
+                            afterPatch'ed to append one keyed MenuItem, *Use as
+                            Moonlight Sync default layout*, on a real game in the
+                            stream map (reads the game's own selection) or a
+                            non-parked entry's own page (`menuLayoutSourceOf`), for
+                            the page in the menu's own `props.overview` (or a bare
+                            `appid` prop); `copy` only. The scan is not on the boot
+                            path: `ensureLibraryContextMenuPatched()` runs it once,
+                            from the two route patches' first render, and never
+                            again (@decky/ui's module map is filled once at init
+                            and never sees a later chunk, so a retry would find
+                            nothing new); an unrecognised client warns and is left
+                            alone; marker, menu shape and the prop unmeasured [verify]
+src/routes/tree.ts          Overview / TreeNode / isOverview, shared by the three
+                            route patches
+src/components/             adoptDefault (inspectLayout -> refusal toasts -> ConfirmModal
+                            -> setDefaultLayout, shared by the Titles row and the gear
+                            menu; the walk-running refusal), QuickAccess (HostAppRow: the launch button plus the icon-only
                             layout button, plain ButtonItem when the client has no
                             configurator), SyncProgress, RestartModal, SettingsPage,
                             HostPage, TitlesPage (layout text; the *Layout* menu:
