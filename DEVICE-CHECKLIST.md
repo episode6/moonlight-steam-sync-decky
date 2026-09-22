@@ -265,9 +265,11 @@ and superseded by §8.*
       no slowdown building up as the page is re-entered. The route patch
       runs `afterPatch` on each render, so a duplicated or accumulating
       row shows up here and nowhere else.
-- [ ] **Running-app guard.** Launch any game, then open another published
-      game's library page and press *Stream*: expect only the toast
-      "Something is already running", no launch, no `layouts.json` change.
+- [ ] **No running-app guard.** Launch any game, then open another
+      published game's library page and press *Stream*: expect no toast
+      and the Stream shortcut launched as usual (Steam switches to it;
+      with a stream already going, Moonlight's own UI takes over), the
+      default layout applied and `layouts.json` updated as on any press.
 - [ ] ~~**Advanced toggle.**~~ Removed: the toggle is gone (spec Decision
       47). Settings → Advanced shows *Default controller layout* instead
       (§8); "no default set" is the off switch.
@@ -359,8 +361,9 @@ first (`moonlight-steam-sync --json status`).
       panel's rows.
 - [ ] **A layout chosen before the upgrade is still selected** when the
       configurator opens (same appid), and it applies in the stream.
-- [ ] **While a game runs** the two launch buttons are disabled ("A game is
-      running; exit it first") and the two layout buttons still work.
+- [ ] **While a game runs** the two launch buttons and the two layout
+      buttons all still work: a launch press runs the host app's shortcut
+      as usual.
 - [ ] **On a client without `SteamClient.Apps.ShowControllerConfigurator`**
       (if one turns up) the rows fall back to the plain full-width launch
       buttons and the Titles rows' *Layout* menus have no *Choose

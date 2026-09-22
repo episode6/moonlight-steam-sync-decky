@@ -28,8 +28,9 @@ interface Props {
  * stream map has this appid (a hidden shortcut exists for it and the active
  * host publishes it). A press puts the default controller layout on the
  * hidden shortcut when one is set (spec 3.16), then runs the shortcut
- * through Steam; while a game is running it only toasts (the controller's
- * guard). The layout line shows only while a default is set.
+ * through Steam, whether or not a game is running (Moonlight's own UI
+ * handles a stream that is already going). The layout line shows only
+ * while a default is set.
  */
 export function StreamButton({ appid, name }: Props) {
   const state = useStore(controller.store);

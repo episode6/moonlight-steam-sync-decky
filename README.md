@@ -134,12 +134,13 @@ CLI release)" and you can install the CLI with its own `install.sh`.
   place: same appid, so their artwork and any controller layout you chose
   are untouched. A button only shows when the active host publishes the
   entry and it is not ignored (an ignored entry has no shortcut to launch).
-  Like the Stream button, they do nothing while a game is already running.
+  Like the Stream button, they work while a game is already running too:
+  Moonlight's own UI handles a stream that is already going.
   - The small **gamepad button** beside each one (*Choose controller layout
     for Desktop* / *… Steam Big Picture*) opens Steam's controller
     configurator for that hidden entry, which has no library page to reach
-    it from. It works while a game is running too, since it starts nothing,
-    and it is left out on a Steam client that cannot open the configurator.
+    it from. It is left out on a Steam client that cannot open the
+    configurator.
   - **Getting the tiles back.** There is no plugin setting for this. From a
     terminal (Desktop Mode or SSH), run the plugin's own sync without
     `--hide-host-apps`:
@@ -180,8 +181,9 @@ created, so Steam owns the session: the overlay works, the Recent Games
 shelf shows it, and the layout picked for that hidden entry applies. The
 button appears only while the active host publishes the game (the last
 `status` says the entry is hidden, not parked and published); switch hosts
-and the other host's buttons go away until you switch back. While any game
-is running a press only shows "Something is already running".
+and the other host's buttons go away until you switch back. A press works
+while a game is already running too: Moonlight's own UI handles a stream
+that is already going, and Steam handles the switch.
 
 The button is added to the library page by patching Steam's
 `/library/app/:appid` route with Decky's own primitives, and it is the

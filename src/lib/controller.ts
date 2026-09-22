@@ -773,17 +773,13 @@ export class Controller {
   }
 
   /**
-   * A press of the panel's *Desktop* / *Steam Big Picture* button. It starts
-   * a stream, so like the Stream button it is only a toast while anything is
-   * running.
+   * A press of the panel's *Desktop* / *Steam Big Picture* button. Like the
+   * Stream button it is never held back by a running game: Moonlight's own
+   * UI handles a stream that is already going.
    */
   openHostApp(key: HostAppKey): boolean {
     const appid = this.state.hostApps[key];
     if (appid === null) return false;
-    if (this.state.inGame) {
-      this.ui.toast("Moonlight Sync", "Something is already running");
-      return false;
-    }
     const ok = this.steam.runShortcut(appid);
     if (!ok) this.ui.toast("Moonlight Sync", "That shortcut is not loaded yet; restart Steam first");
     return ok;
@@ -798,20 +794,18 @@ export class Controller {
   }
 
   /**
-   * A press of the Stream button on an owned game's library page: while
-   * anything is running only a toast; otherwise the default layout is put
-   * on the hidden shortcut when one is set (spec 3.16.4; never touching a
-   * selection the plugin did not make), recorded, then the shortcut is run
-   * through Steam. `false` when nothing was launched. The press never
-   * unsets a layout: that is the walk after a clear.
+   * A press of the Stream button on an owned game's library page: the
+   * default layout is put on the hidden shortcut when one is set (spec
+   * 3.16.4; never touching a selection the plugin did not make), recorded,
+   * then the shortcut is run through Steam. `false` when nothing was
+   * launched. Never held back by a running game (the user's decision of
+   * 2026-09-22): Moonlight's own UI handles a stream that is already going,
+   * and Steam handles the switch. The press never unsets a layout: that is
+   * the walk after a clear.
    */
   async streamPress(steamAppid: number): Promise<boolean> {
     const shortcut = this.state.streamMap.get(steamAppid);
     if (shortcut === undefined) return false;
-    if (this.state.inGame) {
-      this.ui.toast("Moonlight Sync", "Something is already running");
-      return false;
-    }
     const def = defaultLayoutOf(this.state.settings);
     if (def) {
       const outcome = await applyDefault(shortcut, def, layoutEntryFor(this.state, shortcut), this.steam.input());

@@ -50,25 +50,21 @@ function openSettings(page?: string) {
  * A default host app's row (spec 3.8, 3.14.1): the launch button and, when
  * the client can open the controller configurator, an icon-only *Choose
  * layout* button beside it -- the hidden entry has no library page to reach
- * it from. The launch is held back while a game runs; the layout button is
- * not, since it starts nothing.
+ * it from. Neither button is held back while a game runs: Moonlight's own
+ * UI handles a stream that is already going.
  */
 function HostAppRow({
   app,
-  inGame,
   canChooseLayout,
 }: {
   app: { key: HostAppKey; name: string; description: string };
-  inGame: boolean;
   canChooseLayout: boolean;
 }) {
-  const description = inGame ? "A game is running; exit it first" : app.description;
   if (!canChooseLayout) {
     return (
       <ButtonItem
         layout="below"
-        description={description}
-        disabled={inGame}
+        description={app.description}
         onClick={() => controller.openHostApp(app.key)}
       >
         {app.name}
@@ -80,7 +76,6 @@ function HostAppRow({
       <Focusable flow-children="horizontal" style={{ display: "flex", gap: 8 }}>
         <DialogButton
           style={{ flex: 1, minWidth: 0 }}
-          disabled={inGame}
           onClick={() => controller.openHostApp(app.key)}
         >
           {app.name}
@@ -104,7 +99,7 @@ function HostAppRow({
           <FaGamepad />
         </DialogButton>
       </Focusable>
-      <div style={{ fontSize: 12, opacity: 0.7, marginTop: 6 }}>{description}</div>
+      <div style={{ fontSize: 12, opacity: 0.7, marginTop: 6 }}>{app.description}</div>
     </div>
   );
 }
@@ -329,7 +324,7 @@ export function QuickAccess() {
       {HOST_APPS.map((app) =>
         state.hostApps[app.key] === null ? null : (
           <PanelSectionRow key={app.key}>
-            <HostAppRow app={app} inGame={state.inGame} canChooseLayout={canChooseLayout} />
+            <HostAppRow app={app} canChooseLayout={canChooseLayout} />
           </PanelSectionRow>
         ),
       )}
