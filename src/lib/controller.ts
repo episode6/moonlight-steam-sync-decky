@@ -833,8 +833,8 @@ export class Controller {
   /**
    * The panel's layout button beside *Desktop* / *Steam Big Picture* (spec
    * 3.14.1, Decision 39): a hidden entry has no library page, so this is the
-   * way to its controller configurator. Unlike the launch it is not held
-   * back while a game runs: opening the configurator starts nothing.
+   * way to its controller configurator. Like the launch beside it, it is
+   * not held back while a game runs (Decision 57).
    */
   chooseHostAppLayout(key: HostAppKey): Promise<boolean> {
     const appid = this.state.hostApps[key];
