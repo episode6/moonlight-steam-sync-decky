@@ -35,7 +35,7 @@ size=0
 1\\manualport=0
 1\\remoteaddress=203.0.113.9
 1\\remoteport=47989
-1\\uuid=8706E5C7-23D3-0628-3017-83EA557C64C8
+1\\uuid=00000000-1111-2222-3333-444444444444
 2\\customname=
 2\\hostname=OFFICE-PC
 2\\localaddress=192.168.1.30
@@ -220,6 +220,32 @@ def test_hosts_carries_wake_info_per_known_host(backend, fake_socket: type[FakeS
             "addresses": ["192.168.1.20", "203.0.113.9"],
         }
     }
+
+
+def test_hosts_wake_covers_an_active_host_that_is_not_known(backend) -> None:
+    """The active host can be outside `known` (set by --host or the CLI's
+    config after the seed); the panel still offers it, so it gets its Wake."""
+    write_moonlight_conf(home_of(backend))
+    backend.store.set_hosts(["OFFICE-PC"])
+    shown = run(backend.hosts())
+    assert shown["active"] == "MY-GAMING-PC"
+    assert shown["known"] == ["OFFICE-PC"]
+    assert list(shown["wake"]) == ["MY-GAMING-PC"]
+
+
+def test_hosts_reads_moonlight_conf_once(backend, monkeypatch) -> None:
+    write_moonlight_conf(home_of(backend))
+    reads: list[str] = []
+    real = wake.moonlight_hosts
+
+    def counting(path: str) -> list[dict[str, object]]:
+        reads.append(path)
+        return real(path)
+
+    monkeypatch.setattr(wake, "moonlight_hosts", counting)
+    run(backend.hosts())
+    # the two candidate files, each once, for both known hosts
+    assert len(reads) == len(wake.MOONLIGHT_CONF_PATHS)
 
 
 def test_wake_host_sends_to_broadcast_and_every_known_address(

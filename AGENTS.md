@@ -85,12 +85,16 @@ py_modules/moonlight_sync/  the backend (imports nothing from decky)
                             pending.json / layouts.json, all .tmp + os.replace
   keys.py                   SteamGridDB key sources (config -> env -> file), key file
   wake.py                   Wake-on-LAN (spec 3.18): parse_mac(), magic_packet(),
-                            moonlight_hosts() / moonlight_host() (Moonlight.conf's
-                            [hosts] group, the flatpak path then the native one, read
-                            only: QSettings INI, the MAC an @ByteArray of 6 bytes or
-                            empty), send_magic_packet() (broadcast + every address
-                            Moonlight knows, WAKE_PORTS; the SOCKET seam so no test
-                            sends a datagram). Moonlight's CLI has no wake action
+                            moonlight_hosts() / moonlight_entries() / find_host() /
+                            moonlight_host() (Moonlight.conf's [hosts] group, the
+                            flatpak path then the native one, read only: QSettings
+                            INI, the MAC an @ByteArray of 6 bytes or empty; hosts()
+                            reads the entries once for its whole map),
+                            send_magic_packet() (broadcast + every address Moonlight
+                            knows, WAKE_PORTS; the SOCKET seam so no test sends a
+                            datagram; run through asyncio.to_thread, since a hostname
+                            among the addresses resolves with a blocking
+                            getaddrinfo). Moonlight's CLI has no wake action
                             (list / quit / stream / pair only), so the plugin sends it
   events.py                 parse_line(), restart_decision(), next_pending()
 backend/entrypoint.sh       the one CLI downloader (strict), also the Decky store hook
@@ -472,12 +476,14 @@ the spawn: they flag the run, the SIGINT goes out as soon as its child
 exists, and a run the signal killed before the CLI printed anything is
 reported as exit 130 rather than as a protocol error.
 Wake-on-LAN (spec 3.18) needs no CLI and no busy guard: `hosts()` carries
-an additive `wake` map (`{<known host>: {mac, source, addresses}}`, the
-Host page's `wake_macs` setting first, else Moonlight's own `Moonlight.conf`
-entry, read only; a host with neither is absent, and the panel shows no
+an additive `wake` map (`{<host>: {mac, source, addresses}}` over the known
+hosts plus the active one when it is not among them, the Host page's
+`wake_macs` setting first, else Moonlight's own `Moonlight.conf` entry,
+read once per call; a host with neither is absent, and the panel shows no
 *Wake* for it); `wake_host(name)` sends the magic packet to the broadcast
-address and every address Moonlight knows for the host on `WAKE_PORTS`,
-answers `{host, mac, source, sent}`, `no-mac` when nothing knows a MAC,
+address and every address Moonlight knows for the host on `WAKE_PORTS`, in
+a worker thread (a hostname among them resolves with a blocking
+`getaddrinfo`), answers `{host, mac, source, sent}`, `no-mac` when nothing knows a MAC,
 `io` only when not one datagram went out, and drops the `check_host` memo
 so the next *Retry* asks; `set_wake_mac(name, mac)` stores a known host's
 MAC normalised (`None` / empty drops it; `set_settings` refuses the

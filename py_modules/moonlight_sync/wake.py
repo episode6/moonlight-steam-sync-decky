@@ -190,16 +190,32 @@ def moonlight_hosts(path: str) -> list[dict[str, object]]:
     return hosts
 
 
+def moonlight_entries(home: str) -> list[dict[str, object]]:
+    """Every ``Moonlight.conf`` entry under ``home``: the flatpak file's, then the native one's.
+
+    One read of both files; ``find_host`` looks names up in the result, so
+    a caller with several names to resolve parses each file once.
+    """
+    entries: list[dict[str, object]] = []
+    for relative in MOONLIGHT_CONF_PATHS:
+        entries.extend(moonlight_hosts(os.path.join(home, relative)))
+    return entries
+
+
+def find_host(entries: list[dict[str, object]], name: str) -> dict[str, object] | None:
+    """The first entry named ``name`` (``hostname`` or ``customname``), any case."""
+    wanted = name.lower()
+    for entry in entries:
+        names = entry["names"]
+        assert isinstance(names, list)
+        if any(n.lower() == wanted for n in names):
+            return entry
+    return None
+
+
 def moonlight_host(home: str, name: str) -> dict[str, object] | None:
     """The first ``Moonlight.conf`` entry (flatpak, then native) named ``name``, any case."""
-    wanted = name.lower()
-    for relative in MOONLIGHT_CONF_PATHS:
-        for entry in moonlight_hosts(os.path.join(home, relative)):
-            names = entry["names"]
-            assert isinstance(names, list)
-            if any(n.lower() == wanted for n in names):
-                return entry
-    return None
+    return find_host(moonlight_entries(home), name)
 
 
 # ---------------------------------------------------------------------------
