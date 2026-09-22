@@ -20,6 +20,7 @@ import {
   layoutLine,
   layoutStatusText,
   layoutStrategy,
+  menuLayoutSourceOf,
   unsetApplied,
   walkTargets,
   type SteamInput,
@@ -438,5 +439,26 @@ describe("what the pages show", () => {
     expect(layoutLine(record("copied", "workshop://1"))).toBe("Workshop layout · copied");
     expect(layoutLine(record("kept", "workshop://2"))).toBe("own layout");
     expect(layoutLine(null)).toBe("not set yet");
+  });
+});
+
+describe("the library gear menu's source (spec 3.16.5, Decision 56)", () => {
+  const entries = eventsOf(loadFixture("common/status.ndjson"), "entry");
+  const streamMap = new Map([[2379780, 2718281828]]); // Balatro
+
+  it("a real game with a Stream entry reads its own selection", () => {
+    expect(menuLayoutSourceOf(entries, streamMap, 2379780)).toEqual({ appid: 2379780, kind: "game" });
+  });
+
+  it("one of the plugin's non-parked entries reads itself; a parked one gets nothing", () => {
+    expect(menuLayoutSourceOf(entries, streamMap, 3000000011)).toEqual({ appid: 3000000011, kind: "entry" }); // Hades II, visible
+    expect(menuLayoutSourceOf(entries, streamMap, 2400000001)).toEqual({ appid: 2400000001, kind: "entry" }); // the client
+    expect(menuLayoutSourceOf(entries, streamMap, 2555555555)).toBeNull(); // Spiritfarer, parked
+  });
+
+  it("any other game gets nothing, and before status answered only the stream map counts", () => {
+    expect(menuLayoutSourceOf(entries, streamMap, 1145360)).toBeNull(); // Hades, the visible shortcut's game
+    expect(menuLayoutSourceOf(null, new Map(), 2379780)).toBeNull();
+    expect(menuLayoutSourceOf(null, streamMap, 2379780)).toEqual({ appid: 2379780, kind: "game" });
   });
 });

@@ -351,10 +351,14 @@ entry it manages starts on, and each title stays customisable on its own.
 
 - **Adopting a default.** There is no layout list of the plugin's own (Steam
   has no API that returns a picked layout by name). Instead, set a layout up
-  on any title with Steam's own configurator (Titles → **Layout** → *Choose
-  layout…*, or the game's controller settings), then on that title's row
-  choose **Layout** → *Use as the default layout*. The plugin reads the
-  layout that title has for the controller in use, asks you to confirm, and
+  on a game with Steam's own controller settings, then open that game's
+  gear menu (the one with *Controller settings* in it) and choose **Use as
+  Moonlight Sync default layout**. The item is there on every game you
+  stream and on the plugin's own visible entries. The same action is on the
+  Titles page as **Layout** → *Use as the default layout*, which reads the
+  layout the title's hidden shortcut has (set with **Layout** → *Choose
+  layout…*). Either way the plugin reads the layout for the controller in
+  use, asks you to confirm, and
   puts it on every entry that has no layout of its own: Stream buttons'
   hidden shortcuts, visible shortcuts, `Desktop` / `Steam Big Picture` and
   the Moonlight entry. A toast says how many titles took it and how many

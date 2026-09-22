@@ -1,10 +1,10 @@
-import { ConfirmModal, DialogButton, Field, Focusable, Menu, MenuItem, Spinner, showContextMenu, showModal } from "@decky/ui";
+import { DialogButton, Field, Focusable, Menu, MenuItem, Spinner, showContextMenu, showModal } from "@decky/ui";
 import { toaster } from "@decky/api";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import { controller } from "../instance";
 import { errorText, isFailure, type PinnedEvent } from "../lib/cli";
-import type { LayoutInspection, TitlesData, TitlesLoad } from "../lib/controller";
+import type { TitlesData, TitlesLoad } from "../lib/controller";
 import { relativeTime } from "../lib/format";
 import { layoutStrategy } from "../lib/layouts";
 import {
@@ -21,6 +21,7 @@ import {
   type TitleRow,
 } from "../lib/join";
 import { actionsReady } from "../lib/state";
+import { adoptAsDefault } from "./adoptDefault";
 import { ChangeMatchModal } from "./ChangeMatchModal";
 import { Pill } from "./Pill";
 import { useStore } from "./useStore";
@@ -57,59 +58,6 @@ function Thumb({ url }: { url: string | null }) {
   return <img src={url} loading="lazy" style={box} onError={() => setFailed(true)} alt="" />;
 }
 
-/** The toast for a title *Use as the default layout* cannot adopt from (spec 3.16.5), the texts exactly. */
-export function inspectionToast(name: string, reason: Exclude<LayoutInspection, { ok: true }>["reason"]): string {
-  switch (reason) {
-    case "no-controller":
-      return "Connect a controller first";
-    case "unselected":
-      return `“${name}” has no layout chosen yet. Use Choose layout first.`;
-    case "not-shareable":
-      return (
-        `This layout was edited in place and only exists for “${name}”. ` +
-        "In Steam's layout screen choose Export, select the exported copy, then try again."
-      );
-  }
-}
-
-/**
- * *Use as the default layout* while a layout walk is going (spec 3.16.5):
- * the change would wait for the walk, up to its 90 s readiness poll, with
- * nothing to show for it, so it is refused with this toast, as Advanced's
- * *Clear* is disabled meanwhile.
- */
-export const WALK_RUNNING_TOAST = "A layout walk is still running. Try again when it finishes.";
-
-/**
- * *Use as the default layout* (spec 3.16.5, Decision 43): read the title's
- * selection, refuse what cannot be shared, and confirm before every entry
- * gets it.
- */
-async function adoptAsDefault(row: TitleRow) {
-  const source = row.layoutSource;
-  if (source === null) return;
-  if (controller.state.walking) {
-    toaster.toast({ title: "Moonlight Sync", body: WALK_RUNNING_TOAST });
-    return;
-  }
-  const found = await controller.inspectLayout(source);
-  if (!found.ok) {
-    toaster.toast({ title: "Moonlight Sync", body: inspectionToast(row.name, found.reason) });
-    return;
-  }
-  showModal(
-    <ConfirmModal
-      strTitle={`Use “${found.title}” as the default layout?`}
-      strDescription="Every streaming title without a layout of its own gets it, now and after each sync. Titles whose layout you chose yourself are left alone."
-      strOKButtonText="Use as default"
-      strCancelButtonText="Cancel"
-      onOK={() => {
-        void controller.setDefaultLayout(found.url, found.title);
-      }}
-    />,
-  );
-}
-
 function Row({
   row,
   locked,
@@ -142,7 +90,9 @@ function Row({
           </MenuItem>
         ) : null}
         {useAsDefaultSource !== null ? (
-          <MenuItem onSelected={() => void adoptAsDefault(row)}>Use as the default layout</MenuItem>
+          <MenuItem onSelected={() => void adoptAsDefault(useAsDefaultSource, row.name, "titles")}>
+            Use as the default layout
+          </MenuItem>
         ) : null}
       </Menu>,
       event.currentTarget ?? undefined,

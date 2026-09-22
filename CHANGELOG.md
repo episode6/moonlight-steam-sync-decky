@@ -6,6 +6,18 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Use as Moonlight Sync default layout in the library gear menu** (spec
+  §3.16.5, Decision 56). The menu a game's gear button opens now ends with
+  that item on every game you stream and on the plugin's own visible
+  entries, so the default can be adopted right where the layout is set up:
+  it reads the game's own controller layout (the one *Controller settings*
+  in the same menu edits), asks you to confirm, and applies it exactly as
+  the Titles page's **Layout → Use as the default layout** does. On a
+  client whose menu the plugin does not recognise the item is simply
+  missing and the menu is untouched.
+
 ### Changed
 
 - **The *Streaming* collection is now a *Streaming* tab** (spec §3.17).

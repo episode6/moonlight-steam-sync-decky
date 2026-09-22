@@ -472,6 +472,20 @@ controller first" otherwise.
       set to the URL for each. A fresh title (a game the host just started
       publishing, after its sync and restart) streams on it without any
       press first, and its Titles row reads "default layout".
+- [ ] **Adopt from the gear menu [verify].** Open a streamed game's library
+      page, press its gear button. Expect *Use as Moonlight Sync default
+      layout* as the menu's last item (spec 3.16.5, Decision 56); on a game
+      the host does not publish, and on any page while the strategy is
+      `picker`, expect no item. With no layout chosen for the game itself,
+      expect the toast `“<game>” has no layout chosen yet. Pick one under
+      Controller settings first.`; pick a `workshop://` layout under that
+      menu's *Controller settings*, then the item again: expect the same
+      confirm and toast as the Titles row gives. If the item never appears,
+      check the CEF console for `Moonlight Sync: the library context menu
+      was not found` and report it: the wrapper's marker
+      (`().appDetailsSpotlight`, `src/routes/libraryContextMenu.tsx`) has
+      to be re-measured on that client. Also long-press a streamed game's
+      tile in the library: the same menu, so the item should be there too.
 - [ ] **Adopt a `template://` layout [verify].** Pick one of Steam's own
       templates on a title, adopt it. Expect the same toast; check
       `layouts.json`: every other entry must read `"default"` with the

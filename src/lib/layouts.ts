@@ -376,3 +376,31 @@ export function walkTargets(entries: readonly EntryEvent[]): WalkTarget[] {
   }
   return targets;
 }
+
+// ---------------------------------------------------------------------------
+// the library gear menu (spec 3.16.5, Decision 56)
+
+export interface MenuLayoutSource {
+  /** The appid whose selection *Use as Moonlight Sync default layout* reads. */
+  appid: number;
+  /** `game`: a real game with a Stream entry, read as itself; `entry`: one of the plugin's own non-parked entries. */
+  kind: "game" | "entry";
+}
+
+/**
+ * What the gear menu on a library page adopts a default from (spec 3.16.5,
+ * Decision 56): a real game the stream map covers reads *its own*
+ * selection, the one the same menu's *Controller settings* edits (not the
+ * hidden shortcut's, which the game's page never shows); one of the
+ * plugin's own non-parked entries, on the page it has when visible, reads
+ * itself as its Titles row does. Any other page gets no item.
+ */
+export function menuLayoutSourceOf(
+  entries: readonly EntryEvent[] | null,
+  streamMap: ReadonlyMap<number, number>,
+  appid: number,
+): MenuLayoutSource | null {
+  if (streamMap.has(appid)) return { appid, kind: "game" };
+  const entry = entries?.find((e) => e.appid === appid && e.parked === false);
+  return entry ? { appid, kind: "entry" } : null;
+}
