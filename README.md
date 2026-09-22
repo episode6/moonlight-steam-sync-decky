@@ -216,10 +216,10 @@ only what differs:
   kept removing each other's. On upgrade the plugin takes this device's
   games out of that collection and deletes it once it is empty.) Settings
   → **Advanced** → *Streaming tab* (on by default) turns it off.
-- **The fallback collection.** With *Hide Stream shortcuts* off, the tab
-  stays out of the library and the group is a real *Streaming* collection
-  instead, holding this device's Moonlight shortcuts only, never an owned
-  game, so there is nothing for another device to fight over. It is found
+- **The shortcut collection.** With *Hide Stream shortcuts* off, the tab
+  stays and a real *Streaming* collection comes alongside it, holding this
+  device's Moonlight shortcuts only, never an owned game, so there is
+  nothing for another device to fight over. It is found
   by its name; the plugin only ever adds and removes its own entries, so
   anything else in it (another device's shortcuts, a title you put there)
   stays, and it is deleted once nothing is left in it. The *Streaming tab*

@@ -405,7 +405,7 @@ None of `collectionStore.SetAppsAsHidden`, `BIsHidden`, `userCollections`,
 `NewUnsavedCollection`, `AsDragDropCollection` or a collection's `Save` /
 `Delete` was probed before this was built; every item here is a first
 measurement. **Spec 3.17 changed the collection items below:** the
-collection is now the fallback with *Hide Stream shortcuts* off and holds
+collection now exists only with *Hide Stream shortcuts* off, beside the tab, and holds
 shortcuts only; §10 has the items that replace the collection ones here,
 and the hiding items still stand.
 
@@ -575,14 +575,14 @@ guess at the client's `Collection`. Every item is a first measurement.
       stays, and so does the collection.
 - [ ] After a sync that adds or removes a title, the tab follows without
       reopening the library (its content reads the store).
-- [ ] *Hide Stream shortcuts* off: the Streaming tab is gone (leave the
-      library and come back) and a *Streaming* collection appears within
-      a moment with the Stream shortcuts and the visible shortcuts, no
-      owned game. On again: the shortcuts leave the collection, it is
-      deleted, the tab is back.
-- [ ] With *Hide Stream shortcuts* off, *Streaming tab* off: this
-      device's shortcuts leave the collection (deleted once empty). On:
-      back, complete.
+- [ ] *Hide Stream shortcuts* off: the Streaming tab stays (its tiles
+      unchanged) and a *Streaming* collection appears within a moment
+      with the Stream shortcuts and the visible shortcuts, no owned game.
+      On again: the shortcuts leave the collection and it is deleted; the
+      tab is untouched.
+- [ ] *Streaming tab* off: the tab is gone (leave the library and come
+      back) and, with *Hide Stream shortcuts* off, this device's shortcuts
+      leave the collection (deleted once empty). On: both back.
 - [ ] Switch hosts and sync: the tab shows the new host's titles only.
 - [ ] *Remove everything*: after the restart the tab reads "Nothing to
       stream from … yet" and, with the collection in effect, the

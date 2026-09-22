@@ -60,14 +60,13 @@ export function streamingCollectionEnabled(
 }
 
 /**
- * The synthetic *Streaming* tab is shown (spec 3.17): the group is wanted
- * and Stream shortcuts are hidden. With them shown, the group is the
- * fallback collection instead and the tab stays out of the library.
+ * The synthetic *Streaming* tab is shown (spec 3.17): whenever the group is
+ * wanted, whatever *Hide Stream shortcuts* says (the user, 2026-09-21: the
+ * tab works in both states). With Stream shortcuts shown, the fallback
+ * collection comes *in addition*.
  */
-export function streamingTabEnabled(
-  settings: Pick<Settings, "streaming_collection" | "hide_stream_shortcuts"> | null | undefined,
-): boolean {
-  return streamingCollectionEnabled(settings) && hideStreamEnabled(settings);
+export function streamingTabEnabled(settings: Pick<Settings, "streaming_collection"> | null | undefined): boolean {
+  return streamingCollectionEnabled(settings);
 }
 
 /**
@@ -88,8 +87,8 @@ export function streamingMembers(entries: readonly EntryEvent[]): number[] {
 
 /**
  * The fallback collection's members (spec 3.17): only while Stream
- * shortcuts are shown (`hideStream` false), every Moonlight shortcut the
- * client shows -- published, not parked, not the client, not a host app --
+ * shortcuts are shown (`hideStream` false), alongside the tab, every
+ * Moonlight shortcut the client shows -- published, not parked, not the client, not a host app --
  * whether `status` calls it hidden (a Stream entry) or not. Never a real
  * Steam appid: those are what synced across devices and fought.
  */

@@ -24,11 +24,10 @@ export function defaultLayoutDescription(
 
 /** The *Streaming tab* toggle's text: the tab, or the fallback collection while Stream shortcuts are shown. */
 export function streamingGroupDescription(hideStream: boolean, canCollect: boolean): string {
-  if (hideStream) {
-    return `A "${STREAMING_TAB_TITLE}" tab in the library with every title the active host can stream: the game's own page when you own it, the shortcut otherwise. Nothing is written to your collections`;
-  }
-  if (!canCollect) return "With Stream shortcuts shown, the group is a collection, and this Steam client has none a plugin can edit";
-  return `With Stream shortcuts shown, a "${STREAMING_COLLECTION}" collection of this device's Moonlight shortcuts instead of the tab (it syncs through Steam Cloud, so only shortcuts go in it). Off: they leave the collection`;
+  const tab = `A "${STREAMING_TAB_TITLE}" tab in the library with every title the active host can stream: the game's own page when you own it, the shortcut otherwise. Nothing is written to your collections`;
+  if (hideStream) return tab;
+  if (!canCollect) return `${tab}. With Stream shortcuts shown there would also be a collection, but this Steam client has none a plugin can edit`;
+  return `${tab}. With Stream shortcuts shown, also a "${STREAMING_COLLECTION}" collection of this device's Moonlight shortcuts (it syncs through Steam Cloud, so only shortcuts go in it)`;
 }
 
 /**
@@ -47,8 +46,6 @@ export function AdvancedPage() {
   const canHide = controller.canHideShortcuts();
   const canCollect = controller.canKeepCollection();
   const hideStream = canHide && hideStreamEnabled(settings);
-  // the tab needs no client call; the fallback collection does
-  const canGroup = hideStream || canCollect;
 
   const clearDefault = () =>
     showModal(
@@ -104,8 +101,8 @@ export function AdvancedPage() {
       <ToggleField
         label="Streaming tab"
         description={streamingGroupDescription(hideStream, canCollect)}
-        checked={canGroup && streamingCollectionEnabled(settings)}
-        disabled={!settings || !canGroup}
+        checked={streamingCollectionEnabled(settings)}
+        disabled={!settings}
         onChange={(checked) => void controller.setSettings({ streaming_collection: checked })}
       />
       <SliderField

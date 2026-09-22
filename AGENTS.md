@@ -26,7 +26,7 @@ Breaking any of these is a blocker, not a judgement call.
    (spec §3.15, the user's decision of 2026-09-21): the client ignores
    `IsHidden` in `shortcuts.vdf`, so the plugin mirrors `status`'s `hidden`
    into the client and, while Stream shortcuts are shown, keeps the
-   fallback *Streaming* collection (spec §3.17), both through
+   *Streaming* collection of shortcuts beside the tab (spec §3.17), both through
    `collectionStore` and only in `steam.ts`'s `libraryPort()`
    (`tests/test_hard_rules.py` holds it there). It writes no file and
    touches only the CLI's own entries plus its own members of that one
@@ -160,8 +160,8 @@ src/lib/                    pure modules (vitest)
                             name, no id stored), the LibraryPort seam, streamingMembers()
                             (the tab's tiles: the stream map's real appids + visible
                             published shortcuts; never the client, a host app, a
-                            parked entry), streamingTabEnabled() (group on and
-                            Stream shortcuts hidden), collectionMembers() (the
+                            parked entry), streamingTabEnabled() (the group
+                            setting alone: the tab is there in both hide states), collectionMembers() (the
                             fallback collection: shortcuts only, and only while
                             Stream shortcuts are shown), knownAppids(), hiddenPlan()
                             (`hidden` from status is the truth; *Hide Stream shortcuts*
@@ -234,9 +234,9 @@ src/components/             QuickAccess (HostAppRow: the launch button plus the 
                             ErrorBoundary; a line of text when there is nothing),
                             AdvancedPage (*Default controller layout* + *Clear*
                             with its confirm, *Hide Stream shortcuts* and *Streaming
-                            tab* (the `streaming_collection` key; its text says which
-                            of tab / fallback collection is in effect), disabled on a
-                            client without the calls), AboutPage
+                            tab* (the `streaming_collection` key; its text adds the
+                            shortcut collection when Stream shortcuts are shown; never
+                            disabled, the tab needs no client call), AboutPage
 src/test/fixtures.ts        loads tests/fixtures for vitest
 tests/                      pytest: fake_cli.py, fixtures/, conftest.py, test_*.py,
                             test_install_sh.py (install.sh end to end via
