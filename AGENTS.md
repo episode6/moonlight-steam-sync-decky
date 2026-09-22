@@ -218,9 +218,20 @@ src/routes/libraryTabs.tsx  the /library patch (spec 3.17): digs from the route 
                             wrapReactType on memo / forwardRef; one WeakMap cache per
                             level, four levels at most), then injectStreamingTab():
                             appends {id, "Streaming", <StreamingTab template>, the
-                            template's footer}, or removes it when the setting is off.
-                            Unmeasured on a device: the tree shape is a guess
-                            (DEVICE-CHECKLIST §10)
+                            template's footer}, or removes it when the setting is off,
+                            and activeTabFor(): the dig carries the rendering
+                            component's props, and when the library page's `tab`
+                            prop asked for the Streaming tab but the bar's
+                            `activeTab` is another (the page validates the id
+                            against its memoised tab array in its own render,
+                            before the injection, and falls back to its first
+                            tab), the bar element gets the Streaming id back.
+                            Measured on a device 2026-09-22 (route element -> the
+                            library home, which reads the route's tab id -> the
+                            page with `tab` -> the tabbed page {tabs, activeTab,
+                            onShowTab} behind an observer wrapper -> the tab row,
+                            which renders and cycles over `tabs`); the dig stays
+                            for a client that adds a level (DEVICE-CHECKLIST §10)
 src/routes/libraryApp.tsx   the /library/app/:appid patch (routerHook.addPatch, afterPatch
                             on renderFunc, then on the returned element's
                             renderChildrenFunc, then createReactTreePatcher on the

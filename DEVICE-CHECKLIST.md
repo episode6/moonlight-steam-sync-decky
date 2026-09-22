@@ -566,10 +566,18 @@ controller first" otherwise.
 
 ## 10. The Streaming tab (spec 3.17)
 
-The `/library` route's render tree was never measured: the patch digs for
-the tab bar's `tabs` array (four component levels at most) and clones a
-built-in tab's grid element with a synthetic collection whose surface is a
-guess at the client's `Collection`. Every item is a first measurement.
+The `/library` route's render tree was measured on 2026-09-22 through the
+CEF debugger (route element → the library home, which reads the route's
+tab id → the library page, `tab` prop, which builds its tab array in a
+`useMemo` and validates the requested id against it in its own render →
+the tabbed page `{tabs, activeTab, onShowTab, …}` behind an observer
+wrapper → the tab row, which renders and cycles over `tabs`; a built-in
+tab is `{id, title, renderTabAddon, content, footer}`). The patch still
+digs for the tab bar's `tabs` array (four component levels at most) so a
+client that adds a level keeps working, and clones a built-in tab's grid
+element with a synthetic collection whose surface is a guess at the
+client's `Collection`. The items after the first two are still first
+measurements.
 
 - [ ] With an install that has synced: the library's tab bar has a
       **Streaming** tab after *Non-Steam*, and it opens. If there is no
@@ -578,23 +586,25 @@ guess at the client's `Collection`. Every item is a first measurement.
       `tabs` array (report the route element's shape: `typeof
       route.children.type`, whether `props.renderFunc` exists).
 - [ ] The tab can be **reached**: L1/R1 from *Non-Steam* lands on it, and
-      moving along the tab row with the D-pad stops on it (found
-      2026-09-22: the tab was in the bar and both skipped it; the plugin's
-      own empty and error panels are focusable since, the grid is the
-      client's). If it is still skipped, report from the CEF console
-      the one `Moonlight Sync: library tabs found on …` line (the bar's
-      prop names, `activeTab`, a built-in tab's keys, the template's type
-      and prop names) and whether a `Moonlight Sync: library tabs,
-      onShowTab("MoonlightSyncStreaming")` line appears when you try:
-      none means the bar never asked for it (its navigation reads
-      something other than `tabs`, or the tab's header is not
-      focusable); one that does not open it means the library refused
-      the id. Also say whether Settings → About's log panel takes focus:
-      it is a plain `Focusable` over text, the shape the empty tab had,
-      and the tab's panels add `focusableIfNoChildren` and a no-op
-      `onActivate` on top (both unmeasured), so a log panel that focuses
-      means a plain `Focusable` already suffices, and one that does not
-      says the panels lean on those two.
+      moving along the tab row with the D-pad stops on it. Found
+      2026-09-22: both asked the library for it (`onShowTab` navigates
+      to `/library/tab/MoonlightSyncStreaming`), and the page answered
+      with its first tab, since it validates the id against its own tab
+      array in its render, before the injection; `activeTabFor` puts the
+      id back on the bar element. If it is skipped again, report from
+      the CEF console the one `Moonlight Sync: library tabs found on …`
+      line (the bar's prop names, `activeTab`, a built-in tab's keys, the
+      template's type and prop names) and whether a `Moonlight Sync:
+      library tabs, onShowTab("MoonlightSyncStreaming")` line appears
+      when you try: none means the bar never asked for it; one that does
+      not open it means the page's `tab` prop is no longer the requested
+      id (`requestedTab` in `libraryTabs.tsx`).
+- [ ] The tab's own panels take focus: with no host, or before a sync,
+      the *No host yet* / *Nothing to stream* line gets the focus ring.
+      They are a `Focusable` with `focusableIfNoChildren` and a no-op
+      `onActivate` (both unmeasured); Settings → About's log panel is a
+      plain `Focusable` over text, so whether *it* takes focus says
+      whether a plain one already suffices.
 - [ ] The tab's tiles are the panel's **Stream buttons** + **Shortcuts**:
       an owned game opens the real game's page (with the Stream button),
       an unowned one is the shortcut. Sorting, the footer legend and the
