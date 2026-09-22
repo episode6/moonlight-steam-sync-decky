@@ -64,7 +64,8 @@ package.json                scripts, deps, the CLI pin ("moonlightSteamSync")
 install.sh                  the end-user installer: curl the latest (or pinned) release
                             zip + .sha256, verify, unzip into ~/homebrew/plugins/, restart
                             plugin_loader (two explained sudo prompts, never non-interactive)
-DEVICE-CHECKLIST.md         every on-device check (PR-0 probes, PR-5/6/7/8 items), in order
+DEVICE-CHECKLIST.md         every on-device check (PR-0 probes, PR-5/6/7/8 items, §3.14,
+                            §3.15 and the §3.16 default layout's [verify] items), in order
 main.py                     thin decky Plugin: builds Backend, one line per callable;
                             no __init__ and `_backend` / `_startup` as class attributes, with
                             `_get` / `_ready` as classmethods, so it is correct whether the
@@ -95,16 +96,32 @@ src/lib/                    pure modules (vitest)
                             Steam Big Picture buttons, by Moonlight name, blind to
                             `hidden`); an `entry.host_app` entry counts toward none of
                             stream / shortcuts / unmatched and is never in the stream
-                            map, so never in the layout walk either (spec §3.14.1)
+                            map (spec §3.14.1); the layout walk reads `entries`, not
+                            the map, so the host apps and the client are walked too
   controller.ts             load order, runs, restart flow, hosts, settings actions,
                             loadTitles() (list -> list_cached fallback, and list_cached
                             while a run is going; `status` only reaches the shared store
                             when no run is going, the page always gets its entries),
                             pinTitle, setIgnored,
-                            streamPress() (guard, copy, run), chooseLayout() (a `null`
+                            streamPress() (guard, applyDefault when a default is set,
+                            record, run; never an unset), chooseLayout() (a `null`
                             real appid = a host app: picker only), chooseHostAppLayout()
                             (the panel's layout buttons; not held back by inGame),
-                            layoutWalk(), reconcileLibrary() (spec 3.15: after every
+                            inspectLayout() (one getConfig: url + title, or
+                            no-controller / unselected / not-shareable),
+                            setDefaultLayout(url, title) (spec 3.16.4: serialised on
+                            its own chain, awaits a walk in progress *before* the
+                            backend call, stores settings + pending, awaits a walk
+                            that began *during* the call (it leaves the flag: doWalk
+                            skips clearWalk when `defaultChanges` moved under it),
+                            layoutWalk(), toasts the counts -- or the deferred text
+                            when the walk resolved `null`; `null` clears and the walk
+                            is the unset pass; not held back by inGame or a run),
+                            layoutWalk() (WalkCounts, or `null` when `entries` is
+                            null: the flag stays for the next load;
+                            `walkTargets(entries)`, the default
+                            read per target -> applyDefault, none -> unsetApplied;
+                            picker clears the flag at once), reconcileLibrary() (spec 3.15: after every
                             status that reaches the store -- load, run done, Titles,
                             Retry, the two settings -- never while a run is going;
                             serialised; differences only; the load's call waits up to
@@ -117,16 +134,23 @@ src/lib/                    pure modules (vitest)
                             fresh install finds under that name; `entries` and the run
                             guard are read *after* the wait)
   layouts.ts                DEFAULT_LAYOUT_STRATEGY (the one switch), layoutStrategy(),
-                            copyEnabled(), the SteamInput seam, isUnselected() (no URL,
-                            default://, or bSelected false), copyLayout() (the §3.10
-                            rule), deckControllerIndexFrom() (by type: the type string when
-                            the client has it -- final either way -- else the enum),
-                            layoutControllerIndexFrom() (the Deck's, else the active or
-                            only connected controller), CONFIG_SELECTION_USER,
-                            the status texts,
-                            walkPairs() and the walk's timings
-  layouts.test.ts           copyLayout's seven cases + idempotence, the index by type,
-                            the strategy switch, the stream-map derivation
+                            DEFAULT_LAYOUT_SCHEMES / isShareableUrl() (workshop://,
+                            template://), defaultLayoutOf() (null under picker or unset),
+                            the SteamInput seam (clearConfig optional, feature-detected),
+                            isUnselected() (no URL, default://, or bSelected false),
+                            appliedUrl() (`applied`, else a legacy `copied` url),
+                            applyDefault() (the §3.16.3 rule: a selection the plugin did
+                            not make is never overwritten; the real game is not an
+                            input), unsetApplied() (explicit `applied` only; `cleared`
+                            on a successful clearConfig), deckControllerIndexFrom() (by
+                            type: the type string when the client has it -- final either
+                            way -- else the enum), layoutControllerIndexFrom() (the
+                            Deck's, else the active or only connected controller),
+                            CONFIG_SELECTION_USER, the status texts, walkTargets()
+                            (every non-parked entry, deduped) and the walk's timings
+  layouts.test.ts           applyDefault's cases + idempotence, unsetApplied, the
+                            shareable schemes, defaultLayoutOf, walkTargets over the
+                            status fixture, the index by type, the strategy switch
   library.ts                spec 3.15, the pure half: STREAMING_COLLECTION (found by
                             name, no id stored), the LibraryPort seam, streamingMembers()
                             (the stream map's real appids + visible published shortcuts;
@@ -141,7 +165,9 @@ src/lib/                    pure modules (vitest)
                             noMatchRow, matchSummary); the `host-app` kind (badge
                             `host app`, under *All* only, never unmatched, every
                             candidate `art only`) and layoutTargetOf(), whose
-                            `realAppid` is `null` for a hidden host-app row
+                            `realAppid` is `null` for a hidden host-app row;
+                            layoutSourceOf() (any non-parked entry: what *Use as the
+                            default layout* reads, and what the row's layout text is for)
   __tests__/join.test.ts    the join, every badge/chip, filters, sort, paging (fixtures)
   restart.ts                restartDecision() (the §3.9 table), modal text
   version.ts                version parsing, the CLI-missing / too-old row
@@ -149,7 +175,8 @@ src/lib/                    pure modules (vitest)
   steam.ts                  ownedApps() (a throwing `allAppsCollection` getter, as early
                             in the client's boot, is "not loaded yet"), currentSteamId3(), runShortcut(),
                             shutdownSteam(), watchRunningApps(), steamInput() over
-                            SteamClient.Input, controllerIndex() (ControllerStore or
+                            SteamClient.Input (clearConfig only when the client has
+                            ClearSelectedConfigForApp, unmeasured), controllerIndex() (ControllerStore or
                             controllerStore, else the guarded list watch; plus the
                             active-controller watch),
                             overviewLoaded(), showControllerConfigurator(),
@@ -167,11 +194,14 @@ src/routes/libraryApp.tsx   the /library/app/:appid patch (routerHook.addPatch, 
 src/components/             QuickAccess (HostAppRow: the launch button plus the icon-only
                             layout button, plain ButtonItem when the client has no
                             configurator), SyncProgress, RestartModal, SettingsPage,
-                            HostPage, TitlesPage (layout text, Choose layout),
-                            ChangeMatchModal, Pill, StreamButton (renders only when
-                            streamMap has the appid), ArtworkPage, AdvancedPage (also
-                            *Hide Stream shortcuts* and *Streaming collection*, disabled
-                            on a client without the calls), AboutPage
+                            HostPage, TitlesPage (layout text; the *Layout* menu:
+                            *Choose layout…* and *Use as the default layout*, which
+                            inspects, toasts the refusal texts or confirms), ChangeMatchModal,
+                            Pill, StreamButton (renders only when streamMap has the
+                            appid; the layout line only while a default is set), ArtworkPage,
+                            AdvancedPage (*Default controller layout* + *Clear*
+                            with its confirm, *Hide Stream shortcuts* and *Streaming
+                            collection*, disabled on a client without the calls), AboutPage
 src/test/fixtures.ts        loads tests/fixtures for vitest
 tests/                      pytest: fake_cli.py, fixtures/, conftest.py, test_*.py,
                             test_install_sh.py (install.sh end to end via
@@ -186,15 +216,50 @@ tests/                      pytest: fake_cli.py, fixtures/, conftest.py, test_*.
 
 PR-6 made `search` / `pin` / `unpin` / `set_ignored` real (the Titles page
 and the Change match modal); PR-7 added the Stream button, the layout copy
-and `layouts` / `record_layout`, so every callable is real. The UI pins
-with `match … --defer-art` only (Decision 8) and uses no `unpin` yet (the
-spec's modal has no unpin action); the callable exists for the contract.
+and `layouts` / `record_layout`; PR-9 / PR-10 (spec §3.16) replaced the
+copy with the default layout and `set_default_layout`, so every callable
+is real. The UI pins with `match … --defer-art` only (Decision 8) and uses
+no `unpin` yet (the spec's modal has no unpin action); the callable exists
+for the contract.
+
+**The default controller layout (spec §3.16).** One layout the user adopts
+from a title they set up with Steam's own configurator (Titles → *Layout*
+→ *Use as the default layout*: `inspectLayout` reads that title's
+selection, refuses `autosave://` / `default://` / unselected with the
+§3.16.5 texts, a `ConfirmModal`, then `setDefaultLayout`), stored by the
+backend as `settings.default_layout` and put on every non-parked entry by
+`applyDefault` -- on each Stream press, in the walk after a sync's restart
+and at once when the default changes. **The one rule, exactly (§3.16.3): a
+selection the plugin did not make is never overwritten.** `ours =
+appliedUrl(record)` is what the plugin last set (`applied` from
+`layouts.json`, or a legacy `copied` record's url, Decision 46); a selected
+URL that is not `ours` is `kept` (hand-picked, edited in place after the
+default landed, or the very title the default was adopted from), `ours ===
+def.url` is `default` with no write, anything else (unselected, an offered
+`template://`, or still `ours` while the default moved on) is set and read
+back. The real game's appid is not an input any more. Clearing (Decision
+51) runs the same walk as the unset pass: `unsetApplied` takes the plugin's
+layout off entries whose explicit `applied` is still selected, through
+`clearConfig` (`SteamClient.Input.ClearSelectedConfigForApp(appid, index)`,
+**unmeasured**, feature-detected: without it the default is still cleared
+and titles keep what they have); the legacy-`copied` fallback is never
+unset. `copy_layouts` is a dead, still-valid settings key (Decision 47).
+Two edges of `setDefaultLayout`: a walk that begins during its backend
+call (the load's, once its wait for the shortcut list ends) passed its
+flag check under the old default, so `doWalk` leaves the flag set when
+`defaultChanges` moved under it and the change walks again after it; and
+with `status` unavailable (`entries === null`) the walk is deferred
+(`layoutWalk()` resolves `null`, the flag stays) and the toast says the
+layout is applied, or taken off, once the titles have loaded (Decision
+54) rather than counting a walk that never ran. *Use as the default
+layout* is refused with a toast while `state.walking` (the Titles row
+cannot say why, as Advanced's disabled *Clear* cannot either).
 
 **The layout strategy switch (spec §3.10).** PR-7 was built before the PR-0
 probes ran. `DEFAULT_LAYOUT_STRATEGY = "copy"` in `src/lib/layouts.ts` is
 the one place the default lives; `settings.json`'s `layout_strategy`
 overrides it per device (no UI). Probe V2 (does `SetSelectedConfigForApp`
-with a `workshop://` id published for the real game stick on a shortcut?)
+with a `workshop://` id published for one app stick on a shortcut?)
 ran on 2026-09-20 and **confirmed `copy`** -- with one correction: the call
 takes five arguments, the last being the selection type
 (`CONFIG_SELECTION_USER = 1`, what Steam's own configurator passes); with
@@ -204,11 +269,13 @@ store global is `ControllerStore` (not `controllerStore`), that
 client (so `watchControllers()` guards every registration), and that the
 device had no Deck controller at all, which is why
 `layoutControllerIndexFrom()` falls back to the active or only connected
-controller. Should a later client break the copy, flip the constant to
+controller. Should a later client break the set, flip the constant to
 `"picker"` and rewrite the README's "Controller layouts" section; nothing
-else moves. Under `picker` no Steam Input call is made
-anywhere; *Choose layout* (`SteamClient.Apps.ShowControllerConfigurator`,
-hidden when absent) is the only layout affordance.
+else moves. Under `picker` no Steam Input call is made anywhere
+(`defaultLayoutOf()` is `null`, so the whole §3.16 feature is off and its
+UI hidden, and the walk clears its flag at once); *Choose layout…*
+(`SteamClient.Apps.ShowControllerConfigurator`, hidden when absent) is the
+only layout affordance.
 
 ## Backend contract in one paragraph
 
@@ -288,23 +355,23 @@ reports on a title it copied earlier) and cleared to `null` for any other
 on `unavailable` / `picker`; a legacy `copied` record with no `applied` key
 on disk migrates its `url` in as `applied` the first time it is touched
 again (Decision 46), so the first walk after a default is set can move it.
-The table holds under the current frontend, which still records `copied` /
-`kept` from `copyLayout` on every Stream press and walk until PR-10; under
-PR-10's `applyDefault` a `kept` never carries the plugin's own URL, so the
-rule reduces to `null` there. `settings.json`
-gains `default_layout`, `null` by default, else `{url, title, when}`; it
-is changed only through `set_default_layout(url, title)` (`@guarded`, no
-CLI, no busy guard), which needs no argument to validate but `url`, when
-not `null`, must start with `workshop://` or `template://`
+The table held under the PR-7 frontend too, which recorded `copied` /
+`kept` from the layout copy on every Stream press and walk until PR-10;
+under `applyDefault` a `kept` never carries the plugin's own URL, so the
+rule reduces to `null` there, and nothing writes `copied` any more.
+`settings.json` has `default_layout`, `null` by default, else `{url, title,
+when}`; it is changed only through `set_default_layout(url, title)`
+(`@guarded`, no CLI, no busy guard), which needs no argument to validate
+but `url`, when not `null`, must start with `workshop://` or `template://`
 (`settings.DEFAULT_LAYOUT_SCHEMES`) and stay under 2048 characters, and
 `title` under 200; `set_settings` refuses the key outright
 (`"default_layout is changed with set_default_layout"`). Either a stored
-url or a clear always sets `pending.layout_walk = true`, so the walk (not
-built until PR-10) resumes at the next load even if the plugin unloads
-mid-write, and a hand-broken `default_layout` value reads back as `null`
-rather than failing `get_settings`. `copy_layouts` stays in
-`DEFAULT_SETTINGS` and `_validate_setting` for an older `settings.json` or
-frontend, and PR-10 stops reading it (Decision 47).
+url or a clear always sets `pending.layout_walk = true`, so the walk
+resumes at the next load even if the plugin unloads mid-write, and a
+hand-broken `default_layout` value reads back as `null` rather than
+failing `get_settings`. `copy_layouts` stays in `DEFAULT_SETTINGS` and
+`_validate_setting` for an older `settings.json` or frontend and is read
+by nothing (Decision 47).
 `stop_sync` and `unload` also cover the moment between the busy guard and
 the spawn: they flag the run, the SIGINT goes out as soon as its child
 exists, and a run the signal killed before the CLI printed anything is
@@ -379,10 +446,13 @@ There is no Steam Deck during development; everything else is tested.
   `search-no-key`). The frontend's `events.test.ts`, `restart.test.ts`,
   `state.test.ts`, `controller.test.ts`, `layouts.test.ts` and
   `__tests__/join.test.ts` read the same files, so the Python and
-  TypeScript sides cannot drift. `copyLayout` and the Stream press / walk
-  run over a scripted `SteamInput` (`layouts.test.ts`, `controller.test.ts`)
-  and `steam.test.ts` drives the real seam over stubbed globals; the route
-  patch and the button itself are device checks, not unit tests.
+  TypeScript sides cannot drift. `applyDefault` / `unsetApplied` and the
+  Stream press / walk / `setDefaultLayout` run over a scripted `SteamInput`
+  (`layouts.test.ts`, `controller.test.ts`, whose fake `record_layout`
+  computes `applied` by the backend's table) and `steam.test.ts` drives
+  the real seam over stubbed globals; the route patch, the button, the
+  *Layout* menu and `ClearSelectedConfigForApp` itself are device checks,
+  not unit tests.
 - `tests/conftest.py`: `backend` / `make_backend` (a started Backend over
   the fake; `@pytest.mark.scenario("full-sync")` puts that scenario in front
   of `common/`), `steam_gone`, `install_env` (a `python3` shim that prints

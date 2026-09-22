@@ -385,11 +385,12 @@ export interface KeyState {
 }
 
 /**
- * What one layout action recorded for a hidden shortcut (spec 3.10 / 3.16).
- * `"default"`: the entry is on the plugin's default layout. `"copied"` is
- * what the spec 3.10 copy (`copyLayout`) still writes on every Stream press
- * and walk until PR-10 replaces it with `applyDefault`; it stays valid
- * after that so an older file and an older frontend still round-trip.
+ * What one layout action recorded for a shortcut (spec 3.10 / 3.16).
+ * `"default"`: the entry is on the plugin's default layout (`applyDefault`).
+ * `"copied"` is what the spec 3.10 copy from the real game wrote before the
+ * default layout replaced it; nothing writes it any more, but it stays valid
+ * so an older `layouts.json` still round-trips and `appliedUrl` can count
+ * such a copy as plugin-applied (Decision 46).
  */
 export type LayoutResult = "copied" | "kept" | "unavailable" | "picker" | "default";
 

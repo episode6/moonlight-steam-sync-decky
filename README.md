@@ -171,8 +171,8 @@ On the very first run there is no host yet: the panel says "No host yet" and
 A title the host publishes that resolves to a game this Steam account owns
 gets no visible tile. Instead its real library page grows a **Stream**
 button (a row under the header, above Play / Install), with a note saying
-which host it streams from and, when layout copying is on, the state of
-its controller layout. Pressing it runs the hidden shortcut the sync
+which host it streams from and, while a default controller layout is set,
+the state of its layout. Pressing it runs the hidden shortcut the sync
 created, so Steam owns the session: the overlay works, the Recent Games
 shelf shows it, and the layout picked for that hidden entry applies. The
 button appears only while the active host publishes the game (the last
@@ -272,7 +272,8 @@ match line (`Balatro · Steam 2379780`, `Sea of Stars · SGDB 5322710`, or
   panel's button launches (see "The Quick Access panel"). It is listed
   under *All* only. **Change match** still works and only changes its
   artwork (every result reads **art only**: no match makes a host app a
-  Stream button); **Choose layout** opens its controller configurator;
+  Stream button); **Layout** → *Choose layout…* opens its controller
+  configurator, and *Use as the default layout* adopts the layout it has;
   **Ignore** removes the entry, and its panel button, on the next sync.
 - **ignored**: nothing is created for it.
 - **duplicate**: matched to the same owned game as another title (the line
@@ -325,44 +326,69 @@ never writes that file.
 
 ## Controller layouts
 
-Steam keeps a controller layout per app, and a streamed game runs as its
-own hidden shortcut, so the layout you picked for the real game does not
-apply to it by itself. The plugin copies it over where Steam allows:
+Steam keeps a controller layout per app, and everything the plugin
+manages is a stream: a streamed game runs as its own hidden shortcut, so
+the layout you picked for the real game does not apply to it by itself.
+The plugin therefore keeps **one default controller layout** that every
+entry it manages starts on, and each title stays customisable on its own.
 
-- **What copies.** A selection that reads back from Steam Input as a
-  `workshop://` layout (a community layout, or a personal one saved to the
-  cloud, which is an unlisted Workshop item) or a `template://` layout (one
-  of Steam's built-in templates) is set on the hidden shortcut with the
-  same URL. A game left on Steam's default (`default://…`) has nothing to
-  copy and reads **Steam default**.
-- **What does not.** A personal layout edited in place and only autosaved
-  (never saved to the cloud) is not expected to copy; for that one, use
-  **Choose layout** on the title's row of the Titles page, which opens
-  Steam's own layout picker for the hidden shortcut. The hidden shortcut is
-  named exactly like the Steam game, so Steam offers it the game's
-  community layouts there.
-- **A layout chosen on the hidden entry is never overwritten.** The copy
-  only fills an empty selection: once the hidden shortcut has a layout of
-  its own (copied, or chosen by hand), every later press and every later
-  sync leaves it alone. That is what keeps per-game layouts on the client.
+- **Adopting a default.** There is no layout list of the plugin's own (Steam
+  has no API that returns a picked layout by name). Instead, set a layout up
+  on any title with Steam's own configurator (Titles → **Layout** → *Choose
+  layout…*, or the game's controller settings), then on that title's row
+  choose **Layout** → *Use as the default layout*. The plugin reads the
+  layout that title has for the controller in use, asks you to confirm, and
+  puts it on every entry that has no layout of its own: Stream buttons'
+  hidden shortcuts, visible shortcuts, `Desktop` / `Steam Big Picture` and
+  the Moonlight entry. A toast says how many titles took it and how many
+  kept their own. Parked titles (another host's) get it when they come
+  back.
+- **What can be a default.** A community layout or a personal layout you
+  **exported** (both read back from Steam Input as `workshop://…`), or one
+  of Steam's built-in templates (`template://…`). A layout you edited in
+  place without exporting only exists for that one title (`autosave://…`):
+  *Use as the default layout* refuses it and says so. In Steam's layout
+  screen choose **Export**, select the exported copy on that title, then
+  try again. A title that has no layout chosen yet cannot be adopted from
+  either.
+- **What is overwritten, and what never is.** The plugin only ever changes a
+  selection it made itself (it remembers, per shortcut, the last layout it
+  set). A layout you chose yourself on a title, a layout you edited in
+  place after the default landed, and the title you adopted the default
+  *from* are left alone, by every Stream press, every sync and every
+  change of the default. A title still on the plugin's earlier default
+  moves to the new one; a title copied from its Steam game by an older
+  version of the plugin counts as plugin-set and moves too. A hand-picked
+  layout that happens to be the same as the default is still yours.
 - **When it runs.** On every press of a Stream button (before the launch;
-  the second press finds the shortcut's own selection and keeps it), and
-  once after a sync's Steam restart, over every Stream button, as soon as
-  Steam has loaded the shortcut list (polled every 2 s for up to 90 s;
-  anything that never loads is recorded as unavailable and copied on its
-  next press instead). Settings → **Advanced** → *Copy controller layouts
-  from the Steam game* turns both off.
-- **What you see.** Each Stream button's row on the Titles page shows the
-  last result: **copied**, **own layout** (the hidden entry has its own
-  choice), **Steam default**, **unavailable** (no controller to copy for
-  was found, or the selection did not stick when read back) or **picker
-  opened**. The library page's note shows the same next to the button. The
-  results live in `layouts.json` in the plugin's settings directory; the
-  plugin never writes Steam's controller config files, only asks Steam
-  Input to select a layout.
-- **Which controller.** The Deck's built-in controller is found by type,
-  never assumed to be index 0 (a paired pad can take that slot). The
-  sanctioned way is Steam's own type string
+  once the shortcut is on the default nothing is set again), once after a
+  sync's Steam restart over every non-parked entry (as soon as Steam has
+  loaded the shortcut list, polled every 2 s for up to 90 s; anything that
+  never loads is recorded as unavailable and gets it on its next press),
+  and at once when the default is set or cleared. Changing the default is
+  not held back by a running game or a sync. While that walk is running,
+  *Use as the default layout* answers "A layout walk is still running" and
+  **Clear** is disabled; if the plugin has not loaded your titles yet (its
+  status check failed), the change is kept and the toast says the layout is
+  applied, or taken off, once they have loaded.
+- **Clearing.** Settings → **Advanced** → *Default controller layout* shows
+  the current default and has **Clear**, which takes the plugin's layout off
+  every title that still has it (they go back to Steam's default; titles
+  whose layout you chose yourself are left alone) and stops applying one.
+  This uses a Steam client call that has not been measured on a device
+  yet; on a client without it, the default is still cleared and titles keep
+  the layout they have (the toast says so).
+- **What you see.** Each row of the Titles page shows the last result for
+  its entry: **default layout**, **own layout** (a choice of yours),
+  **Steam default**, **unavailable** (no controller was connected, or the
+  selection did not stick when read back) or **picker opened**. The
+  library page's note next to the Stream button shows the same while a
+  default is set. The results live in `layouts.json` in the plugin's
+  settings directory; the plugin never writes Steam's controller config
+  files, only asks Steam Input to select (or clear) a layout.
+- **Which controller.** Layouts are per controller. The Deck's built-in
+  controller is found by type, never assumed to be index 0 (a paired pad
+  can take that slot). The sanctioned way is Steam's own type string
   (`controller_steamcontroller_neptune` from
   `ControllerStore.GetControllerTypeString`); *only* on a client without
   that function does the plugin fall back to the enum value `4`
@@ -370,34 +396,38 @@ apply to it by itself. The plugin copies it over where Steam allows:
   unverified on a Deck. When the client has the type string its answer is
   final: another pad is never taken for the Deck's because it shares an
   enum value. On a device with no built-in controller (a SteamOS box with
-  a separate pad) the plugin copies for the active controller, or the only
+  a separate pad) the plugin uses the active controller, or the only
   connected one; with several pads and none active, or none connected,
-  there is no copy. Layouts are per controller, so a copy made with one
-  pad does not carry over to another.
+  nothing is set (**unavailable**, and *Use as the default layout* asks you
+  to connect a controller first).
 
 **The PR-0 device probes ran on 2026-09-20**, on a SteamOS machine with a
-separate Steam Controller rather than a Deck. Probe V2 confirmed the copy:
-a Workshop layout published for the real game, set on a shortcut through
-`SetSelectedConfigForApp`, reads back -- provided the call carries the
-fifth, selection-type argument Steam's own configurator passes (with four
-it returns normally and does nothing). Probe V1 found a community layout
-and an exported personal layout both read back as `workshop://…`, a
-layout edited in place as `autosave:///…` (a file path; whether that one
-copies is untested), and an untouched game as `template://…` with
-`bSelected: false` -- a layout Steam offers, not one anybody chose, which
-the plugin therefore treats like Steam's `default://` guess (a fresh
-shortcut itself reads `default://<lowercased name>`); all of it for games
-that are not installed. A Deck itself is still
+separate Steam Controller rather than a Deck. Probe V2 confirmed that a
+`workshop://` layout published for one app, set on a shortcut through
+`SetSelectedConfigForApp`, reads back and sticks -- provided the call
+carries the fifth, selection-type argument Steam's own configurator passes
+(with four it returns normally and does nothing). Probe V1 found a
+community layout and an exported personal layout both read back as
+`workshop://…`, a layout edited in place as `autosave:///…` (a file path
+under one appid, which is why it is refused as a default), and an untouched
+game as `template://…` with `bSelected: false` -- a layout Steam offers, not
+one anybody chose, which the plugin therefore treats as no selection (a
+fresh shortcut itself reads `default://<lowercased name>`). Whether a
+`template://` default sticks on other titles, and the name and arguments of
+the call that clears a selection, are still to be measured
+(`DEVICE-CHECKLIST.md`); a `template://` that does not stick is recorded as
+**unavailable** per title, never as a wrong layout. A Deck itself is still
 untested. The fallback stays built in:
 
 - `layout_strategy` in `settings.json` (`"copy"`, the default, or
   `"picker"`; no UI, edit the file by hand) switches the behaviour on a
   device without a rebuild. Under `picker` the plugin makes no Steam Input
-  calls at all: a Stream press just launches, the post-restart walk is
-  skipped, and **Choose layout** (recorded as *picker opened*) is the only
-  layout affordance. The Advanced toggle is disabled and says so.
+  calls at all: a Stream press just launches, there is no walk after a
+  sync's restart, the default layout is off (the Advanced field says so and
+  *Use as the default layout* is not offered), and **Layout** → *Choose
+  layout…* (recorded as *picker opened*) is the only layout affordance.
 - The default lives in one place, `DEFAULT_LAYOUT_STRATEGY` in
-  `src/lib/layouts.ts`. If V2 says the copy does not stick, flipping that
+  `src/lib/layouts.ts`. If a later client breaks the set, flipping that
   constant to `"picker"` and rewriting this section is the whole change.
 
 ## SteamGridDB key
@@ -416,8 +446,10 @@ again for images that were missing last time) and **Re-fetch all art**,
 which needs a CLI whose `art` command accepts `--commit` and says "needs a
 newer CLI" otherwise.
 
-Settings → **Advanced** has *Copy controller layouts from the Steam game*
-(see "Controller layouts"), the restart countdown (0-30 s), and **Remove everything
+Settings → **Advanced** has *Default controller layout* with its **Clear**
+button (see "Controller layouts"; the default itself is adopted from a
+title's row on the Titles page), *Hide Stream shortcuts*, *Streaming
+collection*, the restart countdown (0-30 s), and **Remove everything
 this plugin created** (every shortcut, hidden entry and image the tool made;
 pins and ignored titles are kept; Steam restarts once; the layout records
 go with the entries).

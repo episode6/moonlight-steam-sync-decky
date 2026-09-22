@@ -1,8 +1,9 @@
 /**
  * The frontend's behaviour, independent of React and of `@decky/*`:
  * the load order and first run (spec 3.8), runs and their events, the
- * restart flow (spec 3.9), the Stream press and the controller-layout copy
- * (spec 3.10), host switching (spec 3.12) and the settings-page actions.
+ * restart flow (spec 3.9), the Stream press and the default controller
+ * layout (spec 3.10, 3.16), host switching (spec 3.12) and the
+ * settings-page actions.
  * `index.tsx` wires it to the real backend (`makeBackend(callable)`), the
  * real Steam client (`steam.ts`) and the real modal/toaster; the tests wire
  * it to fakes.
@@ -27,13 +28,18 @@ import {
 } from "./cli";
 import type { PinChoice } from "./join";
 import {
-  copyEnabled,
-  copyLayout,
+  applyDefault,
+  defaultLayoutOf,
+  isShareableUrl,
+  isUnselected,
+  layoutKindText,
+  layoutStrategy,
+  unsetApplied,
   WALK_POLL_MS,
   WALK_STEP_MS,
   WALK_TIMEOUT_MS,
-  walkPairs,
-  type LayoutOutcome,
+  walkTargets,
+  type LayoutConfig,
   type SteamInput,
 } from "./layouts";
 import {
@@ -50,6 +56,7 @@ import {
   applyRunDone,
   applyRunEvent,
   initialState,
+  layoutEntryFor,
   newRun,
   runFromSyncState,
   Store,
@@ -64,7 +71,7 @@ export interface SteamPort {
   currentSteamId3(): number | null;
   runShortcut(appid: number): boolean;
   shutdownSteam(): void;
-  /** The Steam Input seam `copyLayout` runs over (spec 3.10). */
+  /** The Steam Input seam `applyDefault` / `unsetApplied` run over (spec 3.10, 3.16). */
   input(): SteamInput;
   /** `appStore.GetAppOverviewByAppID(appid)` is non-null (the shortcut list is loaded). */
   overviewLoaded(appid: number): boolean;
@@ -123,6 +130,24 @@ export type TitlesLoad =
   | { ok: true; data: TitlesData }
   | { ok: false; message: string; neverSynced: boolean };
 
+/** What one layout walk did (spec 3.16.4). */
+export interface WalkCounts {
+  /** Entries now on the default (result `default`, whether just set or already there). */
+  applied: number;
+  /** Entries whose plugin-set layout a successful `clearConfig` took off. */
+  unset: number;
+  /** Entries left alone: a selection the plugin did not make. */
+  kept: number;
+  unavailable: number;
+}
+
+/** What *Use as the default layout* finds on a title (spec 3.16.5). */
+export type LayoutInspection =
+  | { ok: true; url: string; title: string }
+  | { ok: false; reason: "no-controller" | "unselected" | "not-shareable" };
+
+const NO_WALK: WalkCounts = { applied: 0, unset: 0, kept: 0, unavailable: 0 };
+
 export const LIBRARY_POLL_MS = 500;
 export const LIBRARY_TIMEOUT_MS = 60_000;
 
@@ -137,6 +162,44 @@ const RUN_CALLS: Record<RunKind, "start_sync" | "start_art_refetch" | "start_rem
   remove: "start_remove_all",
 };
 
+/** The toast after a default was set (spec 3.16.4), the texts exactly. */
+export function appliedToast({ applied, kept, unavailable }: WalkCounts): string {
+  if (applied === 0 && unavailable > 0) {
+    return (
+      "Steam did not accept this layout on other titles. Export it in Steam's layout screen, " +
+      "select the exported copy, then set it as the default again."
+    );
+  }
+  let text = `Default layout applied to ${applied} titles`;
+  if (kept > 0) text += ` · ${kept} kept their own`;
+  if (unavailable > 0) text += ` · ${unavailable} unavailable`;
+  return text;
+}
+
+const CANNOT_UNSET_TOAST =
+  "Default layout cleared. This Steam client cannot unset a layout, so titles keep the one they have.";
+
+/** The toast after a clear (spec 3.16.4); `canClear` is whether the client has `clearConfig`. */
+export function clearedToast({ unset, unavailable }: WalkCounts, canClear: boolean): string {
+  if (!canClear) return CANNOT_UNSET_TOAST;
+  let text = `Default layout cleared · removed from ${unset} titles`;
+  if (unavailable > 0) text += ` · ${unavailable} unavailable`;
+  return text;
+}
+
+/**
+ * The toast when the walk could not run because `status` has not answered
+ * (spec 3.16.4, Decision 54): the default is stored, `pending.layout_walk`
+ * stays set, and the next load walks. A clear on a client without
+ * `clearConfig` keeps its own text, since nothing is unset later either.
+ */
+export function deferredToast(cleared: boolean, canClear: boolean): string {
+  if (cleared && !canClear) return CANNOT_UNSET_TOAST;
+  return cleared
+    ? "Default layout cleared. It is taken off your titles once they have loaded."
+    : "Default layout set. It is applied once your titles have loaded.";
+}
+
 export class Controller {
   readonly store = new Store<AppState>(initialState());
   private loading: Promise<void> | null = null;
@@ -146,9 +209,17 @@ export class Controller {
   /** The run a `start_*` call is starting, until the call answers. */
   private starting: { kind: RunKind; immediate: boolean } | null = null;
   /** The layout walk in progress (spec 3.10: never two at once). */
-  private walking: Promise<void> | null = null;
+  private walking: Promise<WalkCounts | null> | null = null;
+  /**
+   * Bumped on every stored change of the default (spec 3.16.4): a walk that
+   * began before a bump leaves `pending.layout_walk` set, since the targets
+   * it passed before the change got the old default.
+   */
+  private defaultChanges = 0;
   /** The tail of the library reconciles (spec 3.15: one after the other, never two at once). */
   private reconciling: Promise<void> = Promise.resolve();
+  /** The tail of the default-layout changes (spec 3.16.4: serialised, each one's walk before the next). */
+  private settingDefault: Promise<unknown> = Promise.resolve();
 
   constructor(
     private readonly backend: Backend,
@@ -700,9 +771,11 @@ export class Controller {
 
   /**
    * A press of the Stream button on an owned game's library page: while
-   * anything is running only a toast; otherwise the layout copy (strategy
-   * `copy` and the Advanced toggle on), recorded, then the hidden shortcut
-   * is run through Steam. `false` when nothing was launched.
+   * anything is running only a toast; otherwise the default layout is put
+   * on the hidden shortcut when one is set (spec 3.16.4; never touching a
+   * selection the plugin did not make), recorded, then the shortcut is run
+   * through Steam. `false` when nothing was launched. The press never
+   * unsets a layout: that is the walk after a clear.
    */
   async streamPress(steamAppid: number): Promise<boolean> {
     const shortcut = this.state.streamMap.get(steamAppid);
@@ -711,7 +784,11 @@ export class Controller {
       this.ui.toast("Moonlight Sync", "Something is already running");
       return false;
     }
-    if (copyEnabled(this.state.settings)) await this.copyAndRecord(steamAppid, shortcut);
+    const def = defaultLayoutOf(this.state.settings);
+    if (def) {
+      const outcome = await applyDefault(shortcut, def, layoutEntryFor(this.state, shortcut), this.steam.input());
+      await this.recordLayout(shortcut, steamAppid, outcome.result, outcome.url);
+    }
     const ok = this.steam.runShortcut(shortcut);
     if (!ok) this.ui.toast("Moonlight Sync", "The Stream shortcut is not loaded yet; restart Steam");
     return ok;
@@ -746,10 +823,72 @@ export class Controller {
     return this.steam.canChooseLayout();
   }
 
-  private async copyAndRecord(realAppid: number, shortcutAppid: number): Promise<LayoutOutcome> {
-    const outcome = await copyLayout(realAppid, shortcutAppid, this.steam.input());
-    await this.recordLayout(shortcutAppid, realAppid, outcome.result, outcome.url);
-    return outcome;
+  /**
+   * *Use as the default layout* on a Titles row (spec 3.16.5): one read of
+   * the title's selection for the controller in use. `title` is the
+   * config's own `Title`, else the layout's kind. A layout Steam cannot
+   * report (a throwing call) reads as not chosen.
+   */
+  async inspectLayout(appid: number): Promise<LayoutInspection> {
+    const input = this.steam.input();
+    const idx = input.controllerIndex();
+    if (idx === null) return { ok: false, reason: "no-controller" };
+    let config: LayoutConfig | null;
+    try {
+      config = await input.getConfig(appid, idx);
+    } catch {
+      config = null;
+    }
+    if (isUnselected(config)) return { ok: false, reason: "unselected" };
+    const url = config!.URL!;
+    if (!isShareableUrl(url)) return { ok: false, reason: "not-shareable" };
+    const title = config!.Title?.trim() || layoutKindText(url);
+    return { ok: true, url, title };
+  }
+
+  /**
+   * Set (or, with `null`, clear) the default layout (spec 3.16.4, Decisions
+   * 45, 51, 52): the backend stores it and raises `pending.layout_walk`,
+   * then every non-parked entry is walked (put on the new default, or taken
+   * off the old one) and a toast says what happened. Calls are serialised,
+   * and each waits for a walk already in progress *before* the backend
+   * call, so that walk's `clearWalk` cannot clear the flag this one sets.
+   * A walk that begins *during* the call (the load's, once its wait for the
+   * shortcut list ends) is waited for too, and this change then walks
+   * again: that walk leaves the flag set (`defaultChanges`), since the
+   * targets it passed before the store update got the old default. When
+   * `status` has not answered the walk is deferred to the next load and the
+   * toast says so (Decision 54). Not held back by a running game or a run:
+   * it changes no file the CLI writes, and appids do not move until the
+   * restart, which re-walks.
+   */
+  setDefaultLayout(url: string | null, title: string | null): Promise<Failure | null> {
+    const next = this.settingDefault.then(() => this.doSetDefaultLayout(url, title));
+    this.settingDefault = next.catch(() => undefined);
+    return next;
+  }
+
+  private async doSetDefaultLayout(url: string | null, title: string | null): Promise<Failure | null> {
+    if (this.walking) await this.walking;
+    const result = await this.backend.set_default_layout(url, title);
+    if (isFailure(result)) {
+      this.ui.toast("Moonlight Sync", errorText(result));
+      return result;
+    }
+    this.store.set({ settings: result.settings, pending: result.pending });
+    this.defaultChanges++;
+    // A walk that began while the call was in flight passed its flag check
+    // before this change: wait it out (it does not clear the flag, see
+    // doWalk), then walk as this change's own.
+    if (this.walking) await this.walking;
+    const counts = await this.layoutWalk();
+    const cleared = url === null;
+    const canClear = !!this.steam.input().clearConfig;
+    let text: string;
+    if (counts === null) text = deferredToast(cleared, canClear);
+    else text = cleared ? clearedToast(counts, canClear) : appliedToast(counts);
+    this.ui.toast("Moonlight Sync", text);
+    return null;
   }
 
   private async recordLayout(
@@ -763,14 +902,17 @@ export class Controller {
   }
 
   /**
-   * The post-restart walk (spec 3.10): when `pending.layout_walk` says a
-   * sync's restart just happened, copy the layout of every pair in the
-   * stream map once the shortcut list is loaded, then clear the flag. With
-   * the copy off (strategy `picker`, or the toggle) the flag is cleared at
-   * once. Never runs twice at the same time: a call while one is going
-   * returns that walk's promise.
+   * The layout walk (spec 3.10, 3.16.4): when `pending.layout_walk` says a
+   * sync's restart just happened, or the default was set or cleared, put
+   * the default layout on every non-parked entry (`walkTargets`) once the
+   * shortcut list is loaded -- or, with no default, take the plugin's
+   * layout off each entry that still has it -- then clear the flag. Under
+   * the `picker` strategy the flag is cleared at once. Never runs twice at
+   * the same time: a call while one is going returns that walk's promise.
+   * Resolves `null` when the walk had to be deferred: `status` has not
+   * answered, so the flag is left for the next load.
    */
-  layoutWalk(): Promise<void> {
+  layoutWalk(): Promise<WalkCounts | null> {
     if (!this.walking) {
       this.walking = this.doWalk().finally(() => {
         this.walking = null;
@@ -779,40 +921,65 @@ export class Controller {
     return this.walking;
   }
 
-  private async doWalk(): Promise<void> {
-    if (!this.state.pending?.layout_walk) return;
-    if (!copyEnabled(this.state.settings)) {
+  private async doWalk(): Promise<WalkCounts | null> {
+    if (!this.state.pending?.layout_walk) return NO_WALK;
+    if (layoutStrategy(this.state.settings) !== "copy") {
       await this.clearWalk();
-      return;
+      return NO_WALK;
     }
     if (this.state.entries === null) {
-      // `status` has not answered (it failed, or has not run yet), so the
-      // stream map is empty for want of data rather than because there is
+      // `status` has not answered (it failed, or has not run yet), so there
+      // are no targets for want of data rather than because there is
       // nothing to walk. Leave pending.layout_walk set and do nothing: the
       // next load, or the panel's Retry, walks once status is in.
-      return;
+      return null;
     }
+    const changes = this.defaultChanges;
+    const counts: WalkCounts = { ...NO_WALK };
     this.store.set({ walking: true });
     try {
-      const pairs = walkPairs(this.state.streamMap);
-      // Readiness: every shortcut in the map resolves to an overview, polled
-      // every 2 s for at most 90 s (normally immediate).
+      const targets = walkTargets(this.state.entries);
+      // Readiness: every target resolves to an overview, polled every 2 s
+      // for at most 90 s (normally immediate).
       const deadline = this.timing.now() + WALK_TIMEOUT_MS;
-      const unresolved = () => pairs.filter((pair) => !this.steam.overviewLoaded(pair.shortcutAppid));
+      const unresolved = () => targets.filter((target) => !this.steam.overviewLoaded(target.shortcutAppid));
       while (unresolved().length && this.timing.now() < deadline) await this.timing.sleep(WALK_POLL_MS);
-      for (const { realAppid, shortcutAppid } of pairs) {
-        if (this.steam.overviewLoaded(shortcutAppid)) {
-          await this.copyAndRecord(realAppid, shortcutAppid);
+      const input = this.steam.input();
+      for (const { realAppid, shortcutAppid } of targets) {
+        // Per target: a clear that lands mid-walk turns the rest of it into
+        // the unset pass (and its own walk follows, serialised).
+        const def = defaultLayoutOf(this.state.settings);
+        const entry = layoutEntryFor(this.state, shortcutAppid);
+        if (!this.steam.overviewLoaded(shortcutAppid)) {
+          // Only recorded for an entry the walk would have touched.
+          if (def || entry?.applied) {
+            console.warn(`Moonlight Sync: shortcut ${shortcutAppid} never loaded; layout not set`);
+            await this.recordLayout(shortcutAppid, realAppid, "unavailable", def ? null : (entry?.applied ?? null));
+            counts.unavailable++;
+          }
+        } else if (def) {
+          const outcome = await applyDefault(shortcutAppid, def, entry, input);
+          await this.recordLayout(shortcutAppid, realAppid, outcome.result, outcome.url);
+          counts[outcome.result === "default" ? "applied" : outcome.result]++;
         } else {
-          console.warn(`Moonlight Sync: shortcut ${shortcutAppid} (Steam ${realAppid}) never loaded; layout not copied`);
-          await this.recordLayout(shortcutAppid, realAppid, "unavailable", null);
+          const outcome = await unsetApplied(shortcutAppid, entry, input);
+          if (outcome) {
+            await this.recordLayout(shortcutAppid, realAppid, outcome.result, outcome.url);
+            if (outcome.cleared) counts.unset++;
+            else if (outcome.result === "unavailable") counts.unavailable++;
+            else counts.kept++;
+          }
         }
         await this.timing.sleep(WALK_STEP_MS);
       }
-      await this.clearWalk();
+      // The default changed under this walk (setDefaultLayout stored it
+      // after the walk began): the targets passed before then got the old
+      // one, so the flag stays for the walk that change runs next.
+      if (changes === this.defaultChanges) await this.clearWalk();
     } finally {
       this.store.set({ walking: false });
     }
+    return counts;
   }
 
   private async clearWalk(): Promise<void> {

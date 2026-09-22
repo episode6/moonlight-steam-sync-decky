@@ -1,9 +1,10 @@
 /**
  * The Steam-client touchpoints (spec 3.9, 3.10): the owned-apps map, the
  * current user's steamid3, running a shortcut, shutting Steam down, the
- * running-app watch, and the Steam Input seam for the layout copy (read a
- * selection, set a selection, the index of the controller to copy for) plus
- * Steam's layout picker. Nothing here writes a Steam file: the plugin never
+ * running-app watch, and the Steam Input seam for the default layout (spec
+ * 3.16: read a selection, set one, clear one where the client has
+ * `ClearSelectedConfigForApp`, and the index of the controller to set it
+ * for) plus Steam's layout picker. Nothing here writes a Steam file: the plugin never
  * calls AddShortcut, RemoveShortcut, SetShortcutName, SetAppLaunchOptions
  * or SetCustomArtworkForApp. The one thing it does change in the client is
  * `libraryPort()` below (spec 3.15): the hidden state of the CLI's entries
@@ -13,7 +14,7 @@
  * Only globals are used here (`SteamClient`, `collectionStore`, `appStore`,
  * `ControllerStore`, `App`), so this module imports nothing from `@decky/*`;
  * the pure helpers (`buildOwnedMap`, `steamId3FromSteam64`, and
- * `layouts.ts`'s `copyLayout` / `layoutControllerIndexFrom`) are unit-tested.
+ * `layouts.ts`'s `applyDefault` / `layoutControllerIndexFrom`) are unit-tested.
  */
 
 import {
@@ -243,9 +244,25 @@ export function controllerIndex(): number | null {
   return layoutControllerIndexFrom(controllers, typeString, activeController);
 }
 
-/** The Steam Input seam of `layouts.ts`, over `SteamClient.Input`. */
+interface InputWithClear {
+  ClearSelectedConfigForApp?: (appid: number, controllerIndex: number) => Promise<void> | void;
+}
+
+/** `SteamClient.Input.ClearSelectedConfigForApp` exists on this client **[verify, DEVICE-CHECKLIST]**. */
+export function clearConfigAvailable(): boolean {
+  const input = (globals().SteamClient as { Input?: InputWithClear } | undefined)?.Input;
+  return typeof input?.ClearSelectedConfigForApp === "function";
+}
+
+/**
+ * The Steam Input seam of `layouts.ts`, over `SteamClient.Input`.
+ * `clearConfig` is only there when the client has
+ * `ClearSelectedConfigForApp` (its name and two arguments are unmeasured,
+ * spec 3.16.3): without it the default can still be cleared, and titles
+ * keep the layout they have.
+ */
 export function steamInput(): SteamInput {
-  return {
+  const input: SteamInput = {
     controllerIndex,
     async getConfig(appid, controllerIndex) {
       const config = (await SteamClient.Input.GetConfigForAppAndController(appid, controllerIndex)) as
@@ -268,6 +285,13 @@ export function steamInput(): SteamInput {
       await set.call(SteamClient.Input, appid, controllerIndex, url, false, CONFIG_SELECTION_USER);
     },
   };
+  if (clearConfigAvailable()) {
+    input.clearConfig = async (appid, controllerIndex) => {
+      const clear = (SteamClient.Input as unknown as InputWithClear).ClearSelectedConfigForApp!;
+      await clear.call(SteamClient.Input, appid, controllerIndex);
+    };
+  }
+  return input;
 }
 
 /** The shortcut list is loaded as far as this appid is concerned **[verify V5]**. */

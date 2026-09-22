@@ -62,17 +62,24 @@ export interface TitleRow {
   duplicateOf: string | null;
   sameGameAs: SameGameAs[];
   /**
-   * The last layout result for a Stream button's hidden shortcut
-   * ("copied" / "own layout" / "Steam default" / "unavailable" / "picker
-   * opened", spec 3.10); `null` for other rows and before any copy.
+   * The last layout result for the row's entry ("default layout" / "own
+   * layout" / "Steam default" / "unavailable" / "picker opened", spec 3.10,
+   * 3.16); `null` for a row without a non-parked entry and before any
+   * record.
    */
   layout: string | null;
   /**
-   * The hidden shortcut and the owned game a *Choose layout* / copy would
-   * work on. `realAppid: null` is a host-app row: picker only, there is no
-   * retail game to copy a layout from (spec 3.14.1).
+   * The hidden shortcut and the owned game *Choose layout* works on.
+   * `realAppid: null` is a host-app row: there is no retail game behind it
+   * (spec 3.14.1).
    */
   layoutTarget: { shortcutAppid: number; realAppid: number | null } | null;
+  /**
+   * The entry *Use as the default layout* reads the layout from (spec
+   * 3.16.5, Decision 48): the row's entry when it has one and it is not
+   * parked -- a Stream entry, a visible shortcut or a host app alike.
+   */
+  layoutSource: number | null;
 }
 
 export const BADGES: Record<BadgeId, Badge> = {
@@ -130,11 +137,11 @@ interface RowInput {
 }
 
 /**
- * The hidden shortcut a layout copy works on: a stream row whose entry is
+ * The hidden shortcut *Choose layout* works on: a stream row whose entry is
  * hidden, not parked, and matched to a Steam appid (the stream map's rule).
  * A host-app row's hidden entry is a target too, with no game behind it
  * (`realAppid: null`, whatever its match says): it has no library page, so
- * *Choose layout* is the only way to its configurator, and no copy ever runs.
+ * *Choose layout* is the only way to its configurator.
  */
 export function layoutTargetOf(kind: RowKind, entry: EntryEvent | null): TitleRow["layoutTarget"] {
   if (!entry || !entry.hidden || entry.parked || entry.client) return null;
@@ -144,13 +151,19 @@ export function layoutTargetOf(kind: RowKind, entry: EntryEvent | null): TitleRo
   return { shortcutAppid: entry.appid, realAppid: steam };
 }
 
+/** The entry *Use as the default layout* adopts from: any non-parked entry (spec 3.16.5). */
+export function layoutSourceOf(entry: EntryEvent | null): number | null {
+  return entry && !entry.parked ? entry.appid : null;
+}
+
 function buildRow(input: RowInput): TitleRow {
   const { name, match, entry, duplicateOf, sameGameAs, ignoredBy } = input;
   const ignored = ignoredBy !== null;
   const kind: RowKind = ignored ? "ignored" : input.kind;
   const unmatched = kind === "shortcut" && !hasIds(match);
   const layoutTarget = layoutTargetOf(kind, entry);
-  const layout = layoutTarget ? layoutStatusText(input.layouts[String(layoutTarget.shortcutAppid)]) : null;
+  const layoutSource = layoutSourceOf(entry);
+  const layout = layoutSource !== null ? layoutStatusText(input.layouts[String(layoutSource)]) : null;
 
   let badge: Badge;
   if (kind === "shortcut") badge = unmatched ? BADGES.unmatched : BADGES.shortcut;
@@ -181,6 +194,7 @@ function buildRow(input: RowInput): TitleRow {
     sameGameAs,
     layout,
     layoutTarget,
+    layoutSource,
   };
 }
 
