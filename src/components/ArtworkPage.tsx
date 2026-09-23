@@ -3,27 +3,50 @@ import { toaster } from "@decky/api";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { backend, controller } from "../instance";
-import { errorText, isFailure, type KeyState, type Result } from "../lib/cli";
-import { actionsReady } from "../lib/state";
+import { errorText, isFailure, type Result } from "../lib/cli";
+import { Controller } from "../lib/controller";
+import { actionsReady, keyFetchOffered, keyFetchText } from "../lib/state";
 import { useStore } from "./useStore";
 
 const KEY_LINK = "Get a key at steamgriddb.com/profile/preferences/api";
 
+/** The consent modal's text (spec 3.20.4), exactly. */
+const FETCH_TITLE = "Sign in to SteamGridDB with Steam?";
+const FETCH_TEXT =
+  "Moonlight Sync opens steamgriddb.com in Steam's browser and signs you in with your Steam account " +
+  "(SteamGridDB gets your public Steam ID, nothing else), then reads your API key from your SteamGridDB " +
+  "preferences and saves it on this device. Your key is never shown or sent anywhere else.";
+
+function confirmFetch() {
+  showModal(
+    <ConfirmModal
+      strTitle={FETCH_TITLE}
+      strDescription={FETCH_TEXT}
+      strOKButtonText="Continue"
+      strCancelButtonText="Cancel"
+      onOK={() => void controller.fetchSgdbKey()}
+    />,
+  );
+}
+
 /**
  * The SteamGridDB key field (spec 3.8 "Artwork page"). The backend only ever
  * returns the key's last four characters; the typed key goes straight to
- * `set_sgdb_key` and the field is cleared.
+ * `set_sgdb_key` and the field is cleared. With no key or the plugin's own
+ * key file, *Get key from SteamGridDB…* reads it out of the Game Mode
+ * browser instead (spec 3.20.4): the key state and the fetch in flight are
+ * the store's (`sgdbKey`, `keyFetch`), so the field follows
+ * `sgdb_key_event` / `sgdb_key_done` like everything else.
  */
 function KeyField() {
-  const [state, setState] = useState<KeyState | null>(null);
+  const { sgdbKey: state, keyFetch } = useStore(controller.store);
   const [draft, setDraft] = useState("");
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const load = async () => {
-    const result = await backend.sgdb_key_state();
-    if (isFailure(result)) setNote(errorText(result));
-    else setState(result);
+    const failed = await controller.refreshSgdbKey();
+    if (failed) setNote(errorText(failed));
   };
   useEffect(() => {
     void load();
@@ -44,7 +67,7 @@ function KeyField() {
       if (!isFailure(result)) setDraft("");
       return result;
     }, "Saved");
-  const test = () => run(() => backend.test_sgdb_key(), "SteamGridDB accepted the key");
+  const test = () => run(() => backend.test_sgdb_key(), Controller.KEY_ACCEPTED);
   const remove = () => run(() => backend.clear_sgdb_key(), "Removed");
 
   if (!state) return <Field label="SteamGridDB API key" description={note ?? "Loading…"} focusable={false} />;
@@ -59,19 +82,34 @@ function KeyField() {
     );
   }
 
+  // While a fetch is in flight (spec 3.20.4 step 3) the description says
+  // where it is and *Cancel* stands where *Save* / *Get key…* were.
+  const fetching = keyFetchOffered(state) ? keyFetch : null;
+  const fetchButton = !keyFetchOffered(state) ? null : fetching ? (
+    <ButtonItem layout="below" onClick={() => void controller.cancelSgdbKeyFetch()}>
+      Cancel
+    </ButtonItem>
+  ) : (
+    <ButtonItem layout="below" disabled={busy} onClick={confirmFetch}>
+      Get key from SteamGridDB…
+    </ButtonItem>
+  );
+
   const entry = (
     <>
       <TextField
         label="SteamGridDB API key"
-        description={KEY_LINK}
+        description={fetching ? keyFetchText(fetching) : KEY_LINK}
         bIsPassword
         value={draft}
-        disabled={busy}
+        disabled={busy || !!fetching}
         onChange={(e) => setDraft(e.target.value)}
       />
-      <ButtonItem layout="below" disabled={busy || !draft.trim()} onClick={() => void save()}>
-        Save
-      </ButtonItem>
+      {fetching ? null : (
+        <ButtonItem layout="below" disabled={busy || !draft.trim()} onClick={() => void save()}>
+          Save
+        </ButtonItem>
+      )}
     </>
   );
 
@@ -107,20 +145,26 @@ function KeyField() {
         <>
           <Field
             label="SteamGridDB API key"
-            description={`set, ends in …${state.hint ?? ""}`}
+            description={fetching ? keyFetchText(fetching) : `set, ends in …${state.hint ?? ""}`}
             focusable={false}
           />
-          <ButtonItem layout="below" disabled={busy} onClick={() => void test()}>
+          <ButtonItem layout="below" disabled={busy || !!fetching} onClick={() => void test()}>
             Test
           </ButtonItem>
-          <ButtonItem layout="below" disabled={busy} onClick={() => void remove()}>
+          <ButtonItem layout="below" disabled={busy || !!fetching} onClick={() => void remove()}>
             Remove
           </ButtonItem>
+          {fetchButton}
         </>
       );
       break;
     default:
-      body = entry;
+      body = (
+        <>
+          {entry}
+          {fetchButton}
+        </>
+      );
   }
   return (
     <>

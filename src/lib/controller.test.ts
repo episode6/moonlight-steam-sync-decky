@@ -24,7 +24,8 @@ import {
 import { eventsOf, lastOf } from "./events";
 import type { SteamInput } from "./layouts";
 import { STREAMING_COLLECTION, hiddenPlan, pluginEnabled, streamingTabEnabled, type LibraryPort } from "./library";
-import { restartRowView } from "./state";
+import { SGDB_API_PAGE } from "./cli";
+import { keyFetchText, restartRowView } from "./state";
 
 const PENDING: Pending = {
   restart_needed: "none",
@@ -124,6 +125,7 @@ function fakeBackend(calls: Calls, answers: Partial<Record<keyof Backend, unknow
     get(_target, name: string) {
       return async (...args: unknown[]) => {
         calls.push([name, args]);
+        order.push(`call:${name}`);
         const answer = (answers as Record<string, unknown>)[name] ?? (defaults as Record<string, unknown>)[name];
         return typeof answer === "function" ? (answer as (...a: unknown[]) => unknown)(...args) : answer ?? { ok: true };
       };
@@ -261,6 +263,16 @@ class FakeSteam implements SteamPort {
     this.configuratorOpened.push(appid);
     return true;
   }
+  /** `false`: the client has neither `NavigateToExternalWeb` nor `steam://openurl/`. */
+  browser = true;
+  navigateToExternalWeb(url: string) {
+    if (!this.browser) return false;
+    order.push(`open:${url}`);
+    return true;
+  }
+  navigateBack() {
+    order.push("back");
+  }
 }
 
 class FakeUi implements UiPort {
@@ -275,6 +287,7 @@ class FakeUi implements UiPort {
   toast(title: string, body: string) {
     this.toasts.push(title);
     this.bodies.push(body);
+    order.push(`toast:${body}`);
   }
 }
 
@@ -300,6 +313,8 @@ function done(kind: RunKind, events: CliEvent[], exit: number, pending: Partial<
 }
 
 let calls: Calls;
+/** Backend calls, browser navigations and toasts, interleaved in the order they happened. */
+let order: string[];
 let steam: FakeSteam;
 let ui: FakeUi;
 /** What the fake backend's `record_layout` has written (reset per test). */
@@ -309,6 +324,7 @@ let settingsFile: Settings;
 
 beforeEach(() => {
   calls = [];
+  order = [];
   steam = new FakeSteam();
   ui = new FakeUi();
   layoutsFile = {};
@@ -1992,5 +2008,163 @@ describe("Advanced → Reset match cache", () => {
     expect(await controller.resetMatchCache()).toEqual(DISABLED_FAILURE);
     expect(names()).not.toContain("reset_match_cache");
     expect(ui.bodies).toEqual(["Moonlight Sync is off"]);
+  });
+});
+
+describe("the SteamGridDB key from the Game Mode browser (spec 3.20.4)", () => {
+  const NO_DEBUGGER = "Steam's debugger port is not reachable; enter the key by hand";
+  const FILE_KEY = { ok: true, source: "file", hint: "cdef", config_parse_error: false };
+  const make = (answers: Partial<Record<keyof Backend, unknown>> = {}) =>
+    new Controller(
+      fakeBackend(calls, {
+        start_sgdb_key_fetch: { ok: true, started: "2026-09-23T10:00:00Z" },
+        cancel_sgdb_key_fetch: { ok: true, running: true },
+        sgdb_key_state: FILE_KEY,
+        test_sgdb_key: { ok: true },
+        ...answers,
+      }),
+      steam,
+      ui,
+      instantTiming(),
+    );
+
+  it("a refused start is toasted and opens nothing (no-debugger)", async () => {
+    const controller = make({
+      start_sgdb_key_fetch: { ok: false, error: "no-debugger", message: NO_DEBUGGER },
+    });
+    const result = await controller.fetchSgdbKey();
+    expect(result.ok).toBe(false);
+    expect(order).toEqual(["call:start_sgdb_key_fetch", `toast:${NO_DEBUGGER}`]);
+    expect(controller.state.keyFetch).toBeNull();
+  });
+
+  it("a fetch already in flight is busy with its own words, and opens nothing", async () => {
+    const controller = make({
+      start_sgdb_key_fetch: { ok: false, error: "busy", message: "A key fetch is already in progress", kind: "key" },
+    });
+    await controller.fetchSgdbKey();
+    expect(order).toEqual(["call:start_sgdb_key_fetch", "toast:A key fetch is already in progress"]);
+  });
+
+  it("starts the backend first and opens the API page only once it answered ok", async () => {
+    const controller = make();
+    const result = await controller.fetchSgdbKey();
+    expect(result.ok).toBe(true);
+    expect(order).toEqual(["call:start_sgdb_key_fetch", `open:${SGDB_API_PAGE}`]);
+    expect(SGDB_API_PAGE).toBe("https://www.steamgriddb.com/profile/preferences/api");
+    expect(controller.state.keyFetch).toEqual({ state: "waiting" });
+    expect(ui.bodies).toEqual([]);
+  });
+
+  it("follows sgdb_key_event into keyFetch, and the field's text with it", async () => {
+    const controller = make();
+    await controller.fetchSgdbKey();
+    const seen: string[] = [];
+    for (const state of ["waiting", "login", "steam-sign-in", "steam-login", "reading", "done"] as const) {
+      controller.onSgdbKeyEvent({ state });
+      expect(controller.state.keyFetch).toEqual({ state });
+      seen.push(keyFetchText(controller.state.keyFetch!));
+    }
+    expect(seen).toEqual([
+      "Waiting for SteamGridDB…",
+      "Signing in with Steam…",
+      "Signing in with Steam…",
+      "Steam is asking you to log in on the page",
+      "Reading your key…",
+      "Reading your key…",
+    ]);
+  });
+
+  it("done ok: back out of the browser, then the key state, the saved toast and the test, in that order", async () => {
+    const controller = make();
+    await controller.fetchSgdbKey();
+    controller.onSgdbKeyEvent({ state: "reading" });
+    order = [];
+    await controller.onSgdbKeyDone({ ok: true, source: "file", hint: "cdef" });
+    expect(order).toEqual([
+      "back",
+      "call:sgdb_key_state",
+      "toast:SteamGridDB key saved (…cdef)",
+      "call:test_sgdb_key",
+      "toast:SteamGridDB accepted the key",
+    ]);
+    expect(controller.state.keyFetch).toBeNull();
+    expect(controller.state.sgdbKey).toEqual({ source: "file", hint: "cdef", config_parse_error: false });
+  });
+
+  it("done ok with a key SteamGridDB refuses: the test's verdict is toasted as Test shows it", async () => {
+    const controller = make({
+      test_sgdb_key: { ok: false, error: "cli-error", message: "SteamGridDB rejected the key (401)" },
+    });
+    await controller.fetchSgdbKey();
+    await controller.onSgdbKeyDone({ ok: true, source: "file", hint: "cdef" });
+    expect(ui.bodies).toEqual(["SteamGridDB key saved (…cdef)", "SteamGridDB rejected the key (401)"]);
+  });
+
+  it("done failed: back out, toast the message, no key state read and no test", async () => {
+    const controller = make();
+    await controller.fetchSgdbKey();
+    order = [];
+    const message = "SteamGridDB shows no API key; generate one on its API page, then try again";
+    await controller.onSgdbKeyDone({ ok: false, error: "sgdb-page", message });
+    expect(order).toEqual(["back", `toast:${message}`]);
+    expect(names()).not.toContain("test_sgdb_key");
+    expect(names()).not.toContain("sgdb_key_state");
+    expect(controller.state.keyFetch).toBeNull();
+  });
+
+  it("cancel: the backend is asked, and the cancelled done is toasted without navigating back", async () => {
+    const controller = make();
+    await controller.fetchSgdbKey();
+    const result = await controller.cancelSgdbKeyFetch();
+    expect(result).toEqual({ ok: true, running: true });
+    expect(names()).toContain("cancel_sgdb_key_fetch");
+    // Still in flight until the backend says it ended.
+    expect(controller.state.keyFetch).toEqual({ state: "waiting" });
+    order = [];
+    await controller.onSgdbKeyDone({ ok: false, error: "cancelled", message: "The key fetch was cancelled" });
+    // The user pressed Cancel on the Artwork page: they are off the browser already.
+    expect(order).toEqual(["toast:The key fetch was cancelled"]);
+    expect(controller.state.keyFetch).toBeNull();
+    expect(names()).not.toContain("test_sgdb_key");
+  });
+
+  it("a cancel with nothing in flight drops a stale state", async () => {
+    const controller = make({ cancel_sgdb_key_fetch: { ok: true, running: false } });
+    controller.onSgdbKeyEvent({ state: "steam-login" });
+    await controller.cancelSgdbKeyFetch();
+    expect(controller.state.keyFetch).toBeNull();
+  });
+
+  it("a browser that cannot be opened cancels the fetch at once, with one toast", async () => {
+    steam.browser = false;
+    const controller = make();
+    await controller.fetchSgdbKey();
+    expect(order).toEqual([
+      "call:start_sgdb_key_fetch",
+      "toast:Steam's browser could not be opened; enter the key by hand",
+      "call:cancel_sgdb_key_fetch",
+    ]);
+    order = [];
+    await controller.onSgdbKeyDone({ ok: false, error: "cancelled", message: "The key fetch was cancelled" });
+    expect(order).toEqual([]);
+    expect(controller.state.keyFetch).toBeNull();
+  });
+
+  it("a done for a fetch this frontend did not open navigates nowhere", async () => {
+    const controller = make();
+    controller.onSgdbKeyEvent({ state: "reading" });
+    await controller.onSgdbKeyDone({ ok: true, source: "file", hint: "cdef" });
+    expect(order).not.toContain("back");
+    expect(ui.bodies[0]).toBe("SteamGridDB key saved (…cdef)");
+  });
+
+  it("refreshSgdbKey keeps the key state in the store, never more than the hint", async () => {
+    const controller = make({ sgdb_key_state: { ok: true, source: "none", hint: null, config_parse_error: false } });
+    expect(await controller.refreshSgdbKey()).toBeNull();
+    expect(controller.state.sgdbKey).toEqual({ source: "none", hint: null, config_parse_error: false });
+    const failing = make({ sgdb_key_state: { ok: false, error: "io", message: "no home" } });
+    expect(await failing.refreshSgdbKey()).toEqual({ ok: false, error: "io", message: "no home" });
+    expect(failing.state.sgdbKey).toBeNull();
   });
 });

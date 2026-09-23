@@ -46,6 +46,24 @@ describe("errorText (spec 3.8 error strings)", () => {
     ).toBe("re-fetching art from Game Mode needs a CLI whose art command accepts --commit");
   });
 
+  it("says the key fetch's failures in the backend's words (spec 3.20.3)", () => {
+    const text = "Steam's debugger port is not reachable; enter the key by hand";
+    expect(errorText(fail("no-debugger", { message: text }))).toBe(text);
+    expect(errorText(fail("cancelled", { message: "The key fetch was cancelled" }))).toBe(
+      "The key fetch was cancelled",
+    );
+    expect(errorText(fail("sgdb-page", { message: "SteamGridDB's page has changed; enter the key by hand" }))).toBe(
+      "SteamGridDB's page has changed; enter the key by hand",
+    );
+    // The fetch's 180 s: no `timeout_s`, so the backend's text stands.
+    expect(errorText(fail("timeout", { message: "Timed out waiting for the SteamGridDB page" }))).toBe(
+      "Timed out waiting for the SteamGridDB page",
+    );
+    // Its own busy guard, not the runs'.
+    expect(errorText(fail("busy", { kind: "key" }))).toBe("A key fetch is already in progress");
+    expect(errorText(fail("busy", { kind: "sync" }))).toBe("A sync is already running");
+  });
+
   it("spots the steamid3 mismatch", () => {
     expect(
       isSteamUserMismatch({
@@ -75,6 +93,12 @@ describe("makeBackend", () => {
     expect(calls.slice(1)).toEqual([
       ["pin", ["Hades II", 1145350, null, false]],
       ["set_ignored", ["Desktop", true]],
+    ]);
+    await backend.start_sgdb_key_fetch();
+    await backend.cancel_sgdb_key_fetch();
+    expect(calls.slice(3)).toEqual([
+      ["start_sgdb_key_fetch", []],
+      ["cancel_sgdb_key_fetch", []],
     ]);
     const stopped = await backend.stop_sync();
     expect(stopped.ok).toBe(false);

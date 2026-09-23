@@ -2,8 +2,9 @@
  * The frontend's behaviour, independent of React and of `@decky/*`:
  * the load order and first run (spec 3.8), runs and their events, the
  * restart flow (spec 3.9), the Stream press and the default controller
- * layout (spec 3.10, 3.16), host switching (spec 3.12) and the
- * settings-page actions.
+ * layout (spec 3.10, 3.16), host switching (spec 3.12), the SteamGridDB key
+ * fetch from the Game Mode browser (spec 3.20) and the settings-page
+ * actions.
  * `index.tsx` wires it to the real backend (`makeBackend(callable)`), the
  * real Steam client (`steam.ts`) and the real modal/toaster; the tests wire
  * it to fakes.
@@ -19,14 +20,18 @@ import {
   type Failure,
   type LayoutResult,
   type MatchCacheReset,
+  type KeyState,
   type PinnedEvent,
   type Result,
   type RunKind,
   type RunOpts,
   type SettingsPatch,
+  type SgdbKeyDonePayload,
+  type SgdbKeyEventPayload,
   type SyncDonePayload,
   type SyncEventPayload,
   type WakeResult,
+  SGDB_API_PAGE,
 } from "./cli";
 import type { PinChoice } from "./join";
 import {
@@ -86,6 +91,13 @@ export interface SteamPort {
   showControllerConfigurator(appid: number): boolean;
   /** The client's hidden state and collections (spec 3.15). */
   library(): LibraryPort;
+  /**
+   * Open a page in the Game Mode browser and close the side menus (spec
+   * 3.20.4 step 2); `false` when the client could not be asked to.
+   */
+  navigateToExternalWeb(url: string): boolean;
+  /** Leave the Game Mode browser (spec 3.20.4 step 4); never throws. */
+  navigateBack(): void;
 }
 
 export interface RestartPrompt {
@@ -228,6 +240,16 @@ export class Controller {
   private reconciling: Promise<void> = Promise.resolve();
   /** The tail of the default-layout changes (spec 3.16.4: serialised, each one's walk before the next). */
   private settingDefault: Promise<unknown> = Promise.resolve();
+  /**
+   * The key fetch in flight opened the Game Mode browser and nothing says
+   * the user has left it since, so its `sgdb_key_done` navigates back
+   * (spec 3.20.4 step 4). A *Cancel* press clears it: that button is on the
+   * Artwork page, so the user is already off the browser, and a
+   * `NavigateBack` then would leave the settings route instead.
+   */
+  private keyBrowserOpen = false;
+  /** The controller cancelled the fetch itself and has said why; its `cancelled` is not toasted again. */
+  private keyCancelQuiet = false;
 
   constructor(
     private readonly backend: Backend,
@@ -810,6 +832,98 @@ export class Controller {
     if (!isFailure(result)) this.store.set({ titlesEpoch: this.state.titlesEpoch + 1 });
     this.ui.toast("Moonlight Sync", isFailure(result) ? errorText(result) : Controller.resetMatchCacheToast(result));
     return result;
+  }
+
+  // -------------------------------------------------------------------------
+  // the SteamGridDB key (spec 3.8 "Artwork page", 3.20)
+
+  /** Re-read `sgdb_key_state()` into the store; `null` on success, else the failure. */
+  async refreshSgdbKey(): Promise<Failure | null> {
+    const result = await this.backend.sgdb_key_state();
+    if (isFailure(result)) return result;
+    const key: KeyState = { source: result.source, hint: result.hint, config_parse_error: result.config_parse_error };
+    this.store.set({ sgdbKey: key });
+    return null;
+  }
+
+  /** What the Artwork page's *Test* says, and the fetch's check after a success (spec 3.20.3). */
+  static readonly KEY_ACCEPTED = "SteamGridDB accepted the key";
+
+  /** The toast once a fetched key is saved (spec 3.20.4 step 4), with the key's last four characters. */
+  static keySavedToast(hint: string | null): string {
+    return `SteamGridDB key saved (…${hint ?? ""})`;
+  }
+
+  /**
+   * *Get key from SteamGridDB…*'s *Continue* (spec 3.20.4 steps 1-2): the
+   * backend's fetch first, and the Game Mode browser only once it has
+   * answered `ok`, so `no-debugger` and `busy` are toasted with nothing
+   * opened. Should the client not open the browser at all, the fetch is
+   * cancelled at once rather than left to wait out its three minutes.
+   */
+  async fetchSgdbKey(): Promise<Result<{ started: string }>> {
+    const started = await this.backend.start_sgdb_key_fetch();
+    if (isFailure(started)) {
+      this.ui.toast("Moonlight Sync", errorText(started));
+      return started;
+    }
+    // An `sgdb_key_event` may already have said where the fetch is.
+    this.store.set((s) => ({ ...s, keyFetch: s.keyFetch ?? { state: "waiting" } }));
+    this.keyCancelQuiet = false;
+    this.keyBrowserOpen = this.steam.navigateToExternalWeb(SGDB_API_PAGE);
+    if (!this.keyBrowserOpen) {
+      this.keyCancelQuiet = true;
+      this.ui.toast("Moonlight Sync", "Steam's browser could not be opened; enter the key by hand");
+      await this.backend.cancel_sgdb_key_fetch();
+    }
+    return started;
+  }
+
+  /**
+   * The *Cancel* that replaces *Save* while a fetch is in flight (spec
+   * 3.20.4 step 3). The fetch ends with `sgdb_key_done {cancelled}` within
+   * one poll; the page it leaves behind is not navigated away from, since
+   * the user pressed this on the Artwork page (see `keyBrowserOpen`).
+   */
+  async cancelSgdbKeyFetch(): Promise<Result<{ running: boolean }>> {
+    this.keyBrowserOpen = false;
+    const result = await this.backend.cancel_sgdb_key_fetch();
+    if (isFailure(result)) this.ui.toast("Moonlight Sync", errorText(result));
+    // Nothing was in flight (a done this frontend missed): drop the stale state.
+    else if (!result.running) this.store.set({ keyFetch: null });
+    return result;
+  }
+
+  /** `sgdb_key_event`: the field's description follows the fetch (spec 3.20.4 step 3). */
+  onSgdbKeyEvent(payload: SgdbKeyEventPayload): void {
+    this.store.set({ keyFetch: { state: payload.state } });
+  }
+
+  /**
+   * `sgdb_key_done` (spec 3.20.4 step 4), in this order: out of the browser
+   * (when this fetch opened it and the user has not left it to cancel),
+   * then on success the key state re-read, the saved toast with the key's
+   * last four characters, and `test_sgdb_key()` with its verdict toasted
+   * as *Test* shows it; on a failure its message is toasted and nothing
+   * else changes.
+   */
+  async onSgdbKeyDone(payload: SgdbKeyDonePayload): Promise<void> {
+    const leave = this.keyBrowserOpen;
+    const quiet = this.keyCancelQuiet;
+    this.keyBrowserOpen = false;
+    this.keyCancelQuiet = false;
+    this.store.set({ keyFetch: null });
+    if (leave) this.steam.navigateBack();
+    if (!payload.ok) {
+      if (!(quiet && payload.error === "cancelled")) {
+        this.ui.toast("Moonlight Sync", errorText({ ok: false, error: payload.error, message: payload.message }));
+      }
+      return;
+    }
+    await this.refreshSgdbKey();
+    this.ui.toast("Moonlight Sync", Controller.keySavedToast(payload.hint));
+    const tested = await this.backend.test_sgdb_key();
+    this.ui.toast("Moonlight Sync", isFailure(tested) ? errorText(tested) : Controller.KEY_ACCEPTED);
   }
 
   // -------------------------------------------------------------------------

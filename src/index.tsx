@@ -5,7 +5,7 @@ import { FaCog, FaListUl, FaMoon } from "react-icons/fa";
 import { QuickAccess } from "./components/QuickAccess";
 import { SettingsPage } from "./components/SettingsPage";
 import { SETTINGS_ROUTE, TITLES_ROUTE, controller } from "./instance";
-import type { SyncDonePayload, SyncEventPayload } from "./lib/cli";
+import type { SgdbKeyDonePayload, SgdbKeyEventPayload, SyncDonePayload, SyncEventPayload } from "./lib/cli";
 import { watchControllers, watchRunningApps } from "./lib/steam";
 import { patchLibraryApp } from "./routes/libraryApp";
 import { patchLibraryContextMenu } from "./routes/libraryContextMenu";
@@ -50,6 +50,13 @@ export default definePlugin(() => {
   );
   const onDone = addEventListener<[SyncDonePayload]>("sync_done", (payload) => {
     void controller.onSyncDone(payload);
+  });
+  // The SteamGridDB key fetch from the Game Mode browser (spec 3.20.4).
+  const onKeyEvent = addEventListener<[SgdbKeyEventPayload]>("sgdb_key_event", (payload) =>
+    controller.onSgdbKeyEvent(payload),
+  );
+  const onKeyDone = addEventListener<[SgdbKeyDonePayload]>("sgdb_key_done", (payload) => {
+    void controller.onSgdbKeyDone(payload);
   });
 
   let unwatch: () => void = () => undefined;
@@ -103,6 +110,8 @@ export default definePlugin(() => {
     onDismount() {
       removeEventListener("sync_event", onEvent);
       removeEventListener("sync_done", onDone);
+      removeEventListener("sgdb_key_event", onKeyEvent);
+      removeEventListener("sgdb_key_done", onKeyDone);
       unwatch();
       unwatchControllers();
       unpatchLibrary();
