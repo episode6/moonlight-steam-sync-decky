@@ -133,7 +133,14 @@ def match_cache_path(home: str, env: dict[str, str]) -> str:
 def match_cache_counts(path: str) -> tuple[int, int]:
     """``(titles, pins)`` held by a ``matches.json``; ``(0, 0)`` for a
     missing, unreadable or broken file (the CLI reads such a file as empty
-    too)."""
+    too).
+
+    The shape is the CLI's ``MatchCache.flush()`` / ``Match.to_json()`` in
+    ``art/resolve.py``: ``{"version": 1, "titles": {<name>: {"how", …}}}``
+    with a pin's ``how`` being ``"pinned"`` (``HOW_PINNED``, the same value
+    the ``pinned`` event carries). Checked against a Deck's file on
+    2026-09-23. Only the toast depends on it: the delete does not.
+    """
     try:
         with open(path, encoding="utf-8") as handle:
             payload = json.load(handle)

@@ -264,6 +264,10 @@ def test_reset_match_cache_through_main_py(plugin, monkeypatch, tmp_path) -> Non
     CLI's matches.json where the child's env puts it."""
     instance, _, _ = plugin
     cache_home = tmp_path / "xdg-cache"
+    # Backend.__init__ copies os.environ once, and Plugin._get() builds the
+    # backend lazily on the first callable, so this setenv is seen only
+    # because no callable has run yet. An eagerly built backend would need
+    # the variable set before the `plugin` fixture instead.
     monkeypatch.setenv("XDG_CACHE_HOME", str(cache_home))
     path = cache_home / "moonlight-steam-sync" / "matches.json"
     path.parent.mkdir(parents=True)

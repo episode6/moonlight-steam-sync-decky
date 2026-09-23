@@ -203,9 +203,11 @@ export function TitlesPage() {
     setLoading(false);
   }, []);
 
+  // on mount, and again when a match-cache reset changed what list says
+  const epoch = state.titlesEpoch;
   useEffect(() => {
     if (ready && active) void refresh();
-  }, [ready, active, refresh]);
+  }, [ready, active, epoch, refresh]);
 
   // a sync that just finished changed what list and status say
   const wasRunning = useRef(running);

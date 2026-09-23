@@ -1938,6 +1938,15 @@ describe("Advanced → Reset match cache", () => {
     expect(ui.bodies).toEqual([
       "Match cache reset: 12 titles forgotten, 2 pins included. The next sync matches every title afresh.",
     ]);
+    // a Titles page that is still mounted re-lists off this
+    expect(controller.state.titlesEpoch).toBe(1);
+  });
+
+  it("a refused reset leaves the Titles page alone", async () => {
+    const controller = await loaded({ reset_match_cache: { ok: false, error: "io", message: "Permission denied" } });
+    await controller.resetMatchCache();
+    expect(controller.state.titlesEpoch).toBe(0);
+    expect(ui.bodies).toEqual(["Permission denied"]);
   });
 
   it("the toast's singulars, and an empty cache", () => {

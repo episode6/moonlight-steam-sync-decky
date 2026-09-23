@@ -119,6 +119,8 @@ src/lib/                    pure modules (vitest)
                             errorText (the §3.8 strings)
   events.ts                 NDJSON parsing, lastOf/eventsOf
   state.ts                  AppState, Store, reducers (runs, counters, stream map),
+                            `titlesEpoch` (bumped by a match-cache reset; a mounted
+                            TitlesPage re-lists off it),
                             wakeInfoOf() (a host's `wake` entry, any case),
                             HOST_APPS / hostAppsFromStatus() (the panel's Desktop and
                             Steam Big Picture buttons, by Moonlight name, blind to
@@ -134,8 +136,9 @@ src/lib/                    pure modules (vitest)
                             when no run is going, the page always gets its entries),
                             pinTitle, setIgnored, resetMatchCache() (Advanced's
                             *Reset match cache*: refused while off or while a run
-                            is going, else `reset_match_cache` and a toast either
-                            way, resetMatchCacheToast() for the wording),
+                            is going, else `reset_match_cache`, a `titlesEpoch`
+                            bump on success and a toast either way,
+                            resetMatchCacheToast() for the wording),
                             streamPress() (the stream-map guard only, never inGame --
                             Decision 57, the user's 2026-09-22: Moonlight's UI handles a
                             stream already going; applyDefault when a default is set,
@@ -525,8 +528,10 @@ like `pin`: it deletes the CLI's `matches.json` whole (`match_cache_path()`:
 included, never edits it, leaves `hosts/` alone, and answers `{removed,
 titles, pins}` (a missing file is `removed: false` and still `ok`; a broken
 one counts as empty and is deleted all the same). The frontend toasts the
-counts; nothing is re-listed until the Titles page is next opened, and the
-next `sync` re-resolves every title.
+counts and bumps `titlesEpoch`, so a Titles page still mounted re-lists (a
+fresh one lists on mount); the next `sync` re-resolves every title. The
+button is disabled while a run is going; a `match` still in flight is only
+caught by the backend's busy answer (the frontend has no signal for it).
 The on/off toggle (spec 3.19) is one boolean, `settings.enabled` (default
 `true`, `BOOL_SETTINGS` in `settings.py`, a plain `set_settings` key): the
 backend knows nothing else of it, the frontend reads it everywhere it

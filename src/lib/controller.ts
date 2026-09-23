@@ -792,8 +792,9 @@ export class Controller {
    * waiting out the CLI's seven-day window on a miss. Refused while the
    * plugin is off (spec 3.19) and while a run is going (the button is
    * disabled then too; the backend's busy guard is the real gate, in both
-   * directions). A toast either way. The Titles page re-lists when it is
-   * next opened; nothing is re-fetched here.
+   * directions). A toast either way. On success `titlesEpoch` is bumped so
+   * a Titles page that is still mounted re-lists (a fresh one lists on
+   * mount anyway); nothing is re-fetched here.
    */
   async resetMatchCache(): Promise<Result<MatchCacheReset>> {
     if (!this.enabled) {
@@ -806,6 +807,7 @@ export class Controller {
       return busy;
     }
     const result = await this.backend.reset_match_cache();
+    if (!isFailure(result)) this.store.set({ titlesEpoch: this.state.titlesEpoch + 1 });
     this.ui.toast("Moonlight Sync", isFailure(result) ? errorText(result) : Controller.resetMatchCacheToast(result));
     return result;
   }
