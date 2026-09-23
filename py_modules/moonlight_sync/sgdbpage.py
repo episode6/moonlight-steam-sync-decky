@@ -17,7 +17,7 @@ state                 the target's URL                what is done
 ``steam-login``       steamcommunity.com, no form     waits for the user to log in on the page
 ``reading``           SteamGridDB, any other path     ``JS_NAVIGATE`` to the API page (once per
                                                       URL); there, ``JS_KEY``, else
-                                                      ``JS_GENERATE`` once (Decision 61)
+                                                      ``JS_GENERATE`` once (Decisions 61, 63)
 ``done``                                              the key is returned to the caller
 ====================  ==============================  ===========================================
 
@@ -27,8 +27,10 @@ so a SteamGridDB redesign is a one-file change. The rules, each a test:
 - **The key never leaves the backend.** ``JS_KEY``'s value is returned to
   the caller (``Backend``, which hands it to ``keys.set_key``) and goes
   nowhere else: not into a state, an exception message or a log line.
-- **Never *Revoke*.** No snippet clicks anything whose text matches
-  ``/revoke/i``; ``JS_GENERATE`` excludes it explicitly.
+- **Never *Revoke*, never replace a key.** No snippet clicks anything
+  whose text matches ``/revoke/i``; ``JS_GENERATE`` clicks nothing matching
+  ``/regenerate|new key|revoke/i``, and nothing at all while the page has a
+  ``code`` element (Decision 63).
 - **One click each.** ``JS_NAVIGATE`` from ``/login``, ``JS_OPENID_SUBMIT``
   and ``JS_GENERATE`` each fire at most once per fetch; a second visit to
   the same state (a redirect loop) fails with ``sgdb-page`` instead.
@@ -89,10 +91,14 @@ JS_KEY = (
     ".map(e => e.textContent.trim()).filter(t => /^[0-9a-f]{32}$/.test(t)); "
     "return c.length === 1 ? c[0] : null; })()"
 )
+#: Decision 63: never replaces a key. Nothing is clicked while the page has
+#: any ``code`` element (a key shown in a shape ``JS_KEY`` does not read is
+#: still a key), nor anything reading *Regenerate*, *new key* or *Revoke*.
 JS_GENERATE = (
-    '(() => { const b = [...document.querySelectorAll("button, a.btn, input[type=submit]")]'
+    '(() => { if (document.querySelector("div.profile code")) return false; '
+    'const b = [...document.querySelectorAll("button, a.btn, input[type=submit]")]'
     '.find(e => /generate/i.test(e.innerText || e.value || "") '
-    '&& !/revoke/i.test(e.innerText || e.value || "")); '
+    '&& !/regenerate|new key|revoke/i.test(e.innerText || e.value || "")); '
     "if (!b) return false; b.click(); return true; })()"
 )
 

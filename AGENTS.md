@@ -133,7 +133,9 @@ py_modules/moonlight_sync/  the backend (imports nothing from decky)
                             steam-sign-in (one submit, Decision 60) / steam-login
                             (the user types, the form is polled) -> reading (one
                             navigate to the API page per URL, JS_KEY once complete,
-                            JS_GENERATE once, Decision 61) -> done. A session per
+                            JS_GENERATE once, Decision 61, and never while a code
+                            element shows nor on a Regenerate / new key / Revoke
+                            control, Decision 63) -> done. A session per
                             poll, closed after it; only a `page` target on one of
                             the two hosts is ever evaluated in; the stop event's
                             wait() is the 500 ms poll, so a cancel lands within one
@@ -713,7 +715,8 @@ There is no Steam Deck during development; everything else is tested.
   snippet's value or exception, `on_poll` changes the browser per poll,
   `loading_polls` makes a fresh page read as loading first). The pages are
   `tests/fixtures/sgdb/*.html` (`login`, `openid`, `api`, `api-no-key`,
-  `api-revoke-only`, hand-written from spec 3.20.1 with the placeholder
+  `api-revoke-only`, and Decision 63's `api-hidden-key` / `api-regenerate`,
+  hand-written from spec 3.20.1 with the placeholder
   key), parsed by `tests/fakedom.py`: a minimal DOM (`querySelector` /
   `querySelectorAll` over tag, class, id, `[attr=v]`, `[attr*=v]`,
   descendants and lists; `textContent`, `innerText`, `value`, `href`, a

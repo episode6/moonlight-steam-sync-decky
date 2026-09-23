@@ -298,8 +298,10 @@ def evaluate(js: str, document: Document) -> Any:
         found = [t for t in texts if pattern.search(t)]
         return found[0] if len(found) == 1 else None
     if js == sgdbpage.JS_GENERATE:
-        (selector,) = selectors_of(js)
+        any_key, selector = selectors_of(js)
         wanted, excluded = regexes_of(js)
+        if document.query_selector(any_key) is not None:
+            return False
         for el in document.query_selector_all(selector):
             text = el.inner_text or el.value or ""
             if wanted.search(text) and not excluded.search(text):

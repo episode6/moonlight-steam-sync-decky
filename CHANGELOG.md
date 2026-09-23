@@ -20,7 +20,9 @@ project uses [semantic versioning](https://semver.org/).
   followed once its host and realm are checked, Steam's *Sign In* is
   submitted once (a Steam password or Steam Guard prompt is left to the
   user), the API page is read and, for an account with no key yet, its
-  *Generate* button pressed once; *Revoke API Key* is never pressed. The
+  *Generate* button pressed once; *Revoke API Key* is never pressed, nor
+  anything that would replace an existing key (*Regenerate*, *new key*, or
+  any button at all while the page shows a key element). The
   key goes to the key file the plugin already owns (mode 0600) and
   nowhere else: the events (`sgdb_key_event {state}`, `sgdb_key_done`)
   carry the state names and the last four characters only. Bounded at

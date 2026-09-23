@@ -121,6 +121,28 @@ def test_generate_snippet_clicks_generate_and_never_revoke() -> None:
     assert with_key.clicks == []
 
 
+@pytest.mark.parametrize("name", ["api-hidden-key.html", "api-regenerate.html"])
+def test_generate_snippet_never_replaces_a_key(name: str) -> None:
+    """Decision 63: a page with any code element (a key JS_KEY cannot read)
+    and a page whose only key buttons regenerate it both get no click."""
+    document = fakedom.Document.from_fixture(name, sgdbpage.SGDB_API_PAGE)
+    assert fakedom.evaluate(sgdbpage.JS_KEY, document) is None
+    assert fakedom.evaluate(sgdbpage.JS_GENERATE, document) is False
+    assert document.clicks == []
+
+
+def test_generate_snippet_skips_regenerate_even_beside_a_generate_button() -> None:
+    html = (
+        '<div class="container profile"><div class="column">'
+        '<button type="submit">Regenerate API Key</button>'
+        '<a class="btn" href="/new">Generate a new key</a>'
+        '<button type="submit">Generate API Key</button></div></div>'
+    )
+    document = fakedom.Document.from_html(html)
+    assert fakedom.evaluate(sgdbpage.JS_GENERATE, document) is True
+    assert [c.inner_text for c in document.clicks] == ["Generate API Key"]
+
+
 @pytest.mark.parametrize("js", fakedom.ALL_SNIPPETS)
 def test_no_snippet_clicks_anything_on_the_revoke_only_page(js: str) -> None:
     """The rule: the only button is Revoke API Key (and a link that says
@@ -134,6 +156,7 @@ def test_every_snippet_guards_revoke_by_text() -> None:
     """Belt and braces for the mirror: the one snippet that clicks by text
     carries the literal exclusion, and no other snippet clicks by text."""
     assert "revoke" in sgdbpage.JS_GENERATE
+    assert "regenerate" in sgdbpage.JS_GENERATE
     for js in fakedom.ALL_SNIPPETS:
         if js != sgdbpage.JS_GENERATE:
             assert "click" not in js or js == sgdbpage.JS_OPENID_SUBMIT
@@ -298,6 +321,17 @@ def test_reading_generates_a_key_once_when_there_is_none() -> None:
     assert browser.clicks == ["Generate API Key"]
     assert browser.revoked is False
     assert states == ["reading", "done"]
+
+
+@pytest.mark.parametrize("fixture", ["api-hidden-key.html", "api-regenerate.html"])
+def test_reading_fails_no_key_rather_than_replace_a_key(fixture: str) -> None:
+    browser = FakeBrowser(signed_in=True, api_fixture=fixture)
+    browser.open_page()
+    key, failure, _ = fetch(browser)
+    assert key is None
+    assert (failure.code, failure.message) == ("sgdb-page", sgdbpage.TEXT_NO_KEY)
+    assert not [c for c in browser.clicks if "generate" in c.lower() or "key" in c.lower()]
+    assert browser.revoked is False
 
 
 def test_reading_fails_no_key_when_there_is_no_generate_button() -> None:
