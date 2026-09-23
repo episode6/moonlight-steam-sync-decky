@@ -36,6 +36,7 @@ import type { ReactElement } from "react";
 import { adoptAsDefault } from "../components/adoptDefault";
 import { controller } from "../instance";
 import { layoutStrategy, menuLayoutSourceOf } from "../lib/layouts";
+import { pluginEnabled } from "../lib/library";
 import { isOverview, type Overview, type TreeNode } from "./tree";
 
 /** The `key` of the injected item, so a re-render of an already patched menu adds nothing. */
@@ -97,13 +98,14 @@ function menuItemsOf(rendered: unknown): unknown[] | null {
 
 /**
  * Append the item to a rendered menu for `overview`'s page; a no-op when
- * the page gets none (no Stream entry, the strategy is `picker`, the menu
- * is not the shape expected). `true` when the item is there afterwards.
+ * the page gets none (no Stream entry, the strategy is `picker`, the
+ * plugin is off (spec 3.19), the menu is not the shape expected). `true`
+ * when the item is there afterwards.
  */
 export function injectLayoutItem(rendered: unknown, overview: Overview | null): boolean {
   if (!overview) return false;
   const state = controller.state;
-  if (layoutStrategy(state.settings) !== "copy") return false;
+  if (!pluginEnabled(state.settings) || layoutStrategy(state.settings) !== "copy") return false;
   const source = menuLayoutSourceOf(state.entries, state.streamMap, overview.appid);
   if (!source) return false;
   const items = menuItemsOf(rendered);

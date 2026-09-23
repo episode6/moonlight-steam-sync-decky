@@ -286,6 +286,8 @@ export interface DefaultLayout {
 export interface Settings {
   version: number;
   hosts: string[];
+  /** The whole plugin on or off (spec 3.19); absent reads as on. */
+  enabled?: boolean;
   /** @deprecated spec 3.16 / Decision 47: replaced by `default_layout`; read by nothing. */
   copy_layouts: boolean;
   restart_countdown_s: number;
@@ -302,6 +304,7 @@ export interface Settings {
 export type SettingsPatch = Partial<
   Pick<
     Settings,
+    | "enabled"
     | "copy_layouts"
     | "restart_countdown_s"
     | "retry_missing"

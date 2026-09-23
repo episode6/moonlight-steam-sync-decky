@@ -12,10 +12,18 @@ import type {
   Settings,
   SyncDonePayload,
 } from "./cli";
-import { Controller, appliedToast, clearedToast, type RestartPrompt, type SteamPort, type UiPort } from "./controller";
+import {
+  Controller,
+  DISABLED_FAILURE,
+  appliedToast,
+  clearedToast,
+  type RestartPrompt,
+  type SteamPort,
+  type UiPort,
+} from "./controller";
 import { eventsOf, lastOf } from "./events";
 import type { SteamInput } from "./layouts";
-import { STREAMING_COLLECTION, type LibraryPort } from "./library";
+import { STREAMING_COLLECTION, hiddenPlan, pluginEnabled, streamingTabEnabled, type LibraryPort } from "./library";
 import { restartRowView } from "./state";
 
 const PENDING: Pending = {
@@ -1731,6 +1739,132 @@ describe("hidden state and the Streaming group (spec 3.15, 3.17)", () => {
     await expect(loaded({ get_settings: shown() })).resolves.toBeDefined();
     // and the collection is still kept
     expect(members()).toEqual(sorted([BALATRO_S, SEA_S, HADES, TUNIC]));
+  });
+});
+
+describe("the on/off toggle (spec 3.19)", () => {
+  const BALATRO = 2379780;
+  const [BALATRO_S, DESKTOP, HADES, SEA_S, SPIRITFARER, BIG_PICTURE, TUNIC, CLIENT] = [
+    2718281828, 3000000101, 3000000011, 2987654321, 2555555555, 3000000102, 3000000007, 2400000001,
+  ];
+  const EVERY_ENTRY = [BALATRO_S, DESKTOP, HADES, SEA_S, SPIRITFARER, BIG_PICTURE, TUNIC, CLIENT];
+  const HIDDEN_WHEN_ON = [BALATRO_S, DESKTOP, SEA_S, SPIRITFARER, BIG_PICTURE, CLIENT];
+  const sorted = (ids: Iterable<number>) => [...ids].sort((a, b) => a - b);
+  /** `set_settings` storing the patch, like the backend. */
+  const setSettings = (patch: Partial<Settings>) => {
+    Object.assign(settingsFile, patch);
+    return { ok: true, settings: { ...settingsFile } };
+  };
+
+  async function loaded(answers: Partial<Record<keyof Backend, unknown>> = {}) {
+    const controller = new Controller(fakeBackend(calls, { set_settings: setSettings, ...answers }), steam, ui, instantTiming());
+    await controller.load();
+    await controller.reconcileLibrary();
+    calls.length = 0;
+    return controller;
+  }
+
+  it("reads absent as on, and off hides every entry", () => {
+    expect(pluginEnabled(null)).toBe(true);
+    expect(pluginEnabled({ enabled: false })).toBe(false);
+    expect(streamingTabEnabled({ enabled: false, streaming_collection: true })).toBe(false);
+    expect(streamingTabEnabled({ enabled: true, streaming_collection: true })).toBe(true);
+    const entries = eventsOf(loadFixture("common/status.ndjson"), "entry");
+    expect(sorted(hiddenPlan(entries, false, false).hide)).toEqual(sorted(EVERY_ENTRY));
+    expect(hiddenPlan(entries, false, false).show).toEqual([]);
+    expect(sorted(hiddenPlan(entries, true).hide)).toEqual(sorted(HIDDEN_WHEN_ON));
+  });
+
+  it("off hides the visible shortcuts too and takes this device's members out of the collection", async () => {
+    settingsFile.hide_stream_shortcuts = false;
+    const controller = await loaded();
+    expect(sorted(steam.lib.collections.get(STREAMING_COLLECTION) ?? [])).toEqual(sorted([BALATRO_S, SEA_S, HADES, TUNIC]));
+    expect(await controller.setEnabled(false)).toMatchObject({ ok: true });
+    expect(controller.enabled).toBe(false);
+    expect(calls[0]).toEqual(["set_settings", [{ enabled: false }]]);
+    expect(sorted(steam.lib.hidden)).toEqual(sorted(EVERY_ENTRY));
+    expect(steam.lib.collections.has(STREAMING_COLLECTION)).toBe(false);
+    // and a second reconcile adds nothing back
+    steam.lib.log = [];
+    await controller.reconcileLibrary();
+    expect(steam.lib.log).toEqual([]);
+  });
+
+  it("off leaves a collection alone when the Streaming group is already off: it is not the plugin's", async () => {
+    settingsFile.streaming_collection = false;
+    steam.lib.collections.set(STREAMING_COLLECTION, new Set([HADES, 570]));
+    const controller = await loaded();
+    steam.lib.log = [];
+    await controller.setEnabled(false);
+    expect(sorted(steam.lib.collections.get(STREAMING_COLLECTION) ?? [])).toEqual(sorted([HADES, 570]));
+    expect(steam.lib.log.filter((line) => !line.startsWith("hide"))).toEqual([]);
+    expect(sorted(steam.lib.hidden)).toEqual(sorted(EVERY_ENTRY));
+  });
+
+  it("off refuses runs, settings and the default layout, and a Stream press launches nothing", async () => {
+    const controller = await loaded();
+    await controller.setEnabled(false);
+    calls.length = 0;
+    ui.bodies.length = 0;
+    expect(await controller.run("sync")).toEqual(DISABLED_FAILURE);
+    expect(controller.state.message).toBeNull();
+    expect(await controller.loadTitles()).toEqual({ ok: false, message: "Moonlight Sync is off", neverSynced: false });
+    expect(await controller.setSettings({ restart_countdown_s: 3 })).toEqual(DISABLED_FAILURE);
+    expect(await controller.setDefaultLayout(DEFAULT.url, DEFAULT.title)).toEqual(DISABLED_FAILURE);
+    expect(ui.bodies).toEqual(["Moonlight Sync is off"]);
+    expect(await controller.streamPress(BALATRO)).toBe(false);
+    controller.store.set({ pending: { ...PENDING, restart_needed: "write", last_kind: "sync" } });
+    await controller.restartRow();
+    expect(steam.launched).toEqual([]);
+    expect(names()).toEqual([]);
+    expect(steam.steamInput.sets).toEqual([]);
+  });
+
+  it("off at load: every entry is hidden, the host is not probed, the walk waits with its flag", async () => {
+    settingsFile.enabled = false;
+    settingsFile.default_layout = DEFAULT;
+    calls.length = 0;
+    const controller = new Controller(
+      fakeBackend(calls, { set_settings: setSettings, pending: { ok: true, ...PENDING, layout_walk: true, last_kind: "sync" } }),
+      steam,
+      ui,
+      instantTiming(),
+    );
+    await controller.load();
+    await controller.reconcileLibrary();
+    expect(await controller.layoutWalk()).toBeNull();
+    expect(sorted(steam.lib.hidden)).toEqual(sorted(EVERY_ENTRY));
+    expect(names()).not.toContain("check_host");
+    expect(names()).not.toContain("clear_pending");
+    expect(steam.steamInput.sets).toEqual([]);
+    expect(controller.state.pending?.layout_walk).toBe(true);
+    expect(controller.state.reach).toBeNull();
+
+    // on again: the client is put back, the host checked, the walk run
+    calls.length = 0;
+    expect(await controller.setEnabled(true)).toMatchObject({ ok: true });
+    await controller.layoutWalk();
+    expect(sorted(steam.lib.hidden)).toEqual(sorted(HIDDEN_WHEN_ON));
+    expect(names()).toContain("check_host");
+    expect(names()).toContain("clear_pending");
+    expect(steam.steamInput.sets.length).toBeGreaterThan(0);
+  });
+
+  it("is refused while a run is going", async () => {
+    const controller = await loaded();
+    await controller.sync();
+    calls.length = 0;
+    expect(await controller.setEnabled(false)).toMatchObject({ ok: false, error: "busy", kind: "sync" });
+    expect(names()).toEqual([]);
+    expect(controller.enabled).toBe(true);
+  });
+
+  it("a refused store is toasted and changes nothing", async () => {
+    const controller = await loaded({ set_settings: { ok: false, error: "io", message: "disk full" } });
+    expect(await controller.setEnabled(false)).toMatchObject({ ok: false, error: "io" });
+    expect(ui.bodies).toEqual(["disk full"]);
+    expect(controller.enabled).toBe(true);
+    expect(sorted(steam.lib.hidden)).toEqual(sorted(HIDDEN_WHEN_ON));
   });
 });
 

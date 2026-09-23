@@ -3,6 +3,7 @@ import { useState, type CSSProperties } from "react";
 
 import { controller } from "../instance";
 import { defaultLayoutOf, layoutLine } from "../lib/layouts";
+import { pluginEnabled } from "../lib/library";
 import { layoutEntryFor } from "../lib/state";
 import { useStore } from "./useStore";
 
@@ -26,7 +27,7 @@ interface Props {
  * The Stream button on an owned game's library page (spec 3.9, mockup
  * screen 3), injected by `routes/libraryApp.tsx`. Renders nothing unless the
  * stream map has this appid (a hidden shortcut exists for it and the active
- * host publishes it). A press puts the default controller layout on the
+ * host publishes it) and the plugin is on (spec 3.19). A press puts the default controller layout on the
  * hidden shortcut when one is set (spec 3.16), then runs the shortcut
  * through Steam, whether or not a game is running (Moonlight's own UI
  * handles a stream that is already going). The layout line shows only
@@ -36,7 +37,7 @@ export function StreamButton({ appid, name }: Props) {
   const state = useStore(controller.store);
   const [busy, setBusy] = useState(false);
   const shortcut = state.streamMap.get(appid);
-  if (shortcut === undefined) return null;
+  if (shortcut === undefined || !pluginEnabled(state.settings)) return null;
 
   const host = state.hosts?.active ?? "the host";
   const title = name ?? String(appid);

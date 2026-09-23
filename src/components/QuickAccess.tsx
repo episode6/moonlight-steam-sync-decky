@@ -24,7 +24,9 @@ import {
   type AppState,
   type HostAppKey,
 } from "../lib/state";
+import { pluginEnabled } from "../lib/library";
 import { confirmSwitch } from "./confirmSwitch";
+import { EnabledToggle } from "./EnabledToggle";
 import { SyncProgress } from "./SyncProgress";
 import { useStore } from "./useStore";
 
@@ -238,9 +240,21 @@ export function QuickAccess() {
     );
   }
 
+  // The on/off toggle (spec 3.19) heads the panel in every state below;
+  // off, it is all the panel shows.
+  const toggle = (
+    <PanelSectionRow>
+      <EnabledToggle state={state} />
+    </PanelSectionRow>
+  );
+  if (!pluginEnabled(state.settings)) {
+    return <PanelSection>{toggle}</PanelSection>;
+  }
+
   if (state.cli && state.cli.state !== "ok") {
     return (
       <PanelSection>
+        {toggle}
         <PanelSectionRow>
           <ButtonItem layout="below" description={state.cli.text} onClick={() => openSettings("about")}>
             Open About
@@ -255,6 +269,7 @@ export function QuickAccess() {
   if (!state.cli) {
     return (
       <PanelSection>
+        {toggle}
         <PanelSectionRow>
           <ButtonItem
             layout="below"
@@ -296,6 +311,7 @@ export function QuickAccess() {
   const counters = state.counters;
   return (
     <PanelSection>
+      {toggle}
       {libraryRow}
       <HostRow state={state} />
       <RestartRow state={state} />

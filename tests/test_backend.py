@@ -89,6 +89,7 @@ def test_a_countdown_above_the_ceiling_is_clamped_not_rejected(backend) -> None:
 def test_startup_creates_settings_and_ignore(backend) -> None:
     settings = json.loads(Path(settings_path(backend, "settings.json")).read_text())
     assert settings["version"] == 1
+    assert settings["enabled"] is True
     assert settings["restart_countdown_s"] == 5
     assert settings["copy_layouts"] is True
     assert settings["retry_missing"] is False
@@ -1173,6 +1174,9 @@ def test_settings_round_trip_and_validation(backend) -> None:
     library = run(backend.set_settings(off))
     assert library["settings"]["hide_stream_shortcuts"] is False
     assert library["settings"]["streaming_collection"] is False
+    off = run(backend.set_settings({"enabled": False}))
+    assert off["settings"]["enabled"] is False
+    assert run(backend.set_settings({"enabled": True}))["settings"]["enabled"] is True
     at_max = run(backend.set_settings({"restart_countdown_s": 30}))
     assert at_max["settings"]["restart_countdown_s"] == 30
     for bad in (
@@ -1182,6 +1186,7 @@ def test_settings_round_trip_and_validation(backend) -> None:
         {"restart_countdown_s": "5"},
         {"copy_layouts": 1},
         {"hide_stream_shortcuts": "no"},
+        {"enabled": "off"},
         {"streaming_collection": 0},
         {"layout_strategy": "mirror"},
         {"hosts": ["X"]},

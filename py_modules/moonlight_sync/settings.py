@@ -32,6 +32,10 @@ LAYOUTS_FILE = "layouts.json"
 #: see ``[]`` until then.
 DEFAULT_SETTINGS: dict[str, Any] = {
     "version": 1,
+    # the whole plugin on or off (spec 3.19): off hides every entry in the
+    # client, injects nothing into the library and refuses runs, for a
+    # Deck away from its host; the toggle is the one setting still live
+    "enabled": True,
     "copy_layouts": True,
     "restart_countdown_s": 5,
     "retry_missing": False,
@@ -52,6 +56,14 @@ DEFAULT_SETTINGS: dict[str, Any] = {
 #: clamped on read rather than making settings.json unreadable.
 RESTART_COUNTDOWN_MAX = 30
 LAYOUT_STRATEGIES = ("copy", "picker")
+#: The settings ``set_settings`` accepts as plain booleans.
+BOOL_SETTINGS = (
+    "enabled",
+    "copy_layouts",
+    "retry_missing",
+    "hide_stream_shortcuts",
+    "streaming_collection",
+)
 
 #: What one layout copy (or *Choose layout*) can record (spec 3.10 / 3.16).
 #: ``default`` is spec 3.16: the entry is on the plugin's default layout.
@@ -445,7 +457,7 @@ def _validate_setting(key: str, value: Any) -> None:
         raise SettingsError("default_layout is changed with set_default_layout")
     if key == "wake_macs":
         raise SettingsError("wake_macs is changed with set_wake_mac")
-    if key in ("copy_layouts", "retry_missing", "hide_stream_shortcuts", "streaming_collection"):
+    if key in BOOL_SETTINGS:
         if not isinstance(value, bool):
             raise SettingsError(f"{key} must be true or false")
         return

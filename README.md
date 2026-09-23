@@ -109,6 +109,15 @@ CLI release)" and you can install the CLI with its own `install.sh`.
 
 ## The Quick Access panel
 
+- **Moonlight Sync**, the on/off toggle at the top. Turn it off when the
+  Deck travels away from its host: every Moonlight shortcut is hidden in
+  the library (the visible ones and the Moonlight client entry too), the
+  Stream buttons, the *Streaming* tab and the gear-menu item disappear,
+  nothing syncs, the host is not probed, and the settings route shows the
+  toggle alone until it is on again. Turning it on puts everything back
+  as the last status and your settings say, and runs a controller-layout
+  walk that fell due meanwhile. The toggle is unavailable while a sync
+  runs; the run finishes on its own.
 - **Host**: a dropdown of your known hosts with the active one selected. A
   green dot and "N apps" when `moonlight list` answered; a red dot, the
   error, and "last seen <when>" from the last successful listing when it did
@@ -240,6 +249,10 @@ only what differs:
 Right after a sync's restart both wait (up to 90 s) for the client to load
 its shortcut list; anything still missing then is picked up the next time.
 On a client without these calls the two toggles are disabled and say so.
+With the panel's *Moonlight Sync* toggle off, every entry is hidden
+whatever the settings say, the tab is gone and the shortcut collection is
+emptied of this device's entries (and deleted once empty), until it is on
+again.
 
 ## The one restart
 
@@ -519,6 +532,7 @@ Steam's:
 `settings.json` also carries `layout_strategy` (`"copy"` or `"picker"`),
 which has no UI: it is the hand-editable switch described under
 "Controller layouts", for trying the fallback on a device;
+`enabled` (the panel's on/off toggle, `true` by default);
 `hide_stream_shortcuts` / `streaming_collection` (the *Streaming tab*
 toggle: the key kept its name), the two Advanced toggles above; and
 `default_layout` (`null`, or `{"url", "title", "when"}`, the
