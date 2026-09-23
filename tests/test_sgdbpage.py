@@ -333,12 +333,29 @@ def test_reading_fails_page_changed_on_a_key_that_is_not_one() -> None:
 # the failures
 
 
-def test_no_debugger_at_the_first_poll() -> None:
+def test_no_debugger_from_the_first_poll_is_retried_for_ten_seconds() -> None:
+    """The backend probed the port before starting, so an unavailable first
+    poll (the frontend's navigation destroying the context) is retried like
+    any other, and only then is ``no-debugger``."""
     browser = FakeBrowser()
     browser.unavailable = True
-    _, failure, states = fetch(browser)
+    clock = Clock()
+    _, failure, states = fetch(browser, clock)
     assert (failure.code, failure.message) == ("no-debugger", sgdbpage.TEXT_NO_DEBUGGER)
     assert states == []
+    assert sgdbpage.DEBUGGER_RETRY_S <= clock.now < sgdbpage.DEBUGGER_RETRY_S + 2
+
+
+def test_an_unavailable_first_poll_that_recovers_continues() -> None:
+    browser = FakeBrowser()
+    browser.open_page()
+
+    def on_poll(b: FakeBrowser) -> None:
+        b.unavailable = b.polls <= 2
+
+    browser.on_poll = on_poll
+    key, failure, _ = fetch(browser)
+    assert failure is None and key == KEY
 
 
 def test_a_debugger_that_drops_out_later_is_retried_for_ten_seconds() -> None:
@@ -412,7 +429,7 @@ def test_an_evaluate_error_fails_page_changed() -> None:
     browser.answers[sgdbpage.JS_LOGIN_LINK] = cdp.EvaluateError("TypeError: boom")
     _, failure, _ = fetch(browser)
     assert (failure.code, failure.message) == ("sgdb-page", sgdbpage.TEXT_PAGE_CHANGED)
-    assert "boom" in failure.detail
+    assert failure.detail == "in login: TypeError"  # the class name, never page text
 
 
 # ---------------------------------------------------------------------------
@@ -499,6 +516,15 @@ def test_states_and_failures_never_carry_the_key() -> None:
     browser.answers[sgdbpage.JS_KEY] = None
     _, failure, _ = fetch(browser)
     assert KEY not in failure.message and KEY not in str(failure)
+    # ``detail`` is logged before the key file exists, so ``_redact`` could
+    # not scrub it: it names the thrown error's class and nothing else.
+    assert failure.detail is not None and KEY not in failure.detail
+    browser = FakeBrowser(signed_in=True)
+    browser.open_page()
+    browser.answers[sgdbpage.JS_KEY] = cdp.EvaluateError(f"TypeError: {KEY} is not a function")
+    _, failure, _ = fetch(browser)
+    assert failure.code == "sgdb-page"
+    assert failure.detail == "in reading: TypeError"
 
 
 # ---------------------------------------------------------------------------
@@ -592,6 +618,54 @@ def test_backend_no_debugger_comes_back_from_start(backend, fake_browser) -> Non
         return started
 
     assert run(again())["ok"] is True
+
+
+def test_backend_a_probe_that_raises_frees_the_guard(
+    backend, fake_browser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Anything the probe raises, not only ``DebuggerUnavailable``, leaves
+    the ``"key"`` guard free for the next start."""
+    browser = fake_browser()
+
+    def broken() -> Any:
+        raise RuntimeError("not HTTP")
+
+    monkeypatch.setattr(cdp, "TARGETS", broken)
+    result = run(backend.start_sgdb_key_fetch())
+    assert result["ok"] is False and result.get("error") != "busy"
+    assert backend._key_fetch.done is True
+    monkeypatch.setattr(cdp, "TARGETS", browser.targets)
+
+    async def again():
+        started = await backend.start_sgdb_key_fetch()
+        await backend.unload()
+        return started
+
+    assert run(again())["ok"] is True
+
+
+def test_backend_a_set_key_that_raises_still_ends_the_fetch(
+    backend, fake_browser, fast_polls, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from moonlight_sync import keys
+
+    browser = fake_browser(signed_in=True)
+
+    def broken(*args: Any) -> Any:
+        raise RuntimeError(f"cannot save {args[-1]}")
+
+    monkeypatch.setattr(keys, "set_key", broken)
+
+    async def scenario():
+        assert (await backend.start_sgdb_key_fetch())["ok"] is True
+        browser.open_page()
+        return await wait_done(backend)
+
+    done = run(scenario())
+    assert done == {"ok": False, "error": "io", "message": "Could not save the key"}
+    assert backend._key_fetch.done is True
+    assert KEY not in json.dumps(backend.emitted.calls)
+    assert KEY not in json.dumps(run(backend.log_tail(500)))
 
 
 def test_backend_unload_cancels_the_fetch(backend, fake_browser, fast_polls) -> None:

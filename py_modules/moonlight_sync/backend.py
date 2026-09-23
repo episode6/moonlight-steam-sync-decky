@@ -1315,6 +1315,10 @@ class Backend:
             fetch.done = True
             self._log(f"sgdb key fetch: {self._redact(str(exc))}")
             return failure("no-debugger", sgdbpage.TEXT_NO_DEBUGGER)
+        except BaseException:
+            # Anything else from the probe must not leave the guard at busy.
+            fetch.done = True
+            raise
         fetch.task = asyncio.get_running_loop().create_task(self._drive_key_fetch(fetch))
         self._log("sgdb key fetch started")
         return {"ok": True, "started": fetch.started}
@@ -1342,7 +1346,24 @@ class Backend:
         def on_state(state: str) -> None:
             loop.call_soon_threadsafe(self._on_key_fetch_state, fetch, state)
 
-        payload: dict[str, Any]
+        payload: dict[str, Any] = {
+            "ok": False,
+            "error": "sgdb-page",
+            "message": sgdbpage.TEXT_PAGE_CHANGED,
+        }
+        try:
+            payload = await self._run_key_fetch(fetch, on_state)
+        finally:
+            # Every exit frees the guard, a cancelled task included.
+            fetch.done = True
+        if fetch.emits:
+            await asyncio.gather(*fetch.emits, return_exceptions=True)
+        await self._emit("sgdb_key_done", payload)
+
+    async def _run_key_fetch(
+        self, fetch: KeyFetch, on_state: Callable[[str], None]
+    ) -> dict[str, Any]:
+        """The fetch and the key's one write: ``sgdb_key_done``'s payload."""
         try:
             key = await asyncio.to_thread(
                 sgdbpage.fetch_key, cdp.TARGETS, cdp.CONNECT, fetch.stop, time.monotonic, on_state
@@ -1350,32 +1371,31 @@ class Backend:
         except sgdbpage.FetchFailed as exc:
             why = self._redact(exc.detail or exc.message)
             self._log(f"sgdb key fetch failed ({exc.code}): {why}")
-            payload = {"ok": False, "error": exc.code, "message": exc.message}
+            return {"ok": False, "error": exc.code, "message": exc.message}
         except Exception:
             self._log(f"sgdb key fetch failed:\n{self._redact(traceback.format_exc())}")
-            payload = {"ok": False, "error": "sgdb-page", "message": sgdbpage.TEXT_PAGE_CHANGED}
-        else:
-            # The key's one destination. Nothing below names it: the done
-            # event carries the hint, the log line is fixed text.
-            try:
-                state = keys.set_key(self.home, self.env, key)
-            except keys.KeyRefused as exc:
-                self._log(f"sgdb key fetch: the key was refused: {exc.message}")
-                payload = {"ok": False, "error": exc.code, "message": exc.message}
-            except OSError as exc:
-                self._log(f"sgdb key fetch: could not write the key file: {exc}")
-                payload = {
-                    "ok": False,
-                    "error": "io",
-                    "message": self._redact(f"could not write the key file: {exc}"),
-                }
-            else:
-                self._log("sgdb key fetched from the browser")
-                payload = {"ok": True, "source": state.source, "hint": state.hint}
-        fetch.done = True
-        if fetch.emits:
-            await asyncio.gather(*fetch.emits, return_exceptions=True)
-        await self._emit("sgdb_key_done", payload)
+            return {"ok": False, "error": "sgdb-page", "message": sgdbpage.TEXT_PAGE_CHANGED}
+        # The key's one destination. Nothing below names it: the done event
+        # carries the hint, the log lines are fixed text or an exception's
+        # class name (the key file may not exist yet, so ``_redact`` could
+        # not scrub a message that quoted the key).
+        try:
+            state = keys.set_key(self.home, self.env, key)
+        except keys.KeyRefused as exc:
+            self._log(f"sgdb key fetch: the key was refused: {exc.message}")
+            return {"ok": False, "error": exc.code, "message": exc.message}
+        except OSError as exc:
+            self._log(f"sgdb key fetch: could not write the key file: {exc}")
+            return {
+                "ok": False,
+                "error": "io",
+                "message": self._redact(f"could not write the key file: {exc}"),
+            }
+        except Exception as exc:
+            self._log(f"sgdb key fetch: saving the key failed ({type(exc).__name__})")
+            return {"ok": False, "error": "io", "message": "Could not save the key"}
+        self._log("sgdb key fetched from the browser")
+        return {"ok": True, "source": state.source, "hint": state.hint}
 
     # ------------------------------------------------------------------
     # matching and ignoring (the Titles page)

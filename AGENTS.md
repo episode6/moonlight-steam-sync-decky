@@ -580,8 +580,16 @@ or `{ok: false, error, message}` with `error` one of `no-debugger`,
 key and no generate button, a thrown snippet, a redirect loop) or
 `keys.KeyRefused`'s codes (`set in config.toml`). The key is handed to
 `keys.set_key` and nowhere else: not a result, an event, a log line or an
-exception message (`FetchFailed.detail` is fixed text; `_redact` covers the
-rest); a failed or cancelled fetch writes no file. `cancel_sgdb_key_fetch()`
+exception message (`FetchFailed.detail` is fixed text or, for a thrown
+snippet, the error's class name alone; `_redact` covers the rest); a failed
+or cancelled fetch writes no file. An unavailable debugger is retried for
+`DEBUGGER_RETRY_S` from the first poll on (the port was already probed; the
+frontend's own navigation can destroy the page context under that poll).
+Every exit frees the `"key"` guard: a probe that raises anything, and a
+`keys.set_key` that raises something other than `KeyRefused` / `OSError`
+(`io`, "Could not save the key"). `targets()` goes through an opener
+that ignores `http_proxy`, and an answer that is not HTTP is
+`DebuggerUnavailable`. `cancel_sgdb_key_fetch()`
 sets the event (`{ok, running}`), `unload()` cancels the same way and waits
 `KEY_FETCH_UNLOAD_WAIT`. The queued state emits are awaited before the
 done emit, so the frontend sees them in order. The frontend follows a

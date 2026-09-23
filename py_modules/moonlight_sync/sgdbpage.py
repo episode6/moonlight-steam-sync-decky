@@ -67,7 +67,8 @@ KEY_RE = re.compile(r"^[0-9a-f]{32}$")
 #: has to press *Sign In*, possibly log in to Steam on that page first.
 POLL_INTERVAL_S = 0.5
 SGDB_FETCH_TIMEOUT_S = 180.0
-#: A debugger that stops answering after the first poll is retried this long.
+#: A debugger that stops answering (or a page context a navigation destroyed)
+#: is retried this long; the backend has already probed the port.
 DEBUGGER_RETRY_S = 10.0
 #: After ``JS_GENERATE`` clicked, how long the key is waited for.
 GENERATE_WAIT_S = 15.0
@@ -103,6 +104,17 @@ TEXT_CANCELLED = "The key fetch was cancelled"
 TEXT_LOGIN_CHANGED = "SteamGridDB's login page has changed; enter the key by hand"
 TEXT_NO_KEY = "SteamGridDB shows no API key; generate one on its API page, then try again"
 TEXT_PAGE_CHANGED = "SteamGridDB's page has changed; enter the key by hand"
+
+
+_ERROR_NAME = re.compile(r"^[A-Za-z_$][\w$]{0,63}$")
+
+
+def _error_name(exc: cdp.EvaluateError) -> str:
+    """The thrown error's class name (``TypeError``) and nothing else: the
+    rest of the page's description is page text, which ``detail`` never
+    carries."""
+    name = exc.description.split(":", 1)[0].strip()
+    return name if _ERROR_NAME.match(name) else "an exception"
 
 
 class FetchFailed(Exception):
@@ -201,7 +213,6 @@ class _Fetch:
 
     def run(self) -> str:
         deadline = self.clock() + SGDB_FETCH_TIMEOUT_S
-        first = True
         while True:
             if self.stop.is_set():
                 raise FetchFailed("cancelled", TEXT_CANCELLED)
@@ -213,18 +224,20 @@ class _Fetch:
                 now = self.clock()
                 if self.unavailable_since is None:
                     self.unavailable_since = now
-                if first or now - self.unavailable_since >= DEBUGGER_RETRY_S:
+                # Retried from the first poll too: the backend probed the
+                # port before starting, and the frontend's own navigation
+                # to the API page can destroy the context under that poll.
+                if now - self.unavailable_since >= DEBUGGER_RETRY_S:
                     raise FetchFailed("no-debugger", TEXT_NO_DEBUGGER, detail=str(exc)) from exc
             except cdp.EvaluateError as exc:
                 raise FetchFailed(
-                    "sgdb-page", TEXT_PAGE_CHANGED, detail=f"in {self.state}: {exc.description}"
+                    "sgdb-page", TEXT_PAGE_CHANGED, detail=f"in {self.state}: {_error_name(exc)}"
                 ) from exc
             else:
                 self.unavailable_since = None
                 if key is not None:
                     self.set_state("done")
                     return key
-            first = False
             if self.stop.wait(POLL_INTERVAL_S):
                 raise FetchFailed("cancelled", TEXT_CANCELLED)
 

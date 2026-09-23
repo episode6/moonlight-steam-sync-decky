@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import http.client
 import io
 import json
 import socket
@@ -89,9 +90,15 @@ def test_targets_unavailable_on_refusal_timeout_and_non_json() -> None:
     def timed_out(url: str, timeout: float) -> Any:
         raise TimeoutError("timed out")
 
-    for http in (refused, timed_out, http_answering(b"<html>not json"), http_answering(b"{}")):
+    def not_http(url: str, timeout: float) -> Any:
+        raise http.client.BadStatusLine("SSH-2.0-OpenSSH")
+
+    for http_ in (refused, timed_out, not_http):
         with pytest.raises(cdp.DebuggerUnavailable):
-            cdp.targets(http)
+            cdp.targets(http_)
+    for http_ in (http_answering(b"<html>not json"), http_answering(b"{}")):
+        with pytest.raises(cdp.DebuggerUnavailable):
+            cdp.targets(http_)
     assert issubclass(cdp.DebuggerUnavailable, ConnectionError)
 
 

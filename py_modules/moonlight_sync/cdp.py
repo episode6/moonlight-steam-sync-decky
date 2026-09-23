@@ -32,6 +32,7 @@ import time
 import urllib.parse
 import urllib.request
 from collections.abc import Callable
+from http.client import HTTPException
 from typing import Any, TypedDict
 
 #: Where Steam's debugger listens (the port Decky Loader itself injects through).
@@ -80,18 +81,26 @@ class Target(TypedDict):
     webSocketDebuggerUrl: str
 
 
-def targets(http: Callable[..., Any] = urllib.request.urlopen) -> list[Target]:
+#: ``urlopen`` without proxies: the debugger is on loopback, and an
+#: ``http_proxy`` in the environment must not receive the ``/json/list`` GET.
+_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+def targets(http: Callable[..., Any] = _OPENER.open) -> list[Target]:
     """One GET of ``/json/list``: every browser target, as :class:`Target`.
 
     ``http`` is ``urllib.request.urlopen``'s shape (a context manager whose
-    ``read()`` is the body), replaced in tests. A refused connection, a
-    timeout or a body that is not a JSON list is :class:`DebuggerUnavailable`.
+    ``read()`` is the body; by default an opener that ignores proxies),
+    replaced in tests. A refused connection, a timeout, an answer that is
+    not HTTP or a body that is not a JSON list is :class:`DebuggerUnavailable`.
     """
     url = f"http://{DEBUGGER[0]}:{DEBUGGER[1]}/json/list"
     try:
         with http(url, timeout=HTTP_TIMEOUT_S) as response:
             body = response.read()
-    except OSError as exc:  # URLError, socket.timeout, ConnectionRefusedError
+    except (OSError, HTTPException) as exc:
+        # URLError, socket.timeout, ConnectionRefusedError; BadStatusLine /
+        # IncompleteRead when something that is not HTTP answers the port
         raise DebuggerUnavailable(f"{url}: {exc}") from exc
     try:
         entries = json.loads(body)
