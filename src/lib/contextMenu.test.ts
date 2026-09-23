@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { MENU_CLASS_METHOD, MODULE_MARKER, WRAPPER_PATTERN, menuClassOf, wrapperOf } from "./contextMenu";
+import { MENU_CLASS_METHOD, MODULE_MARKER, WRAPPER_PATTERN, findMenuClass, menuClassOf, wrappersOf } from "./contextMenu";
 
 // The sources measured on a SteamOS device 2026-09-23 (webpack's minified
 // names, verbatim): the wrapper, the positioning-options export and a
-// neighbour from the same module.
+// neighbour from the same module. (The lookup keyed on
+// `().appDetailsSpotlight` until 2026-09-23; that client has it in no
+// component, these sources included.)
 const WRAPPER_SOURCE = "function De(e){const t=(0,p.br)(),r=(0,J.$2)();return(0,n.jsx)(Fe,{navigator:t,instance:r,...e})}";
 const OPTIONS_SOURCE = "function We(){return{bFitToWindow:!0,strClassName:(0,Q.A)(G().contextMenu,se().LibraryContextMenu)}}";
 const OTHER_SOURCE = "function Re(e){switch(e){case s.Bl:case s.MT:case s.NF:case s.aL:return!0;default:return!1}}";
@@ -35,9 +37,9 @@ class MenuStandIn {
   }
 }
 
-describe("wrapperOf (spec 3.16.5)", () => {
+describe("wrappersOf (spec 3.16.5)", () => {
   it("finds the wrapper in the measured module", () => {
-    expect(wrapperOf(measuredModule)).toBe(measuredModule.uU);
+    expect(wrappersOf(measuredModule)).toEqual([measuredModule.uU]);
   });
 
   it("the markers match the measured sources", () => {
@@ -46,16 +48,26 @@ describe("wrapperOf (spec 3.16.5)", () => {
     expect(OTHER_SOURCE).not.toMatch(WRAPPER_PATTERN);
   });
 
-  it("wants both the module marker and the wrapper", () => {
-    expect(wrapperOf({ uU: measuredModule.uU })).toBeNull();
-    expect(wrapperOf({ zq: measuredModule.zq, k2: measuredModule.k2 })).toBeNull();
+  it("a minified name may carry $ or _", () => {
+    expect("function De($){const t=(0,p.br)(),r=(0,J.$2)();return(0,n.jsx)(Fe,{navigator:t,instance:r,...$})}").toMatch(WRAPPER_PATTERN);
+    expect("return(0,n.jsx)(Fe,{navigator:_t,instance:$r,...e$})").toMatch(WRAPPER_PATTERN);
   });
 
-  it("is null over a non-module and an empty module", () => {
-    expect(wrapperOf(null)).toBeNull();
-    expect(wrapperOf(3)).toBeNull();
-    expect(wrapperOf({})).toBeNull();
-    expect(wrapperOf({ a: "text" })).toBeNull();
+  it("lists every match in export order", () => {
+    const second = withSource("function Ge(e){return(0,n.jsx)(Ke,{navigator:a,instance:b,...e})}");
+    expect(wrappersOf({ ...measuredModule, second })).toEqual([measuredModule.uU, second]);
+  });
+
+  it("wants both the module marker and the wrapper", () => {
+    expect(wrappersOf({ uU: measuredModule.uU })).toEqual([]);
+    expect(wrappersOf({ zq: measuredModule.zq, k2: measuredModule.k2 })).toEqual([]);
+  });
+
+  it("is empty over a non-module and an empty module", () => {
+    expect(wrappersOf(null)).toEqual([]);
+    expect(wrappersOf(3)).toEqual([]);
+    expect(wrappersOf({})).toEqual([]);
+    expect(wrappersOf({ a: "text" })).toEqual([]);
   });
 
   it("a throwing getter hides only itself", () => {
@@ -66,15 +78,7 @@ describe("wrapperOf (spec 3.16.5)", () => {
         throw new Error("not loaded");
       },
     });
-    expect(wrapperOf(module)).toBe(measuredModule.uU);
-  });
-
-  it("the old marker is in no export any more", () => {
-    // The lookup keyed on `().appDetailsSpotlight` until 2026-09-23; the
-    // client has it in no component. This is what the measured module
-    // looks like to that marker.
-    const sources = Object.values(measuredModule).filter((v): v is AnyFunction => typeof v === "function");
-    expect(sources.some((fn) => fn.toString().includes("().appDetailsSpotlight"))).toBe(false);
+    expect(wrappersOf(module)).toEqual([measuredModule.uU]);
   });
 });
 
@@ -104,5 +108,15 @@ describe("menuClassOf", () => {
       }
     }
     expect(menuClassOf(wrapper, () => ({ type: Other, props: {} }))).toBeNull();
+  });
+});
+
+describe("findMenuClass", () => {
+  it("tries each wrapper and takes the first that renders the menu class", () => {
+    const other = withSource("other");
+    const render = (component: AnyFunction): unknown => (component === measuredModule.uU ? { type: MenuStandIn, props: {} } : { type: "div", props: {} });
+    expect(findMenuClass([other, measuredModule.uU], render)).toBe(MenuStandIn);
+    expect(findMenuClass([other], render)).toBeNull();
+    expect(findMenuClass([], render)).toBeNull();
   });
 });

@@ -233,10 +233,12 @@ src/lib/                    pure modules (vitest)
                             (removes only removable members)
   contextMenu.ts            spec 3.16.5, the gear menu's lookup, pure: MODULE_MARKER
                             (an export reading `.LibraryContextMenu)`), WRAPPER_PATTERN
-                            (`{navigator:t,instance:r,...e}`), wrapperOf() over a
-                            module's exports, menuClassOf() (the fake-rendered
+                            (`{navigator:t,instance:r,...e}`, `$` allowed in the
+                            names), wrappersOf() over a module's exports (every
+                            match, export order), menuClassOf() (the fake-rendered
                             element's type, a class with `render` and
-                            MENU_CLASS_METHOD = `GetTargetApps`); the measured
+                            MENU_CLASS_METHOD = `GetTargetApps`), findMenuClass()
+                            (the first candidate that renders it); the measured
                             sources are in contextMenu.test.ts. Until 2026-09-23 the
                             lookup keyed on `().appDetailsSpotlight`, which the client
                             has in no component, so the item never appeared
@@ -304,9 +306,9 @@ src/routes/libraryApp.tsx   the /library/app/:appid patch (routerHook.addPatch, 
                             written fresh; injects StreamButton
 src/routes/libraryContextMenu.tsx  the library gear menu patch (spec 3.16.5, Decision 56):
                             the menu class is reached through its wrapper component
-                            (findModuleChild over `contextMenu.ts`'s `wrapperOf`,
-                            fakeRenderComponent, the element's `type`, checked by
-                            `menuClassOf`), its `render`
+                            (findModuleChild over `contextMenu.ts`'s `wrappersOf`,
+                            fakeRenderComponent on each candidate, the element's
+                            `type`, checked by `menuClassOf`), its `render`
                             afterPatch'ed to append one keyed MenuItem, *Use as
                             Moonlight Sync default layout*, on a real game in the
                             stream map (reads the game's own selection) or a

@@ -25,10 +25,11 @@ export const MODULE_MARKER = ".LibraryContextMenu)";
 /**
  * The wrapper component's body, in that module: it renders the menu class
  * with a `navigator` and an `instance` it read from hooks, spread over its
- * own props (`{navigator:t,instance:r,...e}` once minified). Measured with
- * the module marker.
+ * own props (`{navigator:t,instance:r,...e}` once minified; a minified
+ * name may carry `$` or `_`, as `J.$2` in the measured source does).
+ * Measured with the module marker.
  */
-export const WRAPPER_PATTERN = /navigator:\w+,instance:\w+,\.\.\.\w+\}/;
+export const WRAPPER_PATTERN = /navigator:[\w$]+,instance:[\w$]+,\.\.\.[\w$]+\}/;
 
 /** A method the menu class has and no other component reached this way would: the class is checked for it before its `render` is patched. */
 export const MENU_CLASS_METHOD = "GetTargetApps";
@@ -57,13 +58,16 @@ function functionExportsOf(module: unknown): Map<string, AnyFunction> {
 }
 
 /**
- * The menu's wrapper component, pure over a module's exports: in a module
- * one function export of which carries `MODULE_MARKER`, the function
- * export whose source matches `WRAPPER_PATTERN`; else `null`.
+ * The menu's wrapper component candidates, pure over a module's exports:
+ * in a module one function export of which carries `MODULE_MARKER`, every
+ * function export whose source matches `WRAPPER_PATTERN`, in export
+ * order; empty for any other module. The measured module has exactly
+ * one; the caller tries each through `menuClassOf` so a second match that
+ * is not the menu's wrapper cannot hide the one that is.
  */
-export function wrapperOf(module: unknown): (AnyFunction) | null {
+export function wrappersOf(module: unknown): AnyFunction[] {
   const functions = functionExportsOf(module);
-  if (functions.size === 0) return null;
+  if (functions.size === 0) return [];
   const sources = new Map<string, string>();
   for (const [name, fn] of functions) {
     try {
@@ -72,11 +76,13 @@ export function wrapperOf(module: unknown): (AnyFunction) | null {
       continue;
     }
   }
-  if (![...sources.values()].some((source) => source.includes(MODULE_MARKER))) return null;
+  if (![...sources.values()].some((source) => source.includes(MODULE_MARKER))) return [];
+  const found: AnyFunction[] = [];
   for (const [name, source] of sources) {
-    if (WRAPPER_PATTERN.test(source)) return functions.get(name) ?? null;
+    const fn = functions.get(name);
+    if (fn && WRAPPER_PATTERN.test(source)) found.push(fn);
   }
-  return null;
+  return found;
 }
 
 /**
@@ -96,4 +102,16 @@ export function menuClassOf(wrapper: AnyFunction, render: (component: AnyFunctio
   const prototype = (type as { prototype?: Record<string, unknown> }).prototype;
   if (typeof prototype?.render !== "function" || typeof prototype[MENU_CLASS_METHOD] !== "function") return null;
   return type as unknown as MenuClass;
+}
+
+/**
+ * The menu class behind the first of `wrappers` that renders it (see
+ * `wrappersOf`); `null` when none does.
+ */
+export function findMenuClass(wrappers: AnyFunction[], render: (component: AnyFunction) => unknown): MenuClass | null {
+  for (const wrapper of wrappers) {
+    const found = menuClassOf(wrapper, render);
+    if (found) return found;
+  }
+  return null;
 }

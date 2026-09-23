@@ -47,7 +47,7 @@ import type { ReactElement } from "react";
 
 import { adoptAsDefault } from "../components/adoptDefault";
 import { controller } from "../instance";
-import { type AnyFunction, type MenuClass, menuClassOf, wrapperOf } from "../lib/contextMenu";
+import { type AnyFunction, type MenuClass, findMenuClass, wrappersOf } from "../lib/contextMenu";
 import { layoutStrategy, menuLayoutSourceOf } from "../lib/layouts";
 import { pluginEnabled } from "../lib/library";
 import { isOverview, type Overview, type TreeNode } from "./tree";
@@ -59,9 +59,12 @@ export const MENU_ITEM_LABEL = "Use as Moonlight Sync default layout";
 
 /** The menu class, reached through its module and wrapper component; `null` when this client has neither in the expected shape. */
 export function findLibraryContextMenu(): MenuClass | null {
-  const wrapper: unknown = findModuleChild((module: unknown) => wrapperOf(module) ?? undefined);
-  if (typeof wrapper !== "function") return null;
-  return menuClassOf(wrapper as AnyFunction, (component) => fakeRenderComponent(component as Parameters<typeof fakeRenderComponent>[0]));
+  const wrappers: unknown = findModuleChild((module: unknown) => {
+    const found = wrappersOf(module);
+    return found.length > 0 ? found : undefined;
+  });
+  if (!Array.isArray(wrappers)) return null;
+  return findMenuClass(wrappers as AnyFunction[], (component) => fakeRenderComponent(component as Parameters<typeof fakeRenderComponent>[0]));
 }
 
 /**
