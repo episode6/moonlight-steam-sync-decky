@@ -887,6 +887,11 @@ reachable; same CLI pin and minimum.
 Plugin `v0.8.0` (the user asked for it on 2026-09-22) is a minor release for
 spec §3.19, the *Moonlight Sync* on/off toggle, plus letting Stream and the
 host-app buttons launch while a game is running; same CLI pin and minimum.
+Plugin `v0.9.0` (the user asked for it on 2026-09-23) is a minor release for
+spec §3.20, *Get key from SteamGridDB…* (the key fetch from the Game Mode
+browser), and Advanced's *Reset match cache*, plus the fix that brings back
+the gear menu's *Use as Moonlight Sync default layout*; same CLI pin and
+minimum.
 
 Modelled on the CLI repo's own "Cutting a release" (the example below is
 the plugin's first release, `v0.1.0`, which waited for the CLI's `v0.3.0`;
