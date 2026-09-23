@@ -1933,3 +1933,132 @@ def test_the_ignore_file_is_what_sync_and_list_pass(backend) -> None:
     argv = backend.harness.argv()[0]
     ignore_path = argv[argv.index("--ignore-file") + 1]
     assert json.loads(Path(ignore_path).read_text()) == ["Desktop"]
+
+
+# ---------------------------------------------------------------------------
+# reset_match_cache (Advanced → Reset match cache; the user's decision of 2026-09-23)
+
+
+def _write_match_cache(path: Path, titles: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"version": 1, "titles": titles}, indent=2) + "\n")
+
+
+MATCHES = {
+    "Balatro": {
+        "how": "sgdb:exact",
+        "steam_appid": 2379780,
+        "sgdb_id": 5,
+        "when": "2026-09-22T22:08:00Z",
+    },
+    "Hades II": {
+        "how": "pinned",
+        "steam_appid": 1145350,
+        "sgdb_id": None,
+        "when": "2026-09-22T22:08:00Z",
+    },
+    "Obscure Indie": {
+        "how": "none",
+        "steam_appid": None,
+        "sgdb_id": None,
+        "when": "2026-09-22T22:08:00Z",
+    },
+}
+
+
+def test_reset_match_cache_deletes_the_file_pins_included(make_backend, tmp_path) -> None:
+    """The whole file goes (pins too); ``hosts/`` beside it stays."""
+    cache_home = tmp_path / "xdg-cache"
+    backend = make_backend(env={"XDG_CACHE_HOME": str(cache_home)})
+    path = cache_home / "moonlight-steam-sync" / "matches.json"
+    _write_match_cache(path, MATCHES)
+    hosts = path.parent / "hosts" / "my-gaming-pc.json"
+    hosts.parent.mkdir()
+    hosts.write_text("{}\n")
+    backend.harness.clear()
+
+    result = run(backend.reset_match_cache())
+
+    assert result == {"ok": True, "removed": True, "titles": 3, "pins": 1}
+    assert not path.exists()
+    assert hosts.exists()
+    assert "reset match cache: deleted" in Path(backend.log_path).read_text()
+    # idempotent: nothing to delete is still ok, and says so
+    assert run(backend.reset_match_cache()) == {
+        "ok": True,
+        "removed": False,
+        "titles": 0,
+        "pins": 0,
+    }
+    assert backend.harness.argv() == []  # no CLI involved
+
+
+def test_reset_match_cache_uses_the_default_cache_dir_under_home(make_backend, tmp_path) -> None:
+    """Without ``XDG_CACHE_HOME`` (or with it empty, as the CLI reads it) the
+    file is ``<home>/.cache/moonlight-steam-sync/matches.json``."""
+    backend = make_backend(env={"XDG_CACHE_HOME": ""})
+    path = tmp_path / "home" / ".cache" / "moonlight-steam-sync" / "matches.json"
+    assert backend.match_cache_path() == str(path)
+    _write_match_cache(path, {"Balatro": MATCHES["Balatro"]})
+    assert run(backend.reset_match_cache()) == {"ok": True, "removed": True, "titles": 1, "pins": 0}
+    assert not path.exists()
+
+
+def test_reset_match_cache_counts_a_broken_file_as_empty_but_still_deletes_it(
+    make_backend, tmp_path
+) -> None:
+    cache_home = tmp_path / "xdg-cache"
+    backend = make_backend(env={"XDG_CACHE_HOME": str(cache_home)})
+    path = cache_home / "moonlight-steam-sync" / "matches.json"
+    path.parent.mkdir(parents=True)
+    path.write_text("{not json")
+    assert run(backend.reset_match_cache()) == {"ok": True, "removed": True, "titles": 0, "pins": 0}
+    assert not path.exists()
+    _write_match_cache(path, ["not", "a", "mapping"])
+    assert run(backend.reset_match_cache()) == {"ok": True, "removed": True, "titles": 0, "pins": 0}
+
+
+def test_reset_match_cache_is_busy_during_a_run(make_backend, steam_gone, tmp_path) -> None:
+    cache_home = tmp_path / "xdg-cache"
+    backend = make_backend(env={"FAKE_CLI_SLEEP_MS": "100", "XDG_CACHE_HOME": str(cache_home)})
+    owned(backend)
+    path = cache_home / "moonlight-steam-sync" / "matches.json"
+    _write_match_cache(path, MATCHES)
+
+    async def scenario() -> dict[str, Any]:
+        assert (await backend.start_sync())["ok"] is True
+        refused = await backend.reset_match_cache()
+        steam_gone()
+        await backend.wait_for_run()
+        return refused
+
+    refused = run(scenario())
+    assert refused["ok"] is False
+    assert refused["error"] == "busy"
+    assert refused["kind"] == "sync"
+    assert path.exists()  # untouched while the CLI could be writing it
+    assert run(backend.reset_match_cache())["removed"] is True  # free again afterwards
+
+
+def test_reset_match_cache_is_busy_during_a_match(make_backend, tmp_path) -> None:
+    """The other side of the guard: a ``match`` child writes the same file."""
+    cache_home = tmp_path / "xdg-cache"
+    backend = make_backend(env={"FAKE_CLI_SLEEP_MS": "150", "XDG_CACHE_HOME": str(cache_home)})
+    owned(backend)
+    path = cache_home / "moonlight-steam-sync" / "matches.json"
+    _write_match_cache(path, MATCHES)
+
+    async def scenario() -> tuple[dict[str, Any], dict[str, Any]]:
+        pinning = asyncio.ensure_future(backend.pin("Hades II", 1145350, None, False))
+        await wait_until(lambda: backend._matching > 0)
+        refused = await backend.reset_match_cache()
+        return await pinning, refused
+
+    pinned, refused = run(scenario())
+    assert pinned["ok"] is True
+    assert refused["ok"] is False
+    assert refused["error"] == "busy"
+    assert refused["kind"] == "match"
+    assert path.exists()
+    assert backend._matching == 0
+    assert run(backend.reset_match_cache())["removed"] is True

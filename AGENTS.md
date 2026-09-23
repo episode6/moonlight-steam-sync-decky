@@ -31,7 +31,14 @@ Breaking any of these is a blocker, not a judgement call.
    (`tests/test_hard_rules.py` holds it there). It writes no file and
    touches only the CLI's own entries plus its own members of that one
    collection. The *Streaming* tab (spec §3.17) is a route patch on the
-   library's tab bar and writes nothing anywhere.
+   library's tab bar and writes nothing anywhere. **The one CLI file the
+   plugin touches** (the user's decision of 2026-09-23, not in the spec):
+   Advanced's *Reset match cache* deletes the CLI's `matches.json` whole,
+   pins included, through `reset_match_cache` and only under the busy
+   guard (a run or a `match` child writes that file). It is deleted, never
+   edited; `hosts/` beside it and everything else of the CLI's stays the
+   CLI's. The CLI has no reset of its own (only `match --unpin` per title,
+   and a miss is not re-queried for seven days), which is why.
 2. **No `_root`.** `plugin.json` `flags` stays `[]`: the backend must run as
    the deck user so `HOME` and the CLI's paths resolve.
 3. **No MoonDeck code.** MoonDeck is GPLv3, this repo is MIT. Do not open,
@@ -79,7 +86,12 @@ py_modules/moonlight_sync/  the backend (imports nothing from decky)
                             timeouts, pending rules on sync_done. _spawn is where the
                             SteamGridDB key is scrubbed (once per spawn, over every parsed
                             event and every stdout/stderr line), so RunResult and therefore
-                            every result, relayed event and log line is clean by construction
+                            every result, relayed event and log line is clean by construction;
+                            match_cache_path() (the CLI's matches.json as the child resolves
+                            it: $XDG_CACHE_HOME from the child's env, else <home>/.cache) and
+                            reset_match_cache() (Advanced's *Reset match cache*: deletes the
+                            file whole, pins included, under the busy guard; answers
+                            {removed, titles, pins} for the toast; no CLI)
   install.py                read_version(), MIN_CLI_VERSION, atomic install/upgrade
   settings.py               settings.json / ignore.json / owned-apps.json /
                             pending.json / layouts.json, all .tmp + os.replace
@@ -120,7 +132,10 @@ src/lib/                    pure modules (vitest)
                             loadTitles() (list -> list_cached fallback, and list_cached
                             while a run is going; `status` only reaches the shared store
                             when no run is going, the page always gets its entries),
-                            pinTitle, setIgnored,
+                            pinTitle, setIgnored, resetMatchCache() (Advanced's
+                            *Reset match cache*: refused while off or while a run
+                            is going, else `reset_match_cache` and a toast either
+                            way, resetMatchCacheToast() for the wording),
                             streamPress() (the stream-map guard only, never inGame --
                             Decision 57, the user's 2026-09-22: Moonlight's UI handles a
                             stream already going; applyDefault when a default is set,
@@ -321,7 +336,9 @@ src/components/             adoptDefault (inspectLayout -> refusal toasts -> Con
                             with its confirm, *Hide Stream shortcuts* and *Streaming
                             tab* (the `streaming_collection` key; its text adds the
                             shortcut collection when Stream shortcuts are shown; never
-                            disabled, the tab needs no client call), AboutPage,
+                            disabled, the tab needs no client call), *Reset match
+                            cache* (a ConfirmModal, then resetMatchCache(); disabled
+                            while a run is going), AboutPage,
                             EnabledToggle (spec 3.19: the *Moonlight Sync* on/off
                             ToggleField, at the top of the panel in every state
                             and, while off, the whole settings route; disabled
@@ -500,6 +517,16 @@ by nothing (Decision 47).
 the spawn: they flag the run, the SIGINT goes out as soon as its child
 exists, and a run the signal killed before the CLI printed anything is
 reported as exit 130 rather than as a protocol error.
+`reset_match_cache()` (Advanced's *Reset match cache*, the user's decision
+of 2026-09-23) needs no CLI but shares the busy guard in both directions,
+like `pin`: it deletes the CLI's `matches.json` whole (`match_cache_path()`:
+`$XDG_CACHE_HOME` from the child's env, else `<home>/.cache`, then
+`moonlight-steam-sync/matches.json`, the CLI's own `cache_dir()` rule), pins
+included, never edits it, leaves `hosts/` alone, and answers `{removed,
+titles, pins}` (a missing file is `removed: false` and still `ok`; a broken
+one counts as empty and is deleted all the same). The frontend toasts the
+counts; nothing is re-listed until the Titles page is next opened, and the
+next `sync` re-resolves every title.
 The on/off toggle (spec 3.19) is one boolean, `settings.enabled` (default
 `true`, `BOOL_SETTINGS` in `settings.py`, a plain `set_settings` key): the
 backend knows nothing else of it, the frontend reads it everywhere it

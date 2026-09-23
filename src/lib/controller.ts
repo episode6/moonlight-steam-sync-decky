@@ -18,6 +18,7 @@ import {
   type EntryEvent,
   type Failure,
   type LayoutResult,
+  type MatchCacheReset,
   type PinnedEvent,
   type Result,
   type RunKind,
@@ -773,6 +774,39 @@ export class Controller {
         reach: reach?.reachable ? { ...reach, ignored: undefined } : reach,
       });
     }
+    return result;
+  }
+
+  /** Advanced → *Reset match cache*: what its toast says, exactly. */
+  static resetMatchCacheToast(result: MatchCacheReset): string {
+    if (!result.removed) return "The match cache was already empty. The next sync matches every title afresh.";
+    const titles = result.titles === 1 ? "1 title" : `${result.titles} titles`;
+    const pins = result.pins === 0 ? "" : result.pins === 1 ? ", 1 pin included" : `, ${result.pins} pins included`;
+    return `Match cache reset: ${titles} forgotten${pins}. The next sync matches every title afresh.`;
+  }
+
+  /**
+   * Advanced → *Reset match cache*: the backend deletes the CLI's
+   * `matches.json` whole, pins included (the user's decision of
+   * 2026-09-23), so the next sync re-resolves every title instead of
+   * waiting out the CLI's seven-day window on a miss. Refused while the
+   * plugin is off (spec 3.19) and while a run is going (the button is
+   * disabled then too; the backend's busy guard is the real gate, in both
+   * directions). A toast either way. The Titles page re-lists when it is
+   * next opened; nothing is re-fetched here.
+   */
+  async resetMatchCache(): Promise<Result<MatchCacheReset>> {
+    if (!this.enabled) {
+      this.ui.toast("Moonlight Sync", errorText(DISABLED_FAILURE));
+      return DISABLED_FAILURE;
+    }
+    if (this.state.run?.running) {
+      const busy: Failure = { ok: false, error: "busy", message: "a run is going", kind: this.state.run.kind };
+      this.ui.toast("Moonlight Sync", errorText(busy));
+      return busy;
+    }
+    const result = await this.backend.reset_match_cache();
+    this.ui.toast("Moonlight Sync", isFailure(result) ? errorText(result) : Controller.resetMatchCacheToast(result));
     return result;
   }
 

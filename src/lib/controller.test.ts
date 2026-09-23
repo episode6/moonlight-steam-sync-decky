@@ -1921,3 +1921,67 @@ describe("Wake-on-LAN (spec 3.18)", () => {
     expect(names()).toEqual(["set_wake_mac"]);
   });
 });
+
+describe("Advanced → Reset match cache", () => {
+  async function loaded(answers: Partial<Record<keyof Backend, unknown>> = {}) {
+    const controller = new Controller(fakeBackend(calls, answers), steam, ui, instantTiming());
+    await controller.load();
+    calls.length = 0;
+    return controller;
+  }
+
+  it("calls reset_match_cache and toasts what was forgotten, pins included", async () => {
+    const controller = await loaded({ reset_match_cache: { ok: true, removed: true, titles: 12, pins: 2 } });
+    const result = await controller.resetMatchCache();
+    expect(result).toMatchObject({ ok: true, removed: true });
+    expect(calls).toEqual([["reset_match_cache", []]]);
+    expect(ui.bodies).toEqual([
+      "Match cache reset: 12 titles forgotten, 2 pins included. The next sync matches every title afresh.",
+    ]);
+  });
+
+  it("the toast's singulars, and an empty cache", () => {
+    expect(Controller.resetMatchCacheToast({ removed: true, titles: 1, pins: 1 })).toBe(
+      "Match cache reset: 1 title forgotten, 1 pin included. The next sync matches every title afresh.",
+    );
+    expect(Controller.resetMatchCacheToast({ removed: true, titles: 3, pins: 0 })).toBe(
+      "Match cache reset: 3 titles forgotten. The next sync matches every title afresh.",
+    );
+    expect(Controller.resetMatchCacheToast({ removed: false, titles: 0, pins: 0 })).toBe(
+      "The match cache was already empty. The next sync matches every title afresh.",
+    );
+  });
+
+  it("the backend's busy answer is toasted as such", async () => {
+    const controller = await loaded({
+      reset_match_cache: { ok: false, error: "busy", message: "A match change is still being saved", kind: "match" },
+    });
+    expect(await controller.resetMatchCache()).toMatchObject({ ok: false, error: "busy" });
+    expect(ui.bodies).toEqual(["A match change is still being saved"]);
+  });
+
+  it("is refused without a backend call while a run is going", async () => {
+    const controller = await loaded();
+    await controller.run("sync");
+    calls.length = 0;
+    ui.bodies.length = 0;
+    expect(await controller.resetMatchCache()).toMatchObject({ ok: false, error: "busy", kind: "sync" });
+    expect(names()).not.toContain("reset_match_cache");
+    expect(ui.bodies).toEqual(["A sync is already running"]);
+  });
+
+  it("is refused while the plugin is off (spec 3.19)", async () => {
+    const controller = await loaded({
+      set_settings: (patch: Partial<Settings>) => {
+        Object.assign(settingsFile, patch);
+        return { ok: true, settings: { ...settingsFile } };
+      },
+    });
+    await controller.setEnabled(false);
+    calls.length = 0;
+    ui.bodies.length = 0;
+    expect(await controller.resetMatchCache()).toEqual(DISABLED_FAILURE);
+    expect(names()).not.toContain("reset_match_cache");
+    expect(ui.bodies).toEqual(["Moonlight Sync is off"]);
+  });
+});

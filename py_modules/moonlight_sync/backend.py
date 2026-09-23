@@ -25,7 +25,9 @@ Conventions (spec 3.7, amended):
   every event as ``sync_event`` and the end as ``sync_done``.
 - The plugin never writes under the Steam directory, never writes
   ``config.toml``, and only the last four characters of the SteamGridDB key
-  ever leave this process.
+  ever leave this process. The one CLI file it touches is the match cache,
+  ``matches.json``, which ``reset_match_cache`` deletes whole (never edits)
+  under the busy guard, so the CLI cannot be writing it at the time.
 """
 
 from __future__ import annotations
@@ -58,6 +60,11 @@ LOG_NAME = "moonlight-sync.log"
 LOG_MAX_BYTES = 5 * 1024 * 1024
 LOG_KEEP_BYTES = 1024 * 1024
 STDOUT_LINE_LIMIT = 4 * 1024 * 1024
+#: The CLI's cache directory under ``$XDG_CACHE_HOME`` (``~/.cache`` by
+#: default), where ``matches.json`` and ``hosts/`` live; mirrors the CLI's
+#: ``art.resolve.cache_dir()``.
+CACHE_DIR_NAME = "moonlight-steam-sync"
+MATCH_CACHE_NAME = "matches.json"
 
 
 def iso_now() -> str:
@@ -113,6 +120,32 @@ class RunState:
     proc: asyncio.subprocess.Process | None = None
     task: asyncio.Task | None = None
     failure: Result | None = None
+
+
+def match_cache_path(home: str, env: dict[str, str]) -> str:
+    """Where the CLI keeps ``matches.json``, resolved as its ``cache_dir()``
+    resolves it for the child: ``$XDG_CACHE_HOME`` from the env the child
+    gets, else ``<home>/.cache``."""
+    base = env.get("XDG_CACHE_HOME") or os.path.join(home, ".cache")
+    return os.path.join(base, CACHE_DIR_NAME, MATCH_CACHE_NAME)
+
+
+def match_cache_counts(path: str) -> tuple[int, int]:
+    """``(titles, pins)`` held by a ``matches.json``; ``(0, 0)`` for a
+    missing, unreadable or broken file (the CLI reads such a file as empty
+    too)."""
+    try:
+        with open(path, encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, ValueError):
+        return 0, 0
+    titles = payload.get("titles") if isinstance(payload, dict) else None
+    if not isinstance(titles, dict):
+        return 0, 0
+    pins = sum(
+        1 for entry in titles.values() if isinstance(entry, dict) and entry.get("how") == "pinned"
+    )
+    return len(titles), pins
 
 
 def guarded(fn: Callable[..., Awaitable[Result]]) -> Callable[..., Awaitable[Result]]:
@@ -1365,6 +1398,42 @@ class Backend:
         self._host_memo.clear()
         self._log(f"{'ignored' if ignored else 'unignored'} {name!r}")
         return {"ok": True, "ignored": names}
+
+    def match_cache_path(self) -> str:
+        """The CLI's ``matches.json``, as the child would resolve it."""
+        return match_cache_path(self.home, self._child_env())
+
+    @guarded
+    async def reset_match_cache(self) -> Result:
+        """Delete the CLI's ``matches.json`` so the next run re-resolves every title.
+
+        The user's decision of 2026-09-23: the whole file goes, pins
+        included (a title pinned from the Titles page has to be pinned
+        again). The file is the CLI's own cache and the one CLI file the
+        plugin touches: it is deleted, never edited, and only under the busy
+        guard in both directions, since a run or a ``match`` child could be
+        writing it. The CLI has no reset of its own (only ``match --unpin``
+        per title, and a miss is not asked again for seven days), which is
+        why the plugin does it. ``removed`` says whether there was a file;
+        ``titles`` / ``pins`` are what it held, for the toast. ``hosts/``
+        beside it is left alone: the list cache holds no match.
+        """
+        busy = self._busy()
+        if busy is not None:
+            return busy
+        path = self.match_cache_path()
+        titles, pins = match_cache_counts(path)
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            removed = False
+        else:
+            removed = True
+        self._log(
+            f"reset match cache: {'deleted' if removed else 'no file at'} {path} "
+            f"({titles} titles, {pins} pinned)"
+        )
+        return {"ok": True, "removed": removed, "titles": titles, "pins": pins}
 
     # ------------------------------------------------------------------
     # controller layouts (spec 3.10)

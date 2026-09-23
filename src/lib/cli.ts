@@ -354,6 +354,14 @@ export interface WakeResult {
   sent: number;
 }
 
+/** `reset_match_cache`: the CLI's `matches.json` is gone; what it held, for the toast. */
+export interface MatchCacheReset {
+  /** False when there was no file to delete. */
+  removed: boolean;
+  titles: number;
+  pins: number;
+}
+
 export interface HostReachable {
   host: string;
   reachable: true;
@@ -516,6 +524,8 @@ export interface Backend {
   unpin(name: string): Promise<Result<{ pinned: PinnedEvent; notes: string[] }>>;
   /** Add or remove one exact name in `ignore.json` (sorted, idempotent). */
   set_ignored(name: string, ignored: boolean): Promise<Result<{ ignored: string[] }>>;
+  /** Delete the CLI's `matches.json`, pins included; `busy` while a run or a match is going. */
+  reset_match_cache(): Promise<Result<MatchCacheReset>>;
   /** `layouts.json` (spec 3.10). */
   layouts(): Promise<Result<LayoutsInfo>>;
   /** Upsert one shortcut's layout result atomically; answers with the whole file. */
@@ -567,6 +577,7 @@ const CALLABLES = [
   "pin",
   "unpin",
   "set_ignored",
+  "reset_match_cache",
   "layouts",
   "record_layout",
 ] as const satisfies readonly (keyof Backend)[];

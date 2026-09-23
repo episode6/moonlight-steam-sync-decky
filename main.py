@@ -122,6 +122,9 @@ class Plugin:
     async def set_ignored(self, name, ignored):
         return await (await self._ready()).set_ignored(name, ignored)
 
+    async def reset_match_cache(self):
+        return await (await self._ready()).reset_match_cache()
+
     async def write_owned_apps(self, steamid3, apps):
         return await (await self._ready()).write_owned_apps(steamid3, apps)
 

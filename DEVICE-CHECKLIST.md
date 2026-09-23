@@ -720,3 +720,34 @@ Stream shortcuts* **off** (so there are visible shortcuts and a
       just before the toggle went off, the layout toast fires now.
 - [ ] **Busy.** Start a sync, open the panel while it runs: the progress
       view has no toggle; when it ends the toggle is live again.
+
+## 13. Reset match cache (Advanced)
+
+Off-device the backend (`test_backend.py`, the `reset_match_cache` block)
+and the controller (`controller.test.ts`, "Advanced → Reset match cache")
+are covered; what a real cache and a real CLI do with the reset is what
+these check. Start synced, with at least one pin (Titles → Change match)
+and one title reading "no match".
+
+- [ ] **The file goes, and the toast counts it.** Note
+      `~/.cache/moonlight-steam-sync/matches.json` (over SSH: the `titles`
+      count and how many are `"how": "pinned"`). Settings → Advanced →
+      *Reset match cache* → **Reset** in the confirm. The toast says
+      "Match cache reset: N titles forgotten, M pins included…" with
+      those numbers, the file is gone, `hosts/` beside it is not, and the
+      log has a `reset match cache: deleted …` line. Nothing changes in
+      the library.
+- [ ] **A second press is harmless.** The toast says the cache was
+      already empty; the log says `no file at`.
+- [ ] **The next sync re-matches.** Sync now: the CLI resolves every
+      title again (the progress shows lookups, not cached hits), the
+      titles that read "no match" get a match where SteamGridDB has one,
+      the pinned title comes back as whatever the CLI resolves for it
+      (the pin is gone) and titles that already had artwork keep it. The
+      Titles page, opened after the run, agrees.
+- [ ] **Busy.** Start a sync, open Advanced while it runs: *Reset* is
+      disabled. Pin a title and press *Reset* within the moment the pin
+      is saving, if you can: the toast says "A match change is still
+      being saved" and the file is untouched.
+- [ ] **Off.** With the plugin toggled off the Advanced page is not
+      reachable (§12); nothing to press.

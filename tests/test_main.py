@@ -257,3 +257,19 @@ def test_pin_and_set_ignored_through_main_py(plugin) -> None:
         "1145350",
         "--defer-art",
     ]
+
+
+def test_reset_match_cache_through_main_py(plugin, monkeypatch, tmp_path) -> None:
+    """Advanced → Reset match cache: the callable is exposed and deletes the
+    CLI's matches.json where the child's env puts it."""
+    instance, _, _ = plugin
+    cache_home = tmp_path / "xdg-cache"
+    monkeypatch.setenv("XDG_CACHE_HOME", str(cache_home))
+    path = cache_home / "moonlight-steam-sync" / "matches.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"version": 1, "titles": {"Balatro": {"how": "none"}}}))
+
+    result = run(instance.reset_match_cache())
+
+    assert result == {"ok": True, "removed": True, "titles": 1, "pins": 0}
+    assert not path.exists()
