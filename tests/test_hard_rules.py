@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 
-from conftest import ROOT
+from conftest import ROOT, run
+from moonlight_sync import sgdbpage
+from moonlight_sync.keys import key_file_path
 
 FORBIDDEN_CALLS = (
     "AddShortcut",
@@ -58,6 +61,59 @@ def test_backend_never_names_config_toml_for_writing() -> None:
     for path in (ROOT / "py_modules").rglob("*.py"):
         text = path.read_text()
         assert not re.search(r"open\([^)]*config[^)]*['\"]w", text), path
+
+
+#: The key in tests/fixtures/sgdb/api.html. Spelled here and in the fixtures
+#: only (the test below proves it), so a grep for it over tests/ is the
+#: proof that nothing else in the suite carries it.
+PLACEHOLDER_KEY = "0123456789abcdef0123456789abcdef"
+
+
+def test_the_placeholder_key_is_spelled_only_in_the_fixtures_and_here() -> None:
+    carriers = {
+        str(path.relative_to(ROOT))
+        for path in (ROOT / "tests").rglob("*")
+        if path.is_file()
+        and "__pycache__" not in path.parts
+        and PLACEHOLDER_KEY in path.read_text(errors="replace")
+    }
+    assert carriers == {"tests/fixtures/sgdb/api.html", "tests/test_hard_rules.py"}
+
+
+def test_the_fetched_key_never_appears_in_an_event_or_a_log_line(
+    backend, fake_browser, monkeypatch
+) -> None:
+    """Hard rule 4 over the browser fetch (spec 3.20.3): the key crosses the
+    debugger socket into keys.py and nothing else -- not a callable result,
+    an sgdb_key_event, the sgdb_key_done, a log line or sync_state --
+    carries more than its last four characters."""
+    monkeypatch.setattr(sgdbpage, "POLL_INTERVAL_S", 0.01)
+    browser = fake_browser()
+
+    async def scenario():
+        results = [await backend.start_sgdb_key_fetch()]
+        browser.open_page()
+        deadline = asyncio.get_running_loop().time() + 5
+        while not backend.emitted.of("sgdb_key_done"):
+            assert asyncio.get_running_loop().time() < deadline
+            await asyncio.sleep(0.01)
+        await backend._key_fetch.task
+        results.append(await backend.cancel_sgdb_key_fetch())
+        results.append(await backend.sgdb_key_state())
+        results.append(await backend.sync_state())
+        results.append(await backend.log_tail(500))
+        return results
+
+    results = run(scenario())
+    assert results[2]["source"] == "file" and results[2]["hint"] == PLACEHOLDER_KEY[-4:]
+    blob = json.dumps(results) + json.dumps(backend.emitted.calls)
+    assert PLACEHOLDER_KEY not in blob
+    assert PLACEHOLDER_KEY[:-4] not in blob
+    assert backend.emitted.of("sgdb_key_done") == [
+        {"ok": True, "source": "file", "hint": PLACEHOLDER_KEY[-4:]}
+    ]
+    with open(key_file_path(backend.home), encoding="utf-8") as handle:
+        assert handle.read() == PLACEHOLDER_KEY + "\n"
 
 
 def test_the_cli_pin_lives_only_in_package_json() -> None:

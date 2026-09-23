@@ -8,7 +8,7 @@ from pathlib import Path
 
 from conftest import run
 
-KEY = "0123456789abcdef0123456789abcdef"  # a made-up 32-character key
+KEY = "fedcba9876543210fedcba9876543210"  # a made-up 32-character key
 
 
 def config_dir(home: Path) -> Path:
@@ -38,7 +38,7 @@ def test_file_source_and_hint(backend) -> None:
     key_file(home).write_text(f"  {KEY}  \n")
     state = run(backend.sgdb_key_state())
     assert state["source"] == "file"
-    assert state["hint"] == "cdef"
+    assert state["hint"] == "3210"
 
 
 def test_env_beats_file(make_backend) -> None:
@@ -78,7 +78,7 @@ def test_config_parse_error(backend) -> None:
 
 def test_set_writes_0600_with_trailing_newline(backend) -> None:
     result = run(backend.set_sgdb_key(f"  {KEY}\n"))
-    assert result == {"ok": True, "source": "file", "hint": "cdef", "config_parse_error": False}
+    assert result == {"ok": True, "source": "file", "hint": "3210", "config_parse_error": False}
     path = key_file(Path(backend.home))
     assert path.read_text() == KEY + "\n"
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
@@ -155,7 +155,7 @@ def test_the_key_never_reaches_the_frontend(backend) -> None:
     blob = json.dumps(results) + json.dumps(backend.emitted.calls)
     assert KEY not in blob
     assert KEY[:-4] not in blob
-    assert "cdef" in json.dumps(results[0])
+    assert "3210" in json.dumps(results[0])
     assert key_file(home).read_text() == KEY + "\n"
 
 
@@ -260,7 +260,7 @@ def test_search_and_pin_results_never_carry_the_key(make_backend, tmp_path) -> N
         assert result["ok"] is True
         blob = json.dumps(result, ensure_ascii=False)
         assert KEY not in blob
-        assert "…cdef" in blob
+        assert "…3210" in blob
 
 
 def test_search_and_pin_failures_never_carry_the_key(make_backend, tmp_path) -> None:
@@ -287,5 +287,5 @@ def test_search_and_pin_failures_never_carry_the_key(make_backend, tmp_path) -> 
         assert result["events"], "the events before the failure are handed on"
         blob = json.dumps(result, ensure_ascii=False)
         assert KEY not in blob
-        assert "…cdef" in blob
-    assert searched["message"] == "search: bad key …cdef"
+        assert "…3210" in blob
+    assert searched["message"] == "search: bad key …3210"

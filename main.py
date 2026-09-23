@@ -178,3 +178,9 @@ class Plugin:
 
     async def test_sgdb_key(self):
         return await (await self._ready()).test_sgdb_key()
+
+    async def start_sgdb_key_fetch(self):
+        return await (await self._ready()).start_sgdb_key_fetch()
+
+    async def cancel_sgdb_key_fetch(self):
+        return await (await self._ready()).cancel_sgdb_key_fetch()

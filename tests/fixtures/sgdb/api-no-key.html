@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<!-- The API page of an account that has never generated a key: presumably
+     a generate button in place of the code element (spec 3.20.1 item 5,
+     [verify]; Decision 61). Unmeasured; the shape is a guess kept close to
+     api.html. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Preferences - SteamGridDB</title>
+</head>
+<body>
+  <nav class="navbar">
+    <a class="navbar-item" href="https://www.steamgriddb.com/">SteamGridDB</a>
+    <form class="search" action="/search/grids"><input type="text" name="term"><input type="submit" value="Search"></form>
+  </nav>
+  <div class="container profile">
+    <div class="columns">
+      <div class="column is-narrow menu">
+        <ul class="menu-list">
+          <li><a href="/profile/preferences">Preferences</a></li>
+          <li><a class="is-active" href="/profile/preferences/api">API</a></li>
+        </ul>
+      </div>
+      <div class="column">
+        <h1 class="title">API</h1>
+        <h2 class="subtitle">API Key</h2>
+        <p>API key for use with the <a href="https://www.steamgriddb.com/api/v2">API</a>.</p>
+        <p>You have no API key yet.</p>
+        <form action="/profile/preferences/api/generate" method="post">
+          <button class="button is-primary" type="submit">Generate API Key</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  <iframe src="https://ads.example.invalid/slot/1" title="ad"></iframe>
+</body>
+</html>

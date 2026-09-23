@@ -259,6 +259,29 @@ def test_pin_and_set_ignored_through_main_py(plugin) -> None:
     ]
 
 
+def test_sgdb_key_fetch_through_main_py(plugin, monkeypatch) -> None:
+    """spec 3.20: the two callables are exposed; no debugger here, so the
+    start answers no-debugger before anything opens, and a cancel with no
+    fetch in flight is a no-op."""
+    from moonlight_sync import cdp, sgdbpage
+
+    def refused() -> list:
+        raise cdp.DebuggerUnavailable("connection refused")
+
+    monkeypatch.setattr(cdp, "TARGETS", refused)
+    instance, decky, _ = plugin
+
+    async def scenario():
+        started = await instance.start_sgdb_key_fetch()
+        cancelled = await instance.cancel_sgdb_key_fetch()
+        return started, cancelled
+
+    started, cancelled = run(scenario())
+    assert started == {"ok": False, "error": "no-debugger", "message": sgdbpage.TEXT_NO_DEBUGGER}
+    assert cancelled == {"ok": True, "running": False}
+    assert decky.emitted == []
+
+
 def test_reset_match_cache_through_main_py(plugin, monkeypatch, tmp_path) -> None:
     """Advanced → Reset match cache: the callable is exposed and deletes the
     CLI's matches.json where the child's env puts it."""

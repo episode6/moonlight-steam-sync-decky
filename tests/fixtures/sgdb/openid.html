@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<!-- https://steamcommunity.com/openid/login?... with the client already
+     signed in to Steam (spec 3.20.1 item 4): the data-sharing text, the
+     account name, Not You? and form#openidForm (hidden action, openid.mode,
+     openidparams, nonce; one submit, Sign In). The two other forms are
+     Steam's own username/password login and the site search; neither is
+     touched. The steam-login state is this page without #openidForm. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Steam Community</title>
+</head>
+<body>
+  <div id="global_header">
+    <form id="searchForm" action="https://steamcommunity.com/search" method="get">
+      <input type="text" name="text" class="searchbox">
+      <input type="submit" value="Search" class="searchbutton">
+    </form>
+  </div>
+  <div id="openidForm_container" class="page_content">
+    <h2>Sign into www.steamgriddb.com using your Steam account</h2>
+    <p class="OpenID_description">
+      Note that www.steamgriddb.com is not affiliated with Steam or Valve.
+      Signing in will share your public Steam ID with www.steamgriddb.com; it
+      will not see your password or your email address.
+    </p>
+    <div class="OpenID_loggedInAs">
+      <span class="OpenID_loggedInName">deck-user</span>
+      <a class="OpenID_notYou" href="https://steamcommunity.com/login/logout/">Not You?</a>
+    </div>
+    <form id="openidForm" name="openidForm" action="https://steamcommunity.com/openid/login" method="post">
+      <input type="hidden" name="action" value="steam_openid_login">
+      <input type="hidden" name="openid.mode" value="checkid_setup">
+      <input type="hidden" name="openidparams" value="AAAAexample">
+      <input type="hidden" name="nonce" value="0000000000000000">
+      <input type="submit" class="btn_green_white_innerfade btn_medium" id="imageLogin" value="Sign In">
+    </form>
+  </div>
+  <div id="loginForm_container" class="page_content" style="display: none">
+    <form id="loginForm" name="logon" action="https://steamcommunity.com/login/dologin/" method="post">
+      <input type="text" name="username" id="steamAccountName">
+      <input type="text" name="password" id="steamPassword">
+      <input type="submit" value="Sign in" id="SteamLogin">
+    </form>
+  </div>
+</body>
+</html>
