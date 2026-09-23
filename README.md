@@ -367,6 +367,19 @@ keeps the title a shortcut with art from the new match. Pins survive
 **Re-fetch all art** and **Retry missing art**; an `[overrides]` entry in
 `config.toml` still wins over a pin (the modal says so when one applies).
 
+**Titles stuck on "no match".** The CLI remembers a title it found nothing
+for and does not look it up again for seven days, and the Titles page
+never looks a title up itself. So a first sync run before the SteamGridDB
+key was set (Steam's store search alone finds fewer titles) leaves those
+titles reading "no match" until the week passes, *Retry missing art* is on
+for the next sync, or the cache is reset. Settings → **Advanced** →
+**Reset match cache** deletes the CLI's whole match cache
+(`~/.cache/moonlight-steam-sync/matches.json`), pins included, after a
+confirmation; the next **Sync now** matches every title afresh. Nothing
+changes in Steam until that sync, a title that already has artwork keeps
+it, and the button is unavailable while a sync runs (a pin still being
+saved is refused the same way).
+
 **Ignore** adds the title to the plugin's ignore list (`ignore.json`,
 passed to the CLI as `--ignore-file`) and **Unignore** takes it out; the
 next sync applies it. A title ignored in the CLI's `config.toml` reads
@@ -502,7 +515,9 @@ newer CLI" otherwise.
 Settings → **Advanced** has *Default controller layout* with its **Clear**
 button (see "Controller layouts"; the default itself is adopted from a
 title's row on the Titles page), *Hide Stream shortcuts*, *Streaming
-tab*, the restart countdown (0-30 s), and **Remove everything
+tab*, the restart countdown (0-30 s), **Reset match cache** (the CLI's
+`matches.json`, pins included, so the next sync matches every title
+afresh; see "Titles stuck on 'no match'" above) and **Remove everything
 this plugin created** (every shortcut, hidden entry and image the tool made;
 pins and ignored titles are kept; Steam restarts once; the layout records
 go with the entries).
@@ -544,7 +559,9 @@ Wake-on-LAN MACs, changed only through `set_wake_mac`).
 A pin from the Titles page is written by the CLI itself (`moonlight-steam-sync
 match … --defer-art`) into its own match cache,
 `~/.cache/moonlight-steam-sync/matches.json`, where a terminal run sees it
-too.
+too. That file is the one CLI file the plugin touches itself: **Reset
+match cache** deletes it whole (never edits it, and never while a sync or
+a pin is going); `hosts/` beside it is left alone.
 
 What the plugin never does: write `shortcuts.vdf`, anything under Steam's
 `userdata/` or `grid/`, or controller config files (the CLI is the one

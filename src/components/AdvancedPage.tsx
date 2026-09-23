@@ -35,7 +35,9 @@ export function streamingGroupDescription(hideStream: boolean, canCollect: boole
  * shown, and cleared, here; adopted from a title's row on the Titles page),
  * *Hide Stream shortcuts* (spec 3.15) and the *Streaming* tab (spec 3.17,
  * a collection of shortcuts while Stream shortcuts are shown), the restart
- * countdown, and *Remove everything this plugin created*.
+ * countdown, *Reset match cache* (the CLI's `matches.json`, pins included,
+ * so the next sync re-matches every title) and *Remove everything this
+ * plugin created*.
  */
 export function AdvancedPage() {
   const state = useStore(controller.store);
@@ -57,6 +59,20 @@ export function AdvancedPage() {
         strCancelButtonText="Cancel"
         onOK={() => {
           void controller.setDefaultLayout(null, null);
+        }}
+      />,
+    );
+
+  const resetMatchCache = () =>
+    showModal(
+      <ConfirmModal
+        strTitle="Reset the match cache?"
+        strDescription="Forgets every title's match, pins included. Nothing changes in Steam until the next sync, which matches every title afresh (set your SteamGridDB key first if you have one). Titles that already have artwork keep it."
+        strOKButtonText="Reset"
+        strCancelButtonText="Cancel"
+        bDestructiveWarning
+        onOK={() => {
+          void controller.resetMatchCache();
         }}
       />,
     );
@@ -120,6 +136,15 @@ export function AdvancedPage() {
         disabled={!settings}
         onChange={(value) => void controller.setSettings({ restart_countdown_s: value })}
       />
+      <ButtonItem
+        layout="below"
+        label="Reset match cache"
+        description="Forget how every title was matched to a Steam game, pins included, so the next sync looks each one up again. For titles stuck on 'no match' after a sync run before the SteamGridDB key was set: the CLI does not retry a miss for seven days"
+        disabled={!settings || !!state.run?.running}
+        onClick={resetMatchCache}
+      >
+        Reset
+      </ButtonItem>
       <ButtonItem
         layout="below"
         label="Remove everything this plugin created"

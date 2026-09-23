@@ -6,6 +6,20 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Reset match cache**, under Settings → Advanced. The CLI remembers a
+  title it found nothing for and does not look it up again for seven
+  days, so a first sync run before the SteamGridDB key was set left
+  titles reading "no match" on the Titles page with no way out but the
+  wait or *Retry missing art*. The new button deletes the CLI's whole
+  match cache (`~/.cache/moonlight-steam-sync/matches.json`), pins
+  included, after a confirmation, and the next sync matches every title
+  afresh. Nothing changes in Steam until that sync, and titles that
+  already have artwork keep it. Unavailable while a sync runs, and
+  refused while a pin is still being saved: the file is the one the CLI
+  writes during both. New backend callable `reset_match_cache`.
+
 ## [0.8.0] - 2026-09-22
 
 ### Added

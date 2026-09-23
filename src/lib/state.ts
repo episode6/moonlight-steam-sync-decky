@@ -289,6 +289,11 @@ export interface AppState {
   reachLoading: boolean;
   /** Ignored names, for the counter when `check_host` did not count them. */
   ignoredCount: number | null;
+  /**
+   * Bumped when what `list` / `status` would say changed behind the Titles
+   * page's back (a match-cache reset), so an already-mounted page re-lists.
+   */
+  titlesEpoch: number;
   run: RunProgress | null;
   /** A one-line outcome under the panel's buttons ("Stopped; sync again to resume"). */
   message: string | null;
@@ -317,6 +322,7 @@ export function initialState(): AppState {
     reach: null,
     reachLoading: false,
     ignoredCount: null,
+    titlesEpoch: 0,
     run: null,
     message: null,
     inGame: false,
