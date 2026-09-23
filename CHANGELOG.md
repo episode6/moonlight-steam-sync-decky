@@ -20,6 +20,19 @@ project uses [semantic versioning](https://semver.org/).
   refused while a pin is still being saved: the file is the one the CLI
   writes during both. New backend callable `reset_match_cache`.
 
+### Fixed
+
+- **Use as Moonlight Sync default layout** is back in the library gear
+  menu. The item, added in 0.6.0, never appeared: the plugin recognised
+  the client's menu component by a source-text marker the current Steam
+  client has in no component at all, so the lookup found nothing and
+  gave up quietly (one console warning). The menu is now found by the
+  module its positioning options live in and the wrapper that renders
+  it, checked against the class's own methods, all measured on a
+  SteamOS device. Nothing else about the item changed: it is there on
+  every game you stream and on the plugin's own visible entries, and
+  behaves like the Titles page's *Use as the default layout*.
+
 ## [0.8.0] - 2026-09-22
 
 ### Added

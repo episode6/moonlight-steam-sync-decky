@@ -7,14 +7,25 @@
  * primitives -- `findModuleChild`, `fakeRenderComponent`, `afterPatch`,
  * `findInReactTree`, `MenuItem` -- and nothing else.
  *
- * The client does not export the menu component by name. It is reached
- * through the function component that wraps it (the one whose source
- * reads the app-details spotlight class), rendered once with stubbed hooks
- * to get the element it returns, whose `type` is the menu class; its
+ * The client does not export the menu component by name. Its module is
+ * the one with an export whose source reads the `LibraryContextMenu`
+ * style class (the menu's positioning options), and in that module the
+ * menu is reached through the function component that wraps it (a
+ * one-liner that reads a navigator and an instance from hooks and renders
+ * the class with those two props spread over its own), rendered once with
+ * stubbed hooks to get the element it returns, whose `type` is the menu
+ * class (measured on a SteamOS device 2026-09-23: its prototype has
+ * `render`, `GetTargetApps`, `ShowControllerConfig`, `BuildManageSubmenu`
+ * among others, and it reads the page from `this.props.overview`). Its
  * `render` is then patched, and the handler appends the item to whatever
  * list of menu items the render returned, keyed so a re-render of the same
  * tree adds nothing twice. The item reads the store at render time (the
  * menu is rendered fresh each time it opens), so it needs no hook.
+ *
+ * Until 2026-09-23 the wrapper was looked for by another marker
+ * (`().appDetailsSpotlight`) that the current client has in no component
+ * at all (it survives only as a field name of the app-data store), so the
+ * lookup found nothing, warned once and the item never appeared.
  *
  * The lookup is a scan of every export of every module, so it does not
  * run at plugin load: `ensureLibraryContextMenuPatched()` runs it once,
@@ -25,9 +36,10 @@
  * a chunk Steam loads later, so a retry through it would find nothing
  * new. Anything unexpected -- the wrapper not found, a menu of another
  * shape, a page with no overview -- leaves the menu untouched, and the
- * patch never throws into Steam's render. **[verify]**: the wrapper's
- * marker, the menu's shape and the `overview` prop are measured on no
- * device yet.
+ * patch never throws into Steam's render. The markers, the menu class and
+ * the `overview` prop are measured on a SteamOS device (2026-09-23); the
+ * item in an open menu is a device check (DEVICE-CHECKLIST.md, *Adopt
+ * from the gear menu*).
  */
 
 import { MenuItem, afterPatch, fakeRenderComponent, findInReactTree, findModuleChild, type Patch } from "@decky/ui";
@@ -35,6 +47,7 @@ import type { ReactElement } from "react";
 
 import { adoptAsDefault } from "../components/adoptDefault";
 import { controller } from "../instance";
+import { type AnyFunction, type MenuClass, menuClassOf, wrapperOf } from "../lib/contextMenu";
 import { layoutStrategy, menuLayoutSourceOf } from "../lib/layouts";
 import { pluginEnabled } from "../lib/library";
 import { isOverview, type Overview, type TreeNode } from "./tree";
@@ -42,41 +55,13 @@ import { isOverview, type Overview, type TreeNode } from "./tree";
 /** The `key` of the injected item, so a re-render of an already patched menu adds nothing. */
 const MENU_ITEM_KEY = "moonlight-sync-default-layout";
 
-/** The source text every client so far has had in the wrapper component's body. */
-const WRAPPER_MARKER = "().appDetailsSpotlight";
-
 export const MENU_ITEM_LABEL = "Use as Moonlight Sync default layout";
 
-interface MenuClass {
-  prototype: { render: () => unknown };
-}
-
-/** The menu class, reached through its wrapper component; `null` when this client has neither in the expected shape. */
+/** The menu class, reached through its module and wrapper component; `null` when this client has neither in the expected shape. */
 export function findLibraryContextMenu(): MenuClass | null {
-  const wrapper: unknown = findModuleChild((module: unknown) => {
-    if (typeof module !== "object" || module === null) return undefined;
-    for (const name of Object.keys(module)) {
-      // A throwing getter on one export must not hide the wrapper behind it.
-      try {
-        const value = (module as Record<string, unknown>)[name];
-        if (typeof value === "function" && value.toString().includes(WRAPPER_MARKER)) return value;
-      } catch {
-        continue;
-      }
-    }
-    return undefined;
-  });
+  const wrapper: unknown = findModuleChild((module: unknown) => wrapperOf(module) ?? undefined);
   if (typeof wrapper !== "function") return null;
-  let element: unknown;
-  try {
-    element = fakeRenderComponent(wrapper);
-  } catch {
-    return null;
-  }
-  const type: unknown = (element as TreeNode | null | undefined)?.type;
-  if (typeof type !== "function") return null;
-  const candidate = type as unknown as Partial<MenuClass>;
-  return typeof candidate.prototype?.render === "function" ? (candidate as MenuClass) : null;
+  return menuClassOf(wrapper as AnyFunction, (component) => fakeRenderComponent(component as Parameters<typeof fakeRenderComponent>[0]));
 }
 
 /**
