@@ -231,6 +231,17 @@ src/lib/                    pure modules (vitest)
                             reads on; streamingTabEnabled() is false while off),
                             collectionDiff(wanted, current, removable)
                             (removes only removable members)
+  contextMenu.ts            spec 3.16.5, the gear menu's lookup, pure: MODULE_MARKER
+                            (an export reading `.LibraryContextMenu)`), WRAPPER_PATTERN
+                            (`{navigator:t,instance:r,...e}`, `$` allowed in the
+                            names), wrappersOf() over a module's exports (every
+                            match, export order), menuClassOf() (the fake-rendered
+                            element's type, a class with `render` and
+                            MENU_CLASS_METHOD = `GetTargetApps`), findMenuClass()
+                            (the first candidate that renders it); the measured
+                            sources are in contextMenu.test.ts. Until 2026-09-23 the
+                            lookup keyed on `().appDetailsSpotlight`, which the client
+                            has in no component, so the item never appeared
   tabs.ts                   spec 3.17, the Streaming tab's pure half: STREAMING_TAB_ID,
                             findElement() (a React-element walk with no React),
                             templateOf() (the first built-in tab's element with a
@@ -295,8 +306,9 @@ src/routes/libraryApp.tsx   the /library/app/:appid patch (routerHook.addPatch, 
                             written fresh; injects StreamButton
 src/routes/libraryContextMenu.tsx  the library gear menu patch (spec 3.16.5, Decision 56):
                             the menu class is reached through its wrapper component
-                            (findModuleChild on the `().appDetailsSpotlight` marker,
-                            fakeRenderComponent, the element's `type`), its `render`
+                            (findModuleChild over `contextMenu.ts`'s `wrappersOf`,
+                            fakeRenderComponent on each candidate, the element's
+                            `type`, checked by `menuClassOf`), its `render`
                             afterPatch'ed to append one keyed MenuItem, *Use as
                             Moonlight Sync default layout*, on a real game in the
                             stream map (reads the game's own selection) or a
@@ -308,7 +320,9 @@ src/routes/libraryContextMenu.tsx  the library gear menu patch (spec 3.16.5, Dec
                             again (@decky/ui's module map is filled once at init
                             and never sees a later chunk, so a retry would find
                             nothing new); an unrecognised client warns and is left
-                            alone; marker, menu shape and the prop unmeasured [verify]
+                            alone; markers, menu class and the `overview` prop
+                            measured on the SteamOS box 2026-09-23, the item in an
+                            open menu a device check
 src/routes/tree.ts          Overview / TreeNode / isOverview, shared by the three
                             route patches
 src/components/             adoptDefault (inspectLayout -> refusal toasts -> ConfirmModal

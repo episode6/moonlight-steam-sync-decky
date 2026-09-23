@@ -487,9 +487,16 @@ controller first" otherwise.
       open the library first (the menu patch installs on the first library
       render, not at plugin load), then check the CEF console for
       `Moonlight Sync: the library context menu was not found` and report
-      it: the wrapper's marker (`().appDetailsSpotlight`,
-      `src/routes/libraryContextMenu.tsx`) has to be re-measured on that
-      client. No warning but no item either means the menu class was
+      it: the markers (`MODULE_MARKER`, `WRAPPER_PATTERN`,
+      `MENU_CLASS_METHOD` in `src/lib/contextMenu.ts`, measured on the
+      SteamOS box 2026-09-23; the earlier `().appDetailsSpotlight` marker
+      matched nothing on that client, which is why the item was never
+      there through v0.8.0) have to be re-measured on that client: in
+      the CEF console's `SharedJSContext` target, push
+      `[[Symbol()], {}, r => req = r]` on `webpackChunksteamui`, then
+      look through `req(id)` for each key of `req.m` for the export whose
+      source reads `.LibraryContextMenu)` and its sibling wrapper. No
+      warning but no item either means the menu class was
       found but its `render` gave a tree without a `MenuItem` list, or
       its `props` carry the page under neither `overview` nor `appid`:
       in the console, `findLibraryContextMenu` is not exported, so read
