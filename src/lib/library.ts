@@ -48,6 +48,20 @@ export interface LibraryPort {
   deleteCollection(name: string): Promise<void>;
 }
 
+/**
+ * The plugin is on at all (spec 3.19): the `enabled` setting, absent reads
+ * as on. Off, every one of the CLI's entries is hidden in the client, the
+ * library gets no Stream button, tab or menu item, and nothing runs; only
+ * the toggle itself is live.
+ */
+export function pluginEnabled(settings: Pick<Settings, "enabled"> | null | undefined): boolean {
+  return settings?.enabled !== false;
+}
+
+/** The text under the panel's and the settings route's toggle while the plugin is off (spec 3.19). */
+export const DISABLED_TEXT =
+  "Off: every Moonlight shortcut is hidden and the library gets no Stream buttons or Streaming tab. Nothing syncs and the settings are locked until it is on again.";
+
 export function hideStreamEnabled(settings: Pick<Settings, "hide_stream_shortcuts"> | null | undefined): boolean {
   return settings?.hide_stream_shortcuts !== false;
 }
@@ -62,11 +76,13 @@ export function streamingCollectionEnabled(
 /**
  * The synthetic *Streaming* tab is shown (spec 3.17): whenever the group is
  * wanted, whatever *Hide Stream shortcuts* says (the user, 2026-09-21: the
- * tab works in both states). With Stream shortcuts shown, the fallback
- * collection comes *in addition*.
+ * tab works in both states), and the plugin is on (spec 3.19). With Stream
+ * shortcuts shown, the fallback collection comes *in addition*.
  */
-export function streamingTabEnabled(settings: Pick<Settings, "streaming_collection"> | null | undefined): boolean {
-  return streamingCollectionEnabled(settings);
+export function streamingTabEnabled(
+  settings: Pick<Settings, "streaming_collection" | "enabled"> | null | undefined,
+): boolean {
+  return pluginEnabled(settings) && streamingCollectionEnabled(settings);
 }
 
 /**
@@ -146,10 +162,16 @@ export interface HiddenPlan {
  * host apps and parked entries are hidden whatever it says: the panel's
  * buttons replace the first three and a parked tile belongs to another host.
  * An entry `status` calls visible is shown again, which is what unparks it.
+ * With the plugin off (`enabled` false, spec 3.19) every entry is hidden,
+ * visible ones included: a Deck away from its host shows no Moonlight tile.
  */
-export function hiddenPlan(entries: readonly EntryEvent[], hideStream: boolean): HiddenPlan {
+export function hiddenPlan(entries: readonly EntryEvent[], hideStream: boolean, enabled = true): HiddenPlan {
   const plan: HiddenPlan = { hide: [], show: [] };
   for (const entry of entries) {
+    if (!enabled) {
+      plan.hide.push(entry.appid);
+      continue;
+    }
     const always = entry.client || entry.parked || entry.host_app === true;
     (entry.hidden && (always || hideStream) ? plan.hide : plan.show).push(entry.appid);
   }

@@ -6,6 +6,19 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **An on/off toggle for the whole plugin** (spec §3.19), *Moonlight
+  Sync* at the top of the Quick Access panel, for a Deck travelling away
+  from its host. Off: every Moonlight shortcut is hidden in the library
+  (the visible ones and the client entry too), the Stream buttons, the
+  *Streaming* tab and the gear-menu item are gone, nothing syncs (Sync
+  now, the restart row and the settings answer "Moonlight Sync is off"),
+  the host is not probed, and the settings route shows the toggle alone.
+  On again puts everything back as the last status and the settings say,
+  and runs a layout walk that was due meanwhile. The toggle waits for a
+  run in flight. New key `enabled` in `settings.json`.
+
 ### Changed
 
 - **The Stream button and the panel's Desktop / Steam Big Picture buttons

@@ -687,3 +687,36 @@ PC's firmware are what these check.
       the field is empty (or Moonlight's again).
 - [ ] **No MAC anywhere:** the unreachable row shows Retry alone, and
       Settings → Host says where to enter one.
+
+## 12. The on/off toggle (spec 3.19)
+
+Off-device the controller is covered (`controller.test.ts`, "the on/off
+toggle"); what the client does with a hidden visible shortcut, the tab
+removed from a bar it was in, and a Stream row on a page already open
+are what these check. Start with the plugin on, synced, with *Hide
+Stream shortcuts* **off** (so there are visible shortcuts and a
+*Streaming* collection to watch).
+
+- [ ] **Off hides everything.** Panel → *Moonlight Sync* off. The panel
+      shows the toggle alone. In the library: no Moonlight shortcut under
+      *Non-Steam* (the visible ones and the "Moonlight" client entry are
+      gone too), no *Streaming* tab in the bar, and the *Streaming*
+      collection is gone (or holds only entries another device put
+      there). An owned game's page has no Stream row; its gear menu has
+      no *Use as Moonlight Sync default layout*. A page that was open
+      when the toggle flipped loses its row on the next render (open
+      another game and come back).
+- [ ] **Settings are locked.** The panel's header buttons and *Settings*
+      open a route with the toggle alone: no Host / Titles / Artwork /
+      Advanced / About.
+- [ ] **A reboot keeps it off.** Restart Steam: the panel opens on the
+      toggle alone and the library is still clean (the load's reconcile
+      hides every entry again; the log has no `check_host`).
+- [ ] **On restores.** Toggle on: the shortcuts are back where the
+      settings put them (Stream entries hidden or shown per *Hide Stream
+      shortcuts*, the client and host apps hidden), the *Streaming* tab
+      and collection are back, the Stream row and the menu item are
+      back, the host row goes green or red. If a sync's restart happened
+      just before the toggle went off, the layout toast fires now.
+- [ ] **Busy.** Start a sync, open the panel while it runs: the progress
+      view has no toggle; when it ends the toggle is live again.

@@ -50,6 +50,7 @@ import {
   removableAppids,
   hiddenPlan,
   hideStreamEnabled,
+  pluginEnabled,
   STREAMING_COLLECTION,
   streamingCollectionEnabled,
   type LibraryPort,
@@ -179,6 +180,9 @@ export function appliedToast({ applied, kept, unavailable }: WalkCounts): string
   return text;
 }
 
+/** What a write refused while the plugin is off answers (spec 3.19). */
+export const DISABLED_FAILURE: Failure = { ok: false, error: "bad-request", message: "Moonlight Sync is off" };
+
 const CANNOT_UNSET_TOAST =
   "Default layout cleared. This Steam client cannot unset a layout, so titles keep the one they have.";
 
@@ -233,6 +237,11 @@ export class Controller {
 
   get state(): AppState {
     return this.store.get();
+  }
+
+  /** The plugin is on (spec 3.19): the `enabled` setting, absent reads as on. */
+  get enabled(): boolean {
+    return pluginEnabled(this.state.settings);
   }
 
   // -------------------------------------------------------------------------
@@ -418,7 +427,8 @@ export class Controller {
   /** The host row's reachability (memoised 10 s by the backend; `force` bypasses). */
   async checkHost(force: boolean): Promise<void> {
     const active = this.state.hosts?.active;
-    if (!active || this.state.cli?.state !== "ok" || this.state.library !== "ready") return;
+    // Off: no probe of a host the Deck is away from (spec 3.19).
+    if (!active || !this.enabled || this.state.cli?.state !== "ok" || this.state.library !== "ready") return;
     this.store.set({ reachLoading: true });
     const result = await this.withOwnedRetry(() => this.backend.check_host(active, force));
     this.store.set({ reachLoading: false, reach: isFailure(result) ? null : result });
@@ -469,8 +479,12 @@ export class Controller {
     return null;
   }
 
-  /** A user-initiated run (Sync now, Re-fetch all art, Remove everything). */
+  /** A user-initiated run (Sync now, Re-fetch all art, Remove everything); refused while the plugin is off. */
   run(kind: RunKind): Promise<Failure | null> {
+    if (!this.enabled) {
+      this.store.set({ message: errorText(DISABLED_FAILURE) });
+      return Promise.resolve(DISABLED_FAILURE);
+    }
     this.mismatchRetried = false;
     return this.startRun(kind);
   }
@@ -588,7 +602,8 @@ export class Controller {
     if (!pending || pending.restart_needed === "none") return;
     // Decision 29: both paths end in a Steam restart, so both are refused
     // while a game is running (the row itself is disabled, `restartRowView`).
-    if (this.state.inGame) return;
+    // Off (spec 3.19): the row is not shown, and the write it would start is refused.
+    if (this.state.inGame || !this.enabled) return;
     if (pending.restart_needed === "art") {
       await this.restartForArt();
       return;
@@ -805,7 +820,8 @@ export class Controller {
    */
   async streamPress(steamAppid: number): Promise<boolean> {
     const shortcut = this.state.streamMap.get(steamAppid);
-    if (shortcut === undefined) return false;
+    // Off (spec 3.19): the button is not rendered, and a stale press launches nothing.
+    if (shortcut === undefined || !this.enabled) return false;
     const def = defaultLayoutOf(this.state.settings);
     if (def) {
       const outcome = await applyDefault(shortcut, def, layoutEntryFor(this.state, shortcut), this.steam.input());
@@ -891,6 +907,10 @@ export class Controller {
   }
 
   private async doSetDefaultLayout(url: string | null, title: string | null): Promise<Failure | null> {
+    if (!this.enabled) {
+      this.ui.toast("Moonlight Sync", errorText(DISABLED_FAILURE));
+      return DISABLED_FAILURE;
+    }
     if (this.walking) await this.walking;
     const result = await this.backend.set_default_layout(url, title);
     if (isFailure(result)) {
@@ -945,6 +965,9 @@ export class Controller {
 
   private async doWalk(): Promise<WalkCounts | null> {
     if (!this.state.pending?.layout_walk) return NO_WALK;
+    // Off (spec 3.19): no Steam Input call; the flag stays and the walk
+    // runs when the plugin is turned on again.
+    if (!this.enabled) return null;
     if (layoutStrategy(this.state.settings) !== "copy") {
       await this.clearWalk();
       return NO_WALK;
@@ -1053,8 +1076,10 @@ export class Controller {
     const entries = this.state.entries;
     if (entries === null || this.state.run?.running) return;
     const settings = this.state.settings;
+    const enabled = pluginEnabled(settings);
     if (library.canHide()) {
-      const plan = hiddenPlan(entries, hideStreamEnabled(settings));
+      // Off (spec 3.19): every entry hidden, whatever status and the setting say.
+      const plan = hiddenPlan(entries, hideStreamEnabled(settings), enabled);
       try {
         library.setHidden(plan.hide.filter((id) => loaded(id) && library.isHidden(id) !== true), true);
         library.setHidden(plan.show.filter((id) => loaded(id) && library.isHidden(id) !== false), false);
@@ -1063,10 +1088,11 @@ export class Controller {
         console.warn("Moonlight Sync: hiding shortcuts failed", error);
       }
     }
-    // Off: the collection is left alone here; turning the setting off is
-    // what retires it (setSettings), so a collection the user made under the
-    // same name afterwards is never touched.
-    if (!library.canCollect() || !streamingCollectionEnabled(settings)) return;
+    // Off: the collection is left alone here; turning the setting (or the
+    // plugin, spec 3.19) off is what retires it (setSettings / setEnabled),
+    // so a collection the user made under the same name afterwards is never
+    // touched.
+    if (!enabled || !library.canCollect() || !streamingCollectionEnabled(settings)) return;
     // The shortcut collection (spec 3.17): this device's shortcuts while
     // Stream shortcuts are shown, nothing wanted while the tab is alone --
     // and only the real games (v0.4.0's) removable then, so a device on the
@@ -1095,13 +1121,44 @@ export class Controller {
     if (left !== null && !left.length) await library.deleteCollection(STREAMING_COLLECTION);
   }
 
+  /** A settings-page change; refused while the plugin is off (spec 3.19: `setEnabled` is the one live switch). */
   async setSettings(patch: SettingsPatch): Promise<Result> {
+    if (!this.enabled) return DISABLED_FAILURE;
     const result = await this.backend.set_settings(patch);
     if (isFailure(result)) return result;
     this.store.set({ settings: result.settings });
     if ("hide_stream_shortcuts" in patch || "streaming_collection" in patch) {
       if (patch.streaming_collection === false) await this.retireCollection();
       void this.reconcileLibrary();
+    }
+    return result;
+  }
+
+  /**
+   * The plugin's on/off toggle (spec 3.19). Off: this device's members
+   * leave the fallback collection, then every entry is hidden (the
+   * reconcile, which reads the new setting). On: the reconcile restores
+   * what `status` and the settings say, the deferred layout walk runs and
+   * the host is checked again. Refused while a run is going (the toggle is
+   * disabled then too): the run owns the library until it is done.
+   */
+  async setEnabled(on: boolean): Promise<Result> {
+    if (this.state.run?.running) {
+      return { ok: false, error: "busy", message: "a run is going", kind: this.state.run.kind };
+    }
+    const result = await this.backend.set_settings({ enabled: on });
+    if (isFailure(result)) {
+      this.ui.toast("Moonlight Sync", errorText(result));
+      return result;
+    }
+    this.store.set({ settings: result.settings, message: null });
+    if (on) {
+      await this.reconcileLibrary();
+      void this.layoutWalk();
+      void this.checkHost(false);
+    } else {
+      await this.retireCollection();
+      await this.reconcileLibrary();
     }
     return result;
   }

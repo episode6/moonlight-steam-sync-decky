@@ -159,7 +159,15 @@ src/lib/                    pure modules (vitest)
                             owned games at the first load and a collection somebody
                             had under the name keeps its members),
                             retireCollection() (the setting turned off: wanted = []
-                            with every `knownAppids` removable)
+                            with every `knownAppids` removable), `enabled` /
+                            setEnabled() (spec 3.19: `set_settings({enabled})`,
+                            then off: retireCollection + a reconcile that hides
+                            every entry; on: a reconcile, the deferred walk, a
+                            checkHost; busy while a run is going. Off, run() /
+                            setSettings() / setDefaultLayout() / the restart row
+                            answer DISABLED_FAILURE, streamPress() launches
+                            nothing, checkHost() skips, doWalk resolves null
+                            with the flag kept)
   layouts.ts                DEFAULT_LAYOUT_STRATEGY (the one switch), layoutStrategy(),
                             DEFAULT_LAYOUT_SCHEMES / isShareableUrl() (workshop://,
                             template://), defaultLayoutOf() (null under picker or unset),
@@ -193,7 +201,11 @@ src/lib/                    pure modules (vitest)
                             (`hidden` from status is the truth; *Hide Stream shortcuts*
                             governs Stream entries only, the client / host apps / parked
                             are hidden regardless; a visible entry is shown, which is
-                            what unparks it), collectionDiff(wanted, current, removable)
+                            what unparks it; a third argument, `enabled`, false hides
+                            every entry, spec 3.19), pluginEnabled() / DISABLED_TEXT
+                            (the on/off toggle, spec 3.19: the `enabled` key, absent
+                            reads on; streamingTabEnabled() is false while off),
+                            collectionDiff(wanted, current, removable)
                             (removes only removable members)
   tabs.ts                   spec 3.17, the Streaming tab's pure half: STREAMING_TAB_ID,
                             findElement() (a React-element walk with no React),
@@ -303,7 +315,11 @@ src/components/             adoptDefault (inspectLayout -> refusal toasts -> Con
                             with its confirm, *Hide Stream shortcuts* and *Streaming
                             tab* (the `streaming_collection` key; its text adds the
                             shortcut collection when Stream shortcuts are shown; never
-                            disabled, the tab needs no client call), AboutPage
+                            disabled, the tab needs no client call), AboutPage,
+                            EnabledToggle (spec 3.19: the *Moonlight Sync* on/off
+                            ToggleField, at the top of the panel in every state
+                            and, while off, the whole settings route; disabled
+                            while a run is going)
 src/test/fixtures.ts        loads tests/fixtures for vitest
 tests/                      pytest: fake_cli.py, fixtures/, conftest.py, test_*.py,
                             test_install_sh.py (install.sh end to end via
@@ -478,6 +494,11 @@ by nothing (Decision 47).
 the spawn: they flag the run, the SIGINT goes out as soon as its child
 exists, and a run the signal killed before the CLI printed anything is
 reported as exit 130 rather than as a protocol error.
+The on/off toggle (spec 3.19) is one boolean, `settings.enabled` (default
+`true`, `BOOL_SETTINGS` in `settings.py`, a plain `set_settings` key): the
+backend knows nothing else of it, the frontend reads it everywhere it
+touches the client (`pluginEnabled`), and a run started before the toggle
+went off finishes on its own.
 Wake-on-LAN (spec 3.18) needs no CLI and no busy guard: `hosts()` carries
 an additive `wake` map (`{<host>: {mac, source, addresses}}` over the known
 hosts plus the active one when it is not among them, the Host page's
