@@ -252,7 +252,13 @@ export type ErrorCode =
   | "bad-request"
   | "io"
   /** `wake_host`: neither the Host page nor Moonlight's own list has a MAC for the host (spec 3.18). */
-  | "no-mac";
+  | "no-mac"
+  /** The key fetch (spec 3.20.3): Steam's debugger port is not reachable. */
+  | "no-debugger"
+  /** The key fetch was cancelled (the *Cancel* button, or the plugin unloading). */
+  | "cancelled"
+  /** The key fetch: SteamGridDB's (or Steam's sign-in) page is not what it was measured as. */
+  | "sgdb-page";
 
 export interface Failure {
   ok: false;
@@ -263,8 +269,11 @@ export interface Failure {
   installed?: string;
   minimum?: string;
   stderr?: string;
-  /** Which side of the busy guard answered: a run kind, or `"match"`. */
-  kind?: RunKind | "match";
+  /**
+   * Which busy guard answered: a run kind or `"match"` (the runs' guard), or
+   * `"key"` (a key fetch already in flight, spec 3.20.3: its own guard).
+   */
+  kind?: RunKind | "match" | "key";
   timeout_s?: number;
 }
 
@@ -416,6 +425,45 @@ export interface KeyState {
   config_parse_error: boolean;
 }
 
+// ---------------------------------------------------------------------------
+// the SteamGridDB key from the Game Mode browser (spec 3.20)
+
+/**
+ * SteamGridDB's API page, the one the frontend opens in the Game Mode
+ * browser (spec 3.20.4 step 2). The backend's `sgdbpage.SGDB_API_PAGE`
+ * is the same URL; the backend never opens anything itself.
+ */
+export const SGDB_API_PAGE = "https://www.steamgriddb.com/profile/preferences/api";
+
+/**
+ * Where the backend's fetch is (spec 3.20.3's table): `sgdbpage.STATES`.
+ * Only the state name ever crosses; never anything of the page.
+ */
+export type KeyFetchState = "waiting" | "login" | "steam-sign-in" | "steam-login" | "reading" | "done";
+
+/** `sgdb_key_event` payload: the fetch moved to another state. */
+export interface SgdbKeyEventPayload {
+  state: KeyFetchState;
+}
+
+/**
+ * `sgdb_key_done` payload: the fetch ended. On success the key is in the key
+ * file and only its last four characters come back (hard rule 4).
+ */
+/**
+ * The codes a failed key fetch ends with (spec 3.20.3): the fetch's own,
+ * `keys.KeyRefused`'s `bad-request` (a key in `config.toml`), and `io` when
+ * the key file could not be written.
+ */
+export type SgdbKeyFetchError = Extract<
+  ErrorCode,
+  "no-debugger" | "timeout" | "cancelled" | "sgdb-page" | "bad-request" | "io"
+>;
+
+export type SgdbKeyDonePayload =
+  | { ok: true; source: KeyState["source"]; hint: string | null }
+  | { ok: false; error: SgdbKeyFetchError; message: string };
+
 /**
  * What one layout action recorded for a shortcut (spec 3.10 / 3.16).
  * `"default"`: the entry is on the plugin's default layout (`applyDefault`).
@@ -511,6 +559,14 @@ export interface Backend {
   set_sgdb_key(key: string): Promise<Result<KeyState>>;
   clear_sgdb_key(): Promise<Result<KeyState>>;
   test_sgdb_key(): Promise<Result>;
+  /**
+   * Start reading the key out of the Game Mode browser (spec 3.20.3); the
+   * caller opens `SGDB_API_PAGE` only once this answered `ok`. `no-debugger`
+   * and `busy` (kind `"key"`) come back here; the rest as `sgdb_key_done`.
+   */
+  start_sgdb_key_fetch(): Promise<Result<{ started: string }>>;
+  /** Cancel the fetch in flight; it reports `cancelled` through `sgdb_key_done`. */
+  cancel_sgdb_key_fetch(): Promise<Result<{ running: boolean }>>;
   /** `--json search TERM`: candidates in the CLI's order (SGDB first when a key is set). */
   search(term: string): Promise<Result<{ candidates: CandidateEvent[]; notes: string[] }>>;
   /** `match NAME --steam | --sgdb | --none --defer-art`: exactly one of the three. */
@@ -573,6 +629,8 @@ const CALLABLES = [
   "set_sgdb_key",
   "clear_sgdb_key",
   "test_sgdb_key",
+  "start_sgdb_key_fetch",
+  "cancel_sgdb_key_fetch",
   "search",
   "pin",
   "unpin",
@@ -625,6 +683,7 @@ export function errorText(failure: Failure): string {
         ? `Timed out after ${failure.timeout_s} s`
         : failure.message || "Timed out";
     case "busy":
+      if (failure.kind === "key") return "A key fetch is already in progress";
       return failure.kind === "match"
         ? "A match change is still being saved"
         : "A sync is already running";
@@ -633,6 +692,11 @@ export function errorText(failure: Failure): string {
       return "Steam library not loaded";
     case "no-mac":
       return failure.message || "No MAC address known for this host — enter one under Settings → Host";
+    // The key fetch's own failures (spec 3.20.3): the backend's texts verbatim.
+    case "no-debugger":
+    case "cancelled":
+    case "sgdb-page":
+      return failure.message;
     case "bad-request":
     case "io":
     default:

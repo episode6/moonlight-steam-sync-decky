@@ -11,6 +11,9 @@
  * entries and the fallback *Streaming* collection, both through
  * `collectionStore`, because the client ignores `IsHidden` in
  * `shortcuts.vdf`; `loadedOverviews()` feeds the *Streaming* tab.
+ * `openExternalWeb()` / `leaveExternalWeb()` open and leave the Game Mode
+ * browser for the SteamGridDB key fetch (spec 3.20.4) over a `Navigation`
+ * the caller passes in.
  *
  * Only globals are used here (`SteamClient`, `collectionStore`, `appStore`,
  * `ControllerStore`, `App`), so this module imports nothing from `@decky/*`;
@@ -403,4 +406,71 @@ export function libraryPort(): LibraryPort {
       await findCollection(name)?.Delete?.();
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// the Game Mode browser, for the SteamGridDB key fetch (spec 3.20.4)
+
+/**
+ * The part of `@decky/ui`'s `Navigation` the key fetch uses. Passed in by
+ * `instance.tsx`, so this module still imports nothing from `@decky/*`;
+ * every member is optional because a client may lack any of them.
+ */
+export interface NavigationLike {
+  NavigateToExternalWeb?: (url: string) => void;
+  NavigateBack?: () => void;
+  CloseSideMenus?: () => void;
+}
+
+/** What `steam://openurl/` opens (spec 3.20.1 item 2). */
+export const STEAM_OPENURL = "steam://openurl/";
+
+/**
+ * Open `url` in the Game Mode browser and close the side menus (spec
+ * 3.20.4 step 2): `Navigation.NavigateToExternalWeb` **[verify]**, and,
+ * when the client has no such method or it throws, the measured
+ * `SteamClient.URL.ExecuteSteamURL("steam://openurl/<url>")` (spec 3.20.1
+ * item 2: `SharedJSContext`, where the frontend runs, has it). `false`
+ * when neither could be called; nothing is known to have opened then.
+ */
+export function openExternalWeb(nav: NavigationLike, url: string): boolean {
+  let opened = false;
+  if (typeof nav.NavigateToExternalWeb === "function") {
+    try {
+      nav.NavigateToExternalWeb(url);
+      opened = true;
+    } catch (error) {
+      console.warn("Moonlight Sync: NavigateToExternalWeb failed; trying steam://openurl/", error);
+    }
+  }
+  if (!opened) {
+    const urls = (globals().SteamClient as { URL?: { ExecuteSteamURL?: (url: string) => void } } | undefined)?.URL;
+    if (typeof urls?.ExecuteSteamURL !== "function") return false;
+    try {
+      urls.ExecuteSteamURL(STEAM_OPENURL + url);
+      opened = true;
+    } catch (error) {
+      console.warn("Moonlight Sync: steam://openurl/ failed", error);
+      return false;
+    }
+  }
+  try {
+    nav.CloseSideMenus?.();
+  } catch (error) {
+    console.warn("Moonlight Sync: CloseSideMenus failed", error);
+  }
+  return opened;
+}
+
+/**
+ * Leave the Game Mode browser (spec 3.20.4 step 4): `Navigation.NavigateBack`
+ * **[verify]**. Should the browser stay, it is left there (the key page is
+ * the user's own account page). Never throws.
+ */
+export function leaveExternalWeb(nav: NavigationLike): void {
+  try {
+    nav.NavigateBack?.();
+  } catch (error) {
+    console.warn("Moonlight Sync: NavigateBack failed", error);
+  }
 }

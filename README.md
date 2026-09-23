@@ -507,7 +507,37 @@ disabled and reads "set in config.toml"), then `SGDB_API_KEY` in the
 environment ("set in the environment"), then the key file. The plugin
 never writes `config.toml`, and it only ever shows the key's last four
 characters. **Test** runs a search to check the key; **Remove** deletes the
-key file and nothing else. The same page has **Retry missing art** (look
+key file and nothing else.
+
+**Get key from SteamGridDB…** saves typing the 32 characters on a Deck.
+It is there with no key yet or with the key file above, not while
+`config.toml` or `SGDB_API_KEY` sets the key (a saved file would be
+ignored). It asks first:
+
+> **Sign in to SteamGridDB with Steam?** Moonlight Sync opens
+> steamgriddb.com in Steam's browser and signs you in with your Steam
+> account (SteamGridDB gets your public Steam ID, nothing else), then
+> reads your API key from your SteamGridDB preferences and saves it on
+> this device. Your key is never shown or sent anywhere else.
+
+*Continue* opens SteamGridDB's API page in Steam's browser and the plugin
+drives it over Steam's own debugger port (the one Decky Loader itself
+uses): it follows *Login via Steam*, presses Steam's *Sign In* once, then
+reads the key. If Steam asks for your password or a Steam Guard code
+there, type it on the page and the plugin carries on. An account that has
+never made a key gets its *Generate* button pressed once; *Revoke API
+Key*, or anything else that would replace a key you already have, is
+never pressed. While it runs the field says where it is and **Cancel**
+stands in for **Save**; it gives up after three minutes. At the end the
+browser is closed, the key is saved to the key file and tested, and a
+toast shows its last four characters. **Cancel** is pressed on the
+Artwork page, so after it the plugin leaves the browser page open where it
+was rather than navigating anywhere. The key goes from the page to the
+file and nowhere else: not to the plugin's UI, its events or its log. If
+SteamGridDB's pages change shape the plugin says so and the typed field
+is the way in.
+
+The same page has **Retry missing art** (look
 again for images that were missing last time) and **Re-fetch all art**,
 which needs a CLI whose `art` command accepts `--commit` and says "needs a
 newer CLI" otherwise.

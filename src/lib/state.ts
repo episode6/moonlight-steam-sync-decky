@@ -1,8 +1,9 @@
 /**
  * The frontend's one store (spec 3.6): CLI state, settings, hosts, the
  * pending flags, the last `status` snapshot and what it derives (counters,
- * the stream map), host reachability, the progress of the current run, and
- * the layout results of `layouts.json` (spec 3.10).
+ * the stream map), host reachability, the progress of the current run, the
+ * layout results of `layouts.json` (spec 3.10), and the SteamGridDB key's
+ * state and the key fetch in flight (spec 3.20.4).
  *
  * Pure: reducers are plain functions over plain data and `Store` is a tiny
  * subscribe/notify container, so everything here is unit-tested with vitest.
@@ -16,6 +17,8 @@ import type {
   EntryEvent,
   HostCheck,
   HostsInfo,
+  KeyFetchState,
+  KeyState,
   LayoutEntry,
   Pending,
   PlanEvent,
@@ -156,6 +159,42 @@ export function otherHostsLine(hosts: HostsInfo | null, parked: number): string 
     return count === undefined ? name : `${name} (${count} ${count === 1 ? "title" : "titles"})`;
   });
   return `active host · parked from ${parts.join(", ")}`;
+}
+
+// ---------------------------------------------------------------------------
+// the SteamGridDB key from the Game Mode browser (spec 3.20.4)
+
+/** A key fetch in flight: where the backend's state machine is. */
+export interface KeyFetch {
+  state: KeyFetchState;
+}
+
+/**
+ * Is *Get key from SteamGridDB…* offered for this key state? Only with no
+ * key or the plugin's own key file (`none`, `file`): under `config` or
+ * `env` the file it writes would be ignored (spec 3.20.4), and a
+ * `config.toml` that does not parse is fixed in Desktop Mode first.
+ */
+export function keyFetchOffered(key: KeyState | null): boolean {
+  if (!key || key.config_parse_error) return false;
+  return key.source === "none" || key.source === "file";
+}
+
+/** The key field's description while a fetch is in flight (spec 3.20.4 step 3). */
+export function keyFetchText(fetch: KeyFetch): string {
+  switch (fetch.state) {
+    case "waiting":
+      return "Waiting for SteamGridDB…";
+    case "login":
+    case "steam-sign-in":
+      return "Signing in with Steam…";
+    case "steam-login":
+      return "Steam is asking you to log in on the page";
+    case "reading":
+    case "done":
+    default:
+      return "Reading your key…";
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -302,6 +341,10 @@ export interface AppState {
   layouts: Record<string, LayoutEntry>;
   /** The post-restart layout walk is running. */
   walking: boolean;
+  /** `sgdb_key_state()`: where the key comes from and its last four characters, never the key. */
+  sgdbKey: KeyState | null;
+  /** The key fetch from the Game Mode browser in flight (spec 3.20.4), or `null`. */
+  keyFetch: KeyFetch | null;
 }
 
 export function initialState(): AppState {
@@ -328,6 +371,8 @@ export function initialState(): AppState {
     inGame: false,
     layouts: {},
     walking: false,
+    sgdbKey: null,
+    keyFetch: null,
   };
 }
 

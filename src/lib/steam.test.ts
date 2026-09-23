@@ -6,7 +6,9 @@ import {
   controllerConfiguratorAvailable,
   currentSteamId3,
   controllerIndex,
+  leaveExternalWeb,
   libraryPort,
+  openExternalWeb,
   overviewLoaded,
   ownedApps,
   showControllerConfigurator,
@@ -331,5 +333,70 @@ describe("libraryPort (spec 3.15)", () => {
     expect(userCollections).toHaveLength(1);
     await port.deleteCollection("Streaming");
     expect(log.at(-1)).toBe("delete Streaming");
+  });
+});
+
+describe("the Game Mode browser (spec 3.20.4)", () => {
+  const g = globalThis as Record<string, unknown>;
+  const PAGE = "https://www.steamgriddb.com/profile/preferences/api";
+  afterEach(() => {
+    delete g.SteamClient;
+  });
+
+  it("opens through NavigateToExternalWeb, then closes the side menus", () => {
+    const log: string[] = [];
+    g.SteamClient = { URL: { ExecuteSteamURL: (url: string) => void log.push(`execute ${url}`) } };
+    const opened = openExternalWeb(
+      {
+        NavigateToExternalWeb: (url) => void log.push(`web ${url}`),
+        CloseSideMenus: () => void log.push("close"),
+      },
+      PAGE,
+    );
+    expect(opened).toBe(true);
+    expect(log).toEqual([`web ${PAGE}`, "close"]);
+  });
+
+  it("falls back to steam://openurl/ when NavigateToExternalWeb is missing or throws", () => {
+    const log: string[] = [];
+    g.SteamClient = { URL: { ExecuteSteamURL: (url: string) => void log.push(`execute ${url}`) } };
+    expect(openExternalWeb({ CloseSideMenus: () => void log.push("close") }, PAGE)).toBe(true);
+    expect(
+      openExternalWeb(
+        {
+          NavigateToExternalWeb: () => {
+            throw new Error("no router");
+          },
+        },
+        PAGE,
+      ),
+    ).toBe(true);
+    expect(log).toEqual([`execute steam://openurl/${PAGE}`, "close", `execute steam://openurl/${PAGE}`]);
+  });
+
+  it("answers false when nothing can open the browser", () => {
+    expect(openExternalWeb({}, PAGE)).toBe(false);
+    g.SteamClient = {
+      URL: {
+        ExecuteSteamURL: () => {
+          throw new Error("refused");
+        },
+      },
+    };
+    expect(openExternalWeb({}, PAGE)).toBe(false);
+  });
+
+  it("navigates back, and never throws", () => {
+    let back = 0;
+    leaveExternalWeb({ NavigateBack: () => void back++ });
+    expect(back).toBe(1);
+    expect(() => leaveExternalWeb({})).not.toThrow();
+    expect(() =>
+      leaveExternalWeb({
+        NavigateBack: () => {
+          throw new Error("no history");
+        },
+      }),
+    ).not.toThrow();
   });
 });

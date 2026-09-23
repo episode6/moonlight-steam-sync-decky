@@ -75,7 +75,8 @@ install.sh                  the end-user installer: curl the latest (or pinned) 
                             zip + .sha256, verify, unzip into ~/homebrew/plugins/, restart
                             plugin_loader (two explained sudo prompts, never non-interactive)
 DEVICE-CHECKLIST.md         every on-device check (PR-0 probes, PR-5/6/7/8 items, §3.14,
-                            §3.15 and the §3.16 default layout's [verify] items), in order
+                            §3.15 and the §3.16 default layout's [verify] items, then
+                            §3.17-§3.20; the key fetch is §14), in order
 main.py                     thin decky Plugin: builds Backend, one line per callable;
                             no __init__ and `_backend` / `_startup` as class attributes, with
                             `_get` / `_ready` as classmethods, so it is correct whether the
@@ -142,15 +143,29 @@ py_modules/moonlight_sync/  the backend (imports nothing from decky)
 backend/entrypoint.sh       the one CLI downloader (strict), also the Decky store hook
 backend/Dockerfile          template's holo-base image, only for `decky plugin build`
 scripts/package.py          Docker-free zip: out/Moonlight-Sync.zip ("Moonlight Sync/")
-src/index.tsx               definePlugin: events, settings route, running-app watch, load()
-src/instance.tsx            the Controller wired to callable / Steam / showModal / toaster
+src/index.tsx               definePlugin: events (sync_event / sync_done, sgdb_key_event /
+                            sgdb_key_done), settings route, running-app watch, load()
+src/instance.tsx            the Controller wired to callable / Steam / showModal / toaster;
+                            the Steam seam's navigateToExternalWeb / navigateBack pass
+                            @decky/ui's Navigation to steam.ts's openExternalWeb() /
+                            leaveExternalWeb()
 src/lib/                    pure modules (vitest)
   cli.ts                    every §3.4.6 event type, Result/Failure, Backend, makeBackend,
-                            errorText (the §3.8 strings)
+                            errorText (the §3.8 strings; the key fetch's `no-debugger` /
+                            `cancelled` / `sgdb-page` / `timeout` are the backend's text
+                            verbatim, `busy` kind `"key"` its own sentence),
+                            SGDB_API_PAGE, KeyFetchState, SgdbKeyEventPayload /
+                            SgdbKeyDonePayload (its failure `error` narrowed to
+                            SgdbKeyFetchError) (spec 3.20)
   events.ts                 NDJSON parsing, lastOf/eventsOf
   state.ts                  AppState, Store, reducers (runs, counters, stream map),
                             `titlesEpoch` (bumped by a match-cache reset; a mounted
-                            TitlesPage re-lists off it),
+                            TitlesPage re-lists off it), `sgdbKey` (sgdb_key_state:
+                            source + hint, never the key) and `keyFetch` ({state} of
+                            the fetch in flight, else null), keyFetchOffered() (the
+                            *Get key from SteamGridDB…* button: `none` / `file` only,
+                            never `config` / `env`) and keyFetchText() (spec 3.20.4's
+                            state texts),
                             wakeInfoOf() (a host's `wake` entry, any case),
                             HOST_APPS / hostAppsFromStatus() (the panel's Desktop and
                             Steam Big Picture buttons, by Moonlight name, blind to
@@ -161,6 +176,18 @@ src/lib/                    pure modules (vitest)
   controller.ts             load order, runs, restart flow, hosts, settings actions,
                             wakeHost() (spec 3.18: `wake_host` on the active host, a
                             toast either way, never held back), setWakeMac(),
+                            refreshSgdbKey(), fetchSgdbKey() (spec 3.20.4:
+                            `start_sgdb_key_fetch` first, a refusal toasted with
+                            nothing opened, then navigateToExternalWeb(SGDB_API_PAGE);
+                            a browser that cannot open cancels at once, quietly),
+                            cancelSgdbKeyFetch() (the user is on the Artwork page, so
+                            the done does not navigate back), onSgdbKeyEvent(),
+                            onSgdbKeyDone() (navigateBack only when this fetch opened
+                            the browser and no Cancel came since, *before* any toast;
+                            ok: sgdb_key_state (a failed re-read falls back to the
+                            payload's source + hint), the "SteamGridDB key saved (…hint)"
+                            toast, then test_sgdb_key with its verdict toasted;
+                            failed: its message toasted, nothing else),
                             loadTitles() (list -> list_cached fallback, and list_cached
                             while a run is going; `status` only reaches the shared store
                             when no run is going, the page always gets its entries),
@@ -304,7 +331,12 @@ src/lib/                    pure modules (vitest)
                             libraryPort() (collectionStore: BIsHidden / SetAppsAsHidden,
                             userCollections / NewUnsavedCollection / AsDragDropCollection
                             / Save / Delete, every one feature-detected, none probed on
-                            a device yet) (globals only)
+                            a device yet), openExternalWeb(nav, url) /
+                            leaveExternalWeb(nav) (spec 3.20.4: NavigateToExternalWeb
+                            [verify], else the measured SteamClient.URL.ExecuteSteamURL
+                            of steam://openurl/<url>; then CloseSideMenus;
+                            NavigateBack never throws) (globals only; `Navigation` is
+                            passed in)
 src/routes/libraryTabs.tsx  the /library patch (spec 3.17): digs from the route element
                             for a `tabs` array some tab of which renders a collection
                             (`isLibraryTabs`), patching the first component element
@@ -366,7 +398,12 @@ src/components/             adoptDefault (inspectLayout -> refusal toasts -> Con
                             *Choose layout…* and *Use as the default layout*, which
                             inspects, toasts the refusal texts or confirms), ChangeMatchModal,
                             Pill, StreamButton (renders only when streamMap has the
-                            appid; the layout line only while a default is set), ArtworkPage,
+                            appid; the layout line only while a default is set), ArtworkPage
+                            (the key field over the store's `sgdbKey`; in the `none` /
+                            `file` states *Get key from SteamGridDB…* and its
+                            ConfirmModal with spec 3.20.4's text; while a fetch is in
+                            flight the field says keyFetchText() and *Cancel* stands
+                            where *Save* / the button were),
                             StreamingTab (the tab's content: cloneElement of the
                             template with a syntheticCollection of the loaded
                             streamingMembers, live from the store, inside its own
@@ -608,8 +645,11 @@ that ignores `http_proxy`, and an answer that is not HTTP is
 `DebuggerUnavailable`. `cancel_sgdb_key_fetch()`
 sets the event (`{ok, running}`), `unload()` cancels the same way and waits
 `KEY_FETCH_UNLOAD_WAIT`. The queued state emits are awaited before the
-done emit, so the frontend sees them in order. The frontend follows a
-success with `test_sgdb_key()` (PR-14).
+done emit, so the frontend sees them in order. The frontend (PR-14)
+opens `SGDB_API_PAGE` in the Game Mode browser only after
+`start_sgdb_key_fetch` answered `ok`, navigates back on `sgdb_key_done`
+before any toast, and follows a success with `sgdb_key_state()` and
+`test_sgdb_key()`.
 Wake-on-LAN (spec 3.18) needs no CLI and no busy guard: `hosts()` carries
 an additive `wake` map (`{<host>: {mac, source, addresses}}` over the known
 hosts plus the active one when it is not among them, the Host page's
@@ -701,7 +741,14 @@ There is no Steam Deck during development; everything else is tested.
   computes `applied` by the backend's table) and `steam.test.ts` drives
   the real seam over stubbed globals; the route patch, the button, the
   *Layout* menu and `ClearSelectedConfigForApp` itself are device checks,
-  not unit tests.
+  not unit tests. The key fetch's frontend (spec 3.20.4) runs over the
+  same fake backend in `controller.test.ts` (an `order` log interleaves
+  backend calls, the fake Steam seam's `open:` / `back` navigations and
+  toasts, so the step order is asserted), `state.test.ts` holds the
+  button's presence per key source (`keyFetchOffered`), and
+  `steam.test.ts` the `NavigateToExternalWeb` / `steam://openurl/`
+  fallback; the modal, the browser and `NavigateBack` are device checks
+  (DEVICE-CHECKLIST §14).
 - `tests/conftest.py`: `backend` / `make_backend` (a started Backend over
   the fake; `@pytest.mark.scenario("full-sync")` puts that scenario in front
   of `common/`), `steam_gone`, `install_env` (a `python3` shim that prints

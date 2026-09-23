@@ -758,3 +758,86 @@ and one title reading "no match".
       being saved" and the file is untouched.
 - [ ] **Off.** With the plugin toggled off the Advanced page is not
       reachable (§12); nothing to press.
+
+## 14. The SteamGridDB key from the Game Mode browser (spec 3.20)
+
+Off-device the backend (`test_cdp.py`, `test_sgdbpage.py` over the
+fixture pages, `test_hard_rules.py` for the key in no event or log line)
+and the frontend flow (`controller.test.ts`, "the SteamGridDB key from
+the Game Mode browser"; the button's presence per key source in
+`state.test.ts`) are covered; the real pages, the real browser and the
+two navigation calls are what these check. The spec calls this section
+§13; that number went to *Reset match cache* first. Any selector of spec
+§3.20.1 that does not match on the Deck goes to a Fable-class model
+(spec §5), never loosened here.
+
+Start with no key (Settings → Artwork → *Remove* if the key file is set;
+`config.toml` without `[steamgriddb].api_key` and no `SGDB_API_KEY` in
+plugin_loader's environment), and keep an SSH session tailing
+`~/homebrew/logs/Moonlight Sync/moonlight-sync.log`.
+
+- [ ] **The button is where it should be.** Settings → Artwork shows
+      *Get key from SteamGridDB…* under the key field with no key, and
+      again under *Test* / *Remove* once the key file is set. Put a key in
+      `config.toml` (or `SGDB_API_KEY` in the service's environment),
+      reopen the page: no button.
+- [ ] **The consent text.** The button opens "Sign in to SteamGridDB with
+      Steam?" with spec §3.20.4's text word for word, *Continue* and
+      *Cancel*. *Cancel* does nothing else (no browser, nothing in the
+      log).
+- [ ] **End to end, signed in to Steam.** *Continue*: the Game Mode
+      browser takes the screen on SteamGridDB, then Steam's *Sign In*
+      page, then the API page, with no press of yours. **[verify]
+      `NavigateToExternalWeb`** opens the same `page` target spec
+      §3.20.1 item 2 measured (over the debugger, `/json/list` shows
+      `Preferences - SteamGridDB` / `…/profile/preferences/api`); if it
+      opens anything else, report it (the fallback is
+      `steam://openurl/` through `SteamClient.URL.ExecuteSteamURL`, and
+      choosing it is a spec change). At the end **[verify]
+      `NavigateBack`** leaves the browser and lands on Settings →
+      Artwork; if the browser stays, note it here (it is left open by
+      design then). The toasts are "SteamGridDB key saved (…XXXX)" with
+      the key's last four characters, then "SteamGridDB accepted the
+      key". The field reads "set, ends in …XXXX", and
+      `~/.config/moonlight-steam-sync/sgdb-api-key` is mode 0600.
+- [ ] **The field follows the fetch.** While it runs, back out of the
+      browser (B) to Settings → Artwork: the field says *Waiting for
+      SteamGridDB…* / *Signing in with Steam…* / *Steam is asking you to
+      log in on the page* / *Reading your key…* as it goes, and *Cancel*
+      stands where *Save* was.
+- [ ] **Not signed in to Steam's web session.** On a Steam account whose
+      community session is gone (sign out of steamcommunity.com in the
+      browser first), Steam's page asks for a password or a Steam Guard
+      code: the field says *Steam is asking you to log in on the page*,
+      nothing is typed for you, and once you have logged in the plugin
+      presses *Sign In* once and carries on.
+- [ ] **An account with no key.** **[verify]** (Decision 61) On a
+      SteamGridDB account that never generated a key, the API page's
+      *Generate* button is pressed once and the key is read after it; on
+      a page with any key element, or only *Regenerate* / *Revoke*,
+      nothing is pressed and the toast says "SteamGridDB shows no API
+      key; generate one on its API page, then try again". *Revoke API
+      Key* is never pressed in any run (the key you had still works:
+      *Test*).
+- [ ] **Cancel mid-way.** Start again, back out of the browser while
+      Steam's sign-in page is up, press *Cancel*: within a second the
+      toast says "The key fetch was cancelled", you stay on Settings →
+      Artwork (no navigation back from there), the key file is
+      unchanged, and the browser page is left where it was.
+- [ ] **Left behind, then timed out.** Start again, back out of the
+      browser with B and wait three minutes: the toast says "Timed out
+      waiting for the SteamGridDB page; enter the key by hand or try
+      again". Note where `NavigateBack` took you (it runs on every done
+      of a fetch the plugin opened and was not cancelled from the page);
+      if it left a page you did not expect, report it.
+- [ ] **No debugger.** With `~/.steam/steam/.cef-enable-remote-debugging`
+      removed and Steam restarted (put it back afterwards; Decky
+      recreates it), *Continue* toasts "Steam's debugger port is not
+      reachable; enter the key by hand" and no browser opens.
+- [ ] **The key is never in the log.** After the runs above, `grep -c`
+      your key in `~/homebrew/logs/Moonlight Sync/moonlight-sync.log`
+      (and in Decky's own log, `journalctl -u plugin_loader`) is `0`;
+      the log has `sgdb key fetch: <state>` lines and "sgdb key fetched
+      from the browser", never the key.
+- [ ] **Off.** With the plugin toggled off the Artwork page is not
+      reachable (§12); nothing to press.

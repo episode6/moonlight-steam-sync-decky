@@ -5,7 +5,7 @@
  */
 
 import { callable, toaster } from "@decky/api";
-import { showModal } from "@decky/ui";
+import { Navigation, showModal } from "@decky/ui";
 
 import { RestartModal } from "./components/RestartModal";
 import { makeBackend, type CallableFactory } from "./lib/cli";
@@ -13,7 +13,9 @@ import { Controller, type UiPort } from "./lib/controller";
 import {
   controllerConfiguratorAvailable,
   currentSteamId3,
+  leaveExternalWeb,
   libraryPort,
+  openExternalWeb,
   overviewLoaded,
   ownedApps,
   runShortcut,
@@ -46,6 +48,10 @@ export const controller = new Controller(
     canChooseLayout: controllerConfiguratorAvailable,
     showControllerConfigurator,
     library: libraryPort,
+    // The key fetch's browser (spec 3.20.4): `Navigation.NavigateToExternalWeb`,
+    // else `steam://openurl/` through `SteamClient.URL.ExecuteSteamURL`.
+    navigateToExternalWeb: (url) => openExternalWeb(Navigation, url),
+    navigateBack: () => leaveExternalWeb(Navigation),
   },
   ui,
 );

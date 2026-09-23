@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { loadFixture } from "../test/fixtures";
-import type { EntryEvent, SyncDonePayload } from "./cli";
+import type { EntryEvent, KeyState, SyncDonePayload } from "./cli";
 import { eventsOf } from "./events";
 import {
   actionsReady,
@@ -12,6 +12,8 @@ import {
   hostAppsFromStatus,
   ignoredCounter,
   initialState,
+  keyFetchOffered,
+  keyFetchText,
   newRun,
   otherHostsLine,
   progressFraction,
@@ -296,5 +298,46 @@ describe("Wake-on-LAN (spec 3.18)", () => {
     expect(wakeInfoOf({ ...hosts, wake: undefined }, "MY-GAMING-PC")).toBeNull();
     expect(wakeInfoOf(null, "MY-GAMING-PC")).toBeNull();
     expect(wakeInfoOf(hosts, null)).toBeNull();
+  });
+});
+
+describe("Get key from SteamGridDB… (spec 3.20.4)", () => {
+  const key = (source: KeyState["source"], config_parse_error = false): KeyState => ({
+    source,
+    hint: source === "none" ? null : "cdef",
+    config_parse_error,
+  });
+
+  it("is offered with no key", () => {
+    expect(keyFetchOffered(key("none"))).toBe(true);
+  });
+
+  it("is offered over the plugin's own key file", () => {
+    expect(keyFetchOffered(key("file"))).toBe(true);
+  });
+
+  it("is absent while config.toml sets the key (the file would be ignored)", () => {
+    expect(keyFetchOffered(key("config"))).toBe(false);
+  });
+
+  it("is absent while SGDB_API_KEY sets the key (the file would be ignored)", () => {
+    expect(keyFetchOffered(key("env"))).toBe(false);
+  });
+
+  it("is absent before the key state is known, and while config.toml does not parse", () => {
+    expect(keyFetchOffered(null)).toBe(false);
+    expect(keyFetchOffered(key("none", true))).toBe(false);
+  });
+
+  it("starts with no fetch and no key state in the store", () => {
+    expect(initialState().keyFetch).toBeNull();
+    expect(initialState().sgdbKey).toBeNull();
+  });
+
+  it("says the four texts of step 3", () => {
+    expect(keyFetchText({ state: "waiting" })).toBe("Waiting for SteamGridDB…");
+    expect(keyFetchText({ state: "steam-sign-in" })).toBe("Signing in with Steam…");
+    expect(keyFetchText({ state: "steam-login" })).toBe("Steam is asking you to log in on the page");
+    expect(keyFetchText({ state: "reading" })).toBe("Reading your key…");
   });
 });
