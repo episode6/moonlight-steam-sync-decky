@@ -530,7 +530,9 @@ Key*, or anything else that would replace a key you already have, is
 never pressed. While it runs the field says where it is and **Cancel**
 stands in for **Save**; it gives up after three minutes. At the end the
 browser is closed, the key is saved to the key file and tested, and a
-toast shows its last four characters. The key goes from the page to the
+toast shows its last four characters. **Cancel** is pressed on the
+Artwork page, so after it the plugin leaves the browser page open where it
+was rather than navigating anywhere. The key goes from the page to the
 file and nowhere else: not to the plugin's UI, its events or its log. If
 SteamGridDB's pages change shape the plugin says so and the typed field
 is the way in.

@@ -450,9 +450,19 @@ export interface SgdbKeyEventPayload {
  * `sgdb_key_done` payload: the fetch ended. On success the key is in the key
  * file and only its last four characters come back (hard rule 4).
  */
+/**
+ * The codes a failed key fetch ends with (spec 3.20.3): the fetch's own,
+ * `keys.KeyRefused`'s `bad-request` (a key in `config.toml`), and `io` when
+ * the key file could not be written.
+ */
+export type SgdbKeyFetchError = Extract<
+  ErrorCode,
+  "no-debugger" | "timeout" | "cancelled" | "sgdb-page" | "bad-request" | "io"
+>;
+
 export type SgdbKeyDonePayload =
   | { ok: true; source: KeyState["source"]; hint: string | null }
-  | { ok: false; error: ErrorCode; message: string };
+  | { ok: false; error: SgdbKeyFetchError; message: string };
 
 /**
  * What one layout action recorded for a shortcut (spec 3.10 / 3.16).

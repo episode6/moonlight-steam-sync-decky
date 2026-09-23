@@ -920,7 +920,11 @@ export class Controller {
       }
       return;
     }
-    await this.refreshSgdbKey();
+    // A failed re-read must not leave the field (and the button) at "no key"
+    // under a "saved" toast: the done payload carries the same source and hint.
+    if (await this.refreshSgdbKey()) {
+      this.store.set({ sgdbKey: { source: payload.source, hint: payload.hint, config_parse_error: false } });
+    }
     this.ui.toast("Moonlight Sync", Controller.keySavedToast(payload.hint));
     const tested = await this.backend.test_sgdb_key();
     this.ui.toast("Moonlight Sync", isFailure(tested) ? errorText(tested) : Controller.KEY_ACCEPTED);

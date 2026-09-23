@@ -155,7 +155,8 @@ src/lib/                    pure modules (vitest)
                             `cancelled` / `sgdb-page` / `timeout` are the backend's text
                             verbatim, `busy` kind `"key"` its own sentence),
                             SGDB_API_PAGE, KeyFetchState, SgdbKeyEventPayload /
-                            SgdbKeyDonePayload (spec 3.20)
+                            SgdbKeyDonePayload (its failure `error` narrowed to
+                            SgdbKeyFetchError) (spec 3.20)
   events.ts                 NDJSON parsing, lastOf/eventsOf
   state.ts                  AppState, Store, reducers (runs, counters, stream map),
                             `titlesEpoch` (bumped by a match-cache reset; a mounted
@@ -183,7 +184,8 @@ src/lib/                    pure modules (vitest)
                             the done does not navigate back), onSgdbKeyEvent(),
                             onSgdbKeyDone() (navigateBack only when this fetch opened
                             the browser and no Cancel came since, *before* any toast;
-                            ok: sgdb_key_state, the "SteamGridDB key saved (…hint)"
+                            ok: sgdb_key_state (a failed re-read falls back to the
+                            payload's source + hint), the "SteamGridDB key saved (…hint)"
                             toast, then test_sgdb_key with its verdict toasted;
                             failed: its message toasted, nothing else),
                             loadTitles() (list -> list_cached fallback, and list_cached

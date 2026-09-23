@@ -2129,6 +2129,26 @@ describe("the SteamGridDB key from the Game Mode browser (spec 3.20.4)", () => {
     expect(names()).not.toContain("test_sgdb_key");
   });
 
+  it("done ok with a failed key state re-read: the store takes the payload's source and hint", async () => {
+    const controller = make({ sgdb_key_state: { ok: false, error: "io", message: "no home" } });
+    await controller.fetchSgdbKey();
+    await controller.onSgdbKeyDone({ ok: true, source: "file", hint: "cdef" });
+    expect(controller.state.sgdbKey).toEqual({ source: "file", hint: "cdef", config_parse_error: false });
+    expect(ui.bodies[0]).toBe("SteamGridDB key saved (…cdef)");
+  });
+
+  it("a cancel the backend refuses is toasted, and the fetch stays shown", async () => {
+    const controller = make({
+      cancel_sgdb_key_fetch: { ok: false, error: "bad-request", message: "cancel failed" },
+    });
+    await controller.fetchSgdbKey();
+    order = [];
+    const result = await controller.cancelSgdbKeyFetch();
+    expect(result.ok).toBe(false);
+    expect(order).toEqual(["call:cancel_sgdb_key_fetch", "toast:cancel failed"]);
+    expect(controller.state.keyFetch).toEqual({ state: "waiting" });
+  });
+
   it("a cancel with nothing in flight drops a stale state", async () => {
     const controller = make({ cancel_sgdb_key_fetch: { ok: true, running: false } });
     controller.onSgdbKeyEvent({ state: "steam-login" });
