@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<!-- The never-Revoke fixture (spec 3.20.3's rules): the API page with no
+     key and no generate control, where the *only* button is Revoke API Key.
+     Every snippet is run against this DOM and must click nothing. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Preferences - SteamGridDB</title>
+</head>
+<body>
+  <div class="container profile">
+    <div class="columns">
+      <div class="column">
+        <h1 class="title">API</h1>
+        <h2 class="subtitle">API Key</h2>
+        <p>API key for use with the API.</p>
+        <p>Key: <code>(none)</code></p>
+        <form action="/profile/preferences/api/revoke" method="post">
+          <button class="button is-danger" type="submit">Revoke API Key</button>
+        </form>
+        <a class="btn" href="/profile/preferences/api/revoke">Revoke and generate a new key</a>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

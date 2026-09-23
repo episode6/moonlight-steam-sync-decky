@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<!-- Decision 63: a redesigned API page with no code element at all (the
+     key moved into some other control) whose only key buttons replace the
+     key: Regenerate API Key and Generate new key. JS_GENERATE must click
+     neither. Hypothetical; not a measured shape. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Preferences - SteamGridDB</title>
+</head>
+<body>
+  <div class="container profile">
+    <div class="columns">
+      <div class="column">
+        <h1 class="title">API</h1>
+        <h2 class="subtitle">API Key</h2>
+        <p>API key for use with the API.</p>
+        <input type="password" value="hidden" readonly>
+        <form action="/profile/preferences/api/regenerate" method="post">
+          <button class="button is-warning" type="submit">Regenerate API Key</button>
+        </form>
+        <a class="btn" href="/profile/preferences/api/new">Generate new key</a>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

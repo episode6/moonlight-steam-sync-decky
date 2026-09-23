@@ -10,7 +10,8 @@ Conventions (spec 3.7, amended):
   "error": <code>, "message": <text>, ...}`` with ``error`` one of
   ``cli-missing``, ``cli-too-old``, ``cli-protocol``, ``cli-error``,
   ``timeout``, ``busy``, ``owned-apps-missing``, ``owned-apps-empty``,
-  ``bad-request``, ``io``. Callables never raise.
+  ``bad-request``, ``io``, ``no-mac``, ``no-debugger``, ``cancelled``,
+  ``sgdb-page``. Callables never raise.
 - Argv is always ``[python3, <installed cli>, "--json", <subcommand>, ...]``
   except ``doctor``, ``--version`` and ``art --help``. The child runs with
   ``cwd=<home>`` and ``env`` = the backend's plus
@@ -28,6 +29,11 @@ Conventions (spec 3.7, amended):
   ever leave this process. The one CLI file it touches is the match cache,
   ``matches.json``, which ``reset_match_cache`` deletes whole (never edits)
   under the busy guard, so the CLI cannot be writing it at the time.
+- The key fetch (``start_sgdb_key_fetch``, spec 3.20) drives the Game Mode
+  browser over Steam's debugger port in a worker thread, reports its states
+  as ``sgdb_key_event`` and its end as ``sgdb_key_done``, and hands the key
+  to ``keys.set_key`` and nowhere else. It has its own busy guard (kind
+  ``"key"``), not the runs': no CLI and no ``matches.json`` are involved.
 """
 
 from __future__ import annotations
@@ -42,6 +48,7 @@ import os
 import shlex
 import shutil
 import signal
+import threading
 import time
 import traceback
 from collections.abc import Awaitable, Callable
@@ -49,8 +56,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+from . import cdp, install, keys, sgdbpage, wake
 from . import events as ev
-from . import install, keys, wake
 from .settings import SettingsError, Store
 
 Result = dict[str, Any]
@@ -122,6 +129,21 @@ class RunState:
     failure: Result | None = None
 
 
+@dataclass
+class KeyFetch:
+    """One SteamGridDB key fetch from the browser (spec 3.20.3)."""
+
+    #: Set by ``cancel_sgdb_key_fetch`` / ``unload``; the worker thread
+    #: notices between two polls and reports ``cancelled``.
+    stop: threading.Event
+    started: str
+    task: asyncio.Task | None = None
+    #: The ``sgdb_key_event`` emits queued from the worker thread, awaited
+    #: before ``sgdb_key_done`` so the frontend sees them in order.
+    emits: list[asyncio.Task] = field(default_factory=list)
+    done: bool = False
+
+
 def match_cache_path(home: str, env: dict[str, str]) -> str:
     """Where the CLI keeps ``matches.json``, resolved as its ``cache_dir()``
     resolves it for the child: ``$XDG_CACHE_HOME`` from the env the child
@@ -183,6 +205,8 @@ class Backend:
     UNLOAD_WAIT = 10.0
     CHECK_HOST_TTL = 10.0
     EVENT_RING = 200
+    #: A cancelled key fetch reports within one poll interval; this is the margin.
+    KEY_FETCH_UNLOAD_WAIT = 3.0
 
     def __init__(
         self,
@@ -229,6 +253,8 @@ class Backend:
         self._matching = 0
         self._host_memo: dict[str, tuple[float, Result]] = {}
         self._procs: set[asyncio.subprocess.Process] = set()
+        #: The key fetch in flight, if any (spec 3.20); its own busy guard.
+        self._key_fetch: KeyFetch | None = None
 
     # ------------------------------------------------------------------
     # logging
@@ -396,8 +422,15 @@ class Backend:
 
         A run that has been registered but whose child is not spawned yet is
         flagged instead; :meth:`_run_started` interrupts it the moment it
-        exists, so unloading can never leave an orphan behind.
+        exists, so unloading can never leave an orphan behind. A key fetch
+        in flight is cancelled the way ``cancel_sgdb_key_fetch`` cancels it.
         """
+        fetch = self._key_fetch
+        if fetch is not None and not fetch.done:
+            self._log("unload: cancelling the sgdb key fetch")
+            fetch.stop.set()
+            if fetch.task is not None:
+                await asyncio.wait({fetch.task}, timeout=self.KEY_FETCH_UNLOAD_WAIT)
         run = self._run
         if run is not None and run.running:
             self._log("unload: interrupting the running child")
@@ -1254,6 +1287,115 @@ class Backend:
         notes = self._notes(result)
         message = notes[0] if notes else 'SteamGridDB returned nothing for "Portal"'
         return failure("cli-error", self._redact(message), exit=result.exit, events=result.events)
+
+    # ------------------------------------------------------------------
+    # the SteamGridDB key from the Game Mode browser (spec 3.20)
+
+    @guarded
+    async def start_sgdb_key_fetch(self) -> Result:
+        """Start reading the key out of the Game Mode browser (spec 3.20.3).
+
+        The frontend opens SteamGridDB's API page in the browser right after
+        this answers ``ok``; the fetch then drives the sign-in over Steam's
+        debugger port in a worker thread (``sgdbpage.fetch_key``), emits
+        ``sgdb_key_event {state}`` on each state change and ``sgdb_key_done``
+        at the end, and writes the key through ``keys.set_key`` -- the only
+        place it goes. The port is probed first, so ``no-debugger`` comes
+        back here, before the browser opens. Not under the runs' busy guard
+        (Decision 62); a second fetch is ``busy`` with kind ``"key"``.
+        """
+        fetch = self._key_fetch
+        if fetch is not None and not fetch.done:
+            return failure("busy", "A key fetch is already in progress", kind="key")
+        fetch = KeyFetch(stop=threading.Event(), started=iso_now())
+        self._key_fetch = fetch
+        try:
+            await asyncio.to_thread(cdp.TARGETS)
+        except cdp.DebuggerUnavailable as exc:
+            fetch.done = True
+            self._log(f"sgdb key fetch: {self._redact(str(exc))}")
+            return failure("no-debugger", sgdbpage.TEXT_NO_DEBUGGER)
+        except BaseException:
+            # Anything else from the probe must not leave the guard at busy.
+            fetch.done = True
+            raise
+        fetch.task = asyncio.get_running_loop().create_task(self._drive_key_fetch(fetch))
+        self._log("sgdb key fetch started")
+        return {"ok": True, "started": fetch.started}
+
+    @guarded
+    async def cancel_sgdb_key_fetch(self) -> Result:
+        """Cancel the fetch in flight; it reports ``cancelled`` within one poll."""
+        fetch = self._key_fetch
+        if fetch is None or fetch.done:
+            return {"ok": True, "running": False}
+        fetch.stop.set()
+        self._log("sgdb key fetch: cancel requested")
+        return {"ok": True, "running": True}
+
+    def _on_key_fetch_state(self, fetch: KeyFetch, state: str) -> None:
+        """On the loop (``call_soon_threadsafe`` from the worker thread)."""
+        self._log(f"sgdb key fetch: {state}")
+        fetch.emits.append(
+            asyncio.get_running_loop().create_task(self._emit("sgdb_key_event", {"state": state}))
+        )
+
+    async def _drive_key_fetch(self, fetch: KeyFetch) -> None:
+        loop = asyncio.get_running_loop()
+
+        def on_state(state: str) -> None:
+            loop.call_soon_threadsafe(self._on_key_fetch_state, fetch, state)
+
+        payload: dict[str, Any] = {
+            "ok": False,
+            "error": "sgdb-page",
+            "message": sgdbpage.TEXT_PAGE_CHANGED,
+        }
+        try:
+            payload = await self._run_key_fetch(fetch, on_state)
+        finally:
+            # Every exit frees the guard, a cancelled task included.
+            fetch.done = True
+        if fetch.emits:
+            await asyncio.gather(*fetch.emits, return_exceptions=True)
+        await self._emit("sgdb_key_done", payload)
+
+    async def _run_key_fetch(
+        self, fetch: KeyFetch, on_state: Callable[[str], None]
+    ) -> dict[str, Any]:
+        """The fetch and the key's one write: ``sgdb_key_done``'s payload."""
+        try:
+            key = await asyncio.to_thread(
+                sgdbpage.fetch_key, cdp.TARGETS, cdp.CONNECT, fetch.stop, time.monotonic, on_state
+            )
+        except sgdbpage.FetchFailed as exc:
+            why = self._redact(exc.detail or exc.message)
+            self._log(f"sgdb key fetch failed ({exc.code}): {why}")
+            return {"ok": False, "error": exc.code, "message": exc.message}
+        except Exception:
+            self._log(f"sgdb key fetch failed:\n{self._redact(traceback.format_exc())}")
+            return {"ok": False, "error": "sgdb-page", "message": sgdbpage.TEXT_PAGE_CHANGED}
+        # The key's one destination. Nothing below names it: the done event
+        # carries the hint, the log lines are fixed text or an exception's
+        # class name (the key file may not exist yet, so ``_redact`` could
+        # not scrub a message that quoted the key).
+        try:
+            state = keys.set_key(self.home, self.env, key)
+        except keys.KeyRefused as exc:
+            self._log(f"sgdb key fetch: the key was refused: {exc.message}")
+            return {"ok": False, "error": exc.code, "message": exc.message}
+        except OSError as exc:
+            self._log(f"sgdb key fetch: could not write the key file: {exc}")
+            return {
+                "ok": False,
+                "error": "io",
+                "message": self._redact(f"could not write the key file: {exc}"),
+            }
+        except Exception as exc:
+            self._log(f"sgdb key fetch: saving the key failed ({type(exc).__name__})")
+            return {"ok": False, "error": "io", "message": "Could not save the key"}
+        self._log("sgdb key fetched from the browser")
+        return {"ok": True, "source": state.source, "hint": state.hint}
 
     # ------------------------------------------------------------------
     # matching and ignoring (the Titles page)

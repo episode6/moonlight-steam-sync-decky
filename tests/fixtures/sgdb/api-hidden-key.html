@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<!-- Decision 63: a redesigned API page that masks the key behind a Show
+     toggle, with a Generate API Key button still beside it. JS_KEY reads
+     nothing here, and JS_GENERATE must click nothing: a code element means
+     the account has a key, and generating one would replace it.
+     Hypothetical; not a measured shape. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Preferences - SteamGridDB</title>
+</head>
+<body>
+  <div class="container profile">
+    <div class="columns">
+      <div class="column">
+        <h1 class="title">API</h1>
+        <h2 class="subtitle">API Key</h2>
+        <p>API key for use with the API.</p>
+        <p>Key: <code>••••••••••••••••••••••••••••••••</code></p>
+        <button class="button" type="button">Show</button>
+        <form action="/profile/preferences/api/generate" method="post">
+          <button class="button is-primary" type="submit">Generate API Key</button>
+        </form>
+        <form action="/profile/preferences/api/revoke" method="post">
+          <button class="button is-danger" type="submit">Revoke API Key</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

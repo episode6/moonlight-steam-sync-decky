@@ -8,6 +8,27 @@ project uses [semantic versioning](https://semver.org/).
 
 ### Added
 
+- **The SteamGridDB key, fetched from the Game Mode browser** (spec
+  §3.20), the backend half. Typing a 32-character key on a Deck was the
+  worst part of setup, and SteamGridDB has no OAuth: the key exists only
+  on the signed-in preferences page, and sign-in is Steam OpenID. New
+  backend callables `start_sgdb_key_fetch` / `cancel_sgdb_key_fetch`
+  drive that page over Steam's own CEF debugger port (the one Decky
+  Loader injects plugins through; `py_modules/moonlight_sync/cdp.py`, a
+  standard-library client) with a state machine
+  (`py_modules/moonlight_sync/sgdbpage.py`): the *Login via Steam* link is
+  followed once its host and realm are checked, Steam's *Sign In* is
+  submitted once (a Steam password or Steam Guard prompt is left to the
+  user), the API page is read and, for an account with no key yet, its
+  *Generate* button pressed once; *Revoke API Key* is never pressed, nor
+  anything that would replace an existing key (*Regenerate*, *new key*, or
+  any button at all while the page shows a key element). The
+  key goes to the key file the plugin already owns (mode 0600) and
+  nowhere else: the events (`sgdb_key_event {state}`, `sgdb_key_done`)
+  carry the state names and the last four characters only. Bounded at
+  three minutes, cancellable, not under the sync busy guard. The button
+  in Settings → Artwork that starts it is the next release's frontend
+  half; nothing in the UI changes yet.
 - **Reset match cache**, under Settings → Advanced. The CLI remembers a
   title it found nothing for and does not look it up again for seven
   days, so a first sync run before the SteamGridDB key was set left

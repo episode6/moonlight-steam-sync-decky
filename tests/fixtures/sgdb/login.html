@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<!-- https://www.steamgriddb.com/login, not signed in (spec 3.20.1 item 3):
+     the body text and one plain anchor, Login via Steam, to Steam's OpenID
+     endpoint with SteamGridDB as the realm. Hand-written from what the Deck
+     showed on 2026-09-23. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Login - SteamGridDB</title>
+</head>
+<body>
+  <nav class="navbar">
+    <a class="navbar-item" href="https://www.steamgriddb.com/">SteamGridDB</a>
+    <form class="search" action="/search/grids"><input type="text" name="term"><input type="submit" value="Search"></form>
+  </nav>
+  <div class="container">
+    <div class="notification">
+      <p>You must log in to view this page.</p>
+    </div>
+    <a class="btn" href="https://steamcommunity.com/openid/login?openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0&amp;openid.mode=checkid_setup&amp;openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&amp;openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&amp;openid.realm=https%3A%2F%2Fwww.steamgriddb.com&amp;openid.return_to=https%3A%2F%2Fwww.steamgriddb.com%2Flogin%2Fsteam">Login via Steam</a>
+  </div>
+  <iframe src="https://ads.example.invalid/slot/1" title="ad"></iframe>
+  <iframe src="https://ads.example.invalid/slot/2" title="ad"></iframe>
+</body>
+</html>

@@ -109,6 +109,36 @@ py_modules/moonlight_sync/  the backend (imports nothing from decky)
                             getaddrinfo). Moonlight's CLI has no wake action
                             (list / quit / stream / pair only), so the plugin sends it
   events.py                 parse_line(), restart_decision(), next_pending()
+  cdp.py                    the Chrome DevTools Protocol client over Steam's CEF
+                            debugger (spec 3.20.2; the port Decky injects through):
+                            DEBUGGER, targets() (one GET of /json/list),
+                            Session (a stdlib websocket: handshake, masking, the
+                            three length forms, fragments, ping, close; evaluate()
+                            = Runtime.evaluate returnByValue + awaitPromise, an
+                            EvaluateError on a thrown exception), the CONNECT /
+                            TARGETS seams the tests replace, as wake.SOCKET is;
+                            DebuggerUnavailable (a ConnectionError) for a refused
+                            port, a timeout, a closed socket and a CDP-level error
+                            reply (a context destroyed by a navigation), which the
+                            fetch retries. The one module that talks to the port
+  sgdbpage.py               the key fetch (spec 3.20.3): SGDB_HOST / SGDB_API_PAGE /
+                            STEAM_OPENID_HOST / KEY_RE, the JS snippets one per page
+                            state (JS_PAGE, JS_LOGIN_LINK, JS_NAVIGATE,
+                            JS_OPENID_SUBMIT, JS_OPENID_FORM, JS_KEY, JS_GENERATE) so
+                            a SteamGridDB redesign is a one-file change, the failure
+                            texts, fetch_key(targets, connect, stop, clock, on_state)
+                            -> the key (pure over the seams; raises
+                            FetchFailed(code, message, detail)): waiting -> login
+                            (the link's host and realm checked, one navigate) ->
+                            steam-sign-in (one submit, Decision 60) / steam-login
+                            (the user types, the form is polled) -> reading (one
+                            navigate to the API page per URL, JS_KEY once complete,
+                            JS_GENERATE once, Decision 61, and never while a code
+                            element shows nor on a Regenerate / new key / Revoke
+                            control, Decision 63) -> done. A session per
+                            poll, closed after it; only a `page` target on one of
+                            the two hosts is ever evaluated in; the stop event's
+                            wait() is the 500 ms poll, so a cancel lands within one
 backend/entrypoint.sh       the one CLI downloader (strict), also the Decky store hook
 backend/Dockerfile          template's holo-base image, only for `decky plugin build`
 scripts/package.py          Docker-free zip: out/Moonlight-Sync.zip ("Moonlight Sync/")
@@ -440,7 +470,8 @@ only layout affordance.
 Every callable returns `{"ok": true, …}` or `{"ok": false, "error": <code>,
 "message": …}` (codes: `cli-missing`, `cli-too-old`, `cli-protocol`,
 `cli-error`, `timeout`, `busy`, `owned-apps-missing`, `owned-apps-empty`,
-`bad-request`, `io`, `no-mac`) and never raises. Argv is `[python3, <installed cli>,
+`bad-request`, `io`, `no-mac`, `no-debugger`, `cancelled`, `sgdb-page`) and
+never raises. Argv is `[python3, <installed cli>,
 "--json", <subcommand>, …]` (`doctor`, `--version` and `art --help` have no
 `--json`), `cwd` and `HOME` are the deck user's home, and the child gets
 `MOONLIGHT_STEAM_SYNC_FROM_PLUGIN=1`. Every `sync`, `list` (live and
@@ -551,6 +582,34 @@ The on/off toggle (spec 3.19) is one boolean, `settings.enabled` (default
 backend knows nothing else of it, the frontend reads it everywhere it
 touches the client (`pluginEnabled`), and a run started before the toggle
 went off finishes on its own.
+The key fetch from the Game Mode browser (spec 3.20) needs no CLI and is
+not under the runs' busy guard (Decision 62: no `matches.json` involved, so
+a sync may run meanwhile and a fetch may start during a sync); it has its
+own, `busy` with kind `"key"`. `start_sgdb_key_fetch()` probes
+`cdp.TARGETS()` once (so `no-debugger` comes back here, before the
+frontend opens the browser), then runs `sgdbpage.fetch_key` in a worker
+thread (`asyncio.to_thread`, a `threading.Event` for cancellation) and
+answers `{ok, started}`; each state change is `sgdb_key_event {state}`
+(never page contents) and the end `sgdb_key_done {ok: true, source, hint}`
+or `{ok: false, error, message}` with `error` one of `no-debugger`,
+`timeout` (180 s), `cancelled`, `sgdb-page` (the login page changed, no
+key and no generate button, a thrown snippet, a redirect loop) or
+`keys.KeyRefused`'s codes (`set in config.toml`). The key is handed to
+`keys.set_key` and nowhere else: not a result, an event, a log line or an
+exception message (`FetchFailed.detail` is fixed text or, for a thrown
+snippet, the error's class name alone; `_redact` covers the rest); a failed
+or cancelled fetch writes no file. An unavailable debugger is retried for
+`DEBUGGER_RETRY_S` from the first poll on (the port was already probed; the
+frontend's own navigation can destroy the page context under that poll).
+Every exit frees the `"key"` guard: a probe that raises anything, and a
+`keys.set_key` that raises something other than `KeyRefused` / `OSError`
+(`io`, "Could not save the key"). `targets()` goes through an opener
+that ignores `http_proxy`, and an answer that is not HTTP is
+`DebuggerUnavailable`. `cancel_sgdb_key_fetch()`
+sets the event (`{ok, running}`), `unload()` cancels the same way and waits
+`KEY_FETCH_UNLOAD_WAIT`. The queued state emits are awaited before the
+done emit, so the frontend sees them in order. The frontend follows a
+success with `test_sgdb_key()` (PR-14).
 Wake-on-LAN (spec 3.18) needs no CLI and no busy guard: `hosts()` carries
 an additive `wake` map (`{<host>: {mac, source, addresses}}` over the known
 hosts plus the active one when it is not among them, the Host page's
@@ -654,7 +713,40 @@ There is no Steam Deck during development; everything else is tested.
   `<home>/.local/bin/moonlight-steam-sync`.
 - `tests/test_hard_rules.py` greps for what can be proven mechanically:
   `flags: []`, no live shortcut API call in `src/`, the pin only in
-  `package.json`.
+  `package.json`, the placeholder SteamGridDB key
+  (`tests/fixtures/sgdb/api.html`'s) spelled nowhere else under `tests/`
+  but that file, and, over a whole browser fetch, the key in no result,
+  event or log line (hard rule 4 for spec 3.20).
+- The key fetch (spec 3.20) never opens a socket in a test: `conftest.py`'s
+  `fake_browser` fixture installs a `FakeBrowser` as `cdp.TARGETS` /
+  `cdp.CONNECT` (the Game Mode browser as the seams see it: the page
+  target once `open_page()` ran, beside `SharedJSContext`, Big Picture and
+  ad `iframe` targets; a session's `evaluate` runs the snippet's mirror
+  over the current page and then plays the site: the API page bounces to
+  `/login` until signed in, the login link goes to Steam, the OpenID
+  submit signs in and returns home, *Generate* gives the account a key,
+  *Revoke* is recorded and must never happen; `answers` scripts one
+  snippet's value or exception, `on_poll` changes the browser per poll,
+  `loading_polls` makes a fresh page read as loading first). The pages are
+  `tests/fixtures/sgdb/*.html` (`login`, `openid`, `api`, `api-no-key`,
+  `api-revoke-only`, and Decision 63's `api-hidden-key` / `api-regenerate`,
+  hand-written from spec 3.20.1 with the placeholder
+  key), parsed by `tests/fakedom.py`: a minimal DOM (`querySelector` /
+  `querySelectorAll` over tag, class, id, `[attr=v]`, `[attr*=v]`,
+  descendants and lists; `textContent`, `innerText`, `value`, `href`, a
+  recording `click()`, `readyState`, `location.href`) and `evaluate(js,
+  document)`, the snippets' Python mirrors: the same control flow with
+  every selector and regex literal read out of the snippet's own text, so
+  a changed selector changes what the mirror queries and a changed shape
+  fails. `tests/test_sgdbpage.py` drives `fetch_key` over the fake with a
+  fake clock whose `wait()` is the poll (one test per state-table row and
+  per failure, the four rules, cancellation, the 180 s timeout) and the
+  backend's thread with `POLL_INTERVAL_S` patched short (the events, the
+  0600 key file, `busy`, cancel, `unload`, a refused key, the busy-guard
+  independence). `tests/test_cdp.py` runs the real websocket client
+  against a loopback fake debugger in a thread (handshake, masking, the
+  126- and 127-length forms, a fragmented reply, a ping, close, a
+  protocol error, a timeout) and `targets()` over a stubbed `urlopen`.
 - `tests/test_entrypoint.py` runs `backend/entrypoint.sh` from a copy of
   `backend/` with `MSY_CLI_BASE_URL=file://…`; `tests/test_package.py`
   builds a fixture tree and checks the exact zip entry list and modes.

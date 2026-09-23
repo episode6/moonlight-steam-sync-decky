@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<!-- https://www.steamgriddb.com/profile/preferences/api, signed in (spec
+     3.20.1 item 5): the key in the clear, the text of exactly one element,
+     div.container.profile > div.columns > div.column > p > code, 32
+     lower-case hex characters; the only button beside it is Revoke API Key,
+     which nothing may ever press. The key is a placeholder. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Preferences - SteamGridDB</title>
+</head>
+<body>
+  <nav class="navbar">
+    <a class="navbar-item" href="https://www.steamgriddb.com/">SteamGridDB</a>
+    <form class="search" action="/search/grids"><input type="text" name="term"><input type="submit" value="Search"></form>
+  </nav>
+  <div class="container profile">
+    <div class="columns">
+      <div class="column is-narrow menu">
+        <ul class="menu-list">
+          <li><a href="/profile/preferences">Preferences</a></li>
+          <li><a class="is-active" href="/profile/preferences/api">API</a></li>
+        </ul>
+      </div>
+      <div class="column">
+        <h1 class="title">API</h1>
+        <h2 class="subtitle">API Key</h2>
+        <p>API key for use with the <a href="https://www.steamgriddb.com/api/v2">API</a>.</p>
+        <p>Key: <code>0123456789abcdef0123456789abcdef</code></p>
+        <form action="/profile/preferences/api/revoke" method="post">
+          <button class="button is-danger" type="submit">Revoke API Key</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  <iframe src="https://ads.example.invalid/slot/1" title="ad"></iframe>
+</body>
+</html>
