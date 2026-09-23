@@ -6,6 +6,8 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-22
+
 ### Added
 
 - **An on/off toggle for the whole plugin** (spec §3.19), *Moonlight
