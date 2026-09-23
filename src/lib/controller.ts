@@ -481,10 +481,7 @@ export class Controller {
 
   /** A user-initiated run (Sync now, Re-fetch all art, Remove everything); refused while the plugin is off. */
   run(kind: RunKind): Promise<Failure | null> {
-    if (!this.enabled) {
-      this.store.set({ message: errorText(DISABLED_FAILURE) });
-      return Promise.resolve(DISABLED_FAILURE);
-    }
+    if (!this.enabled) return Promise.resolve(DISABLED_FAILURE);
     this.mismatchRetried = false;
     return this.startRun(kind);
   }
@@ -691,6 +688,9 @@ export class Controller {
    * when the run finishes.
    */
   async loadTitles(): Promise<TitlesLoad> {
+    // Off (spec 3.19): the page is not reachable, and a live `list` would
+    // ask the very host the Deck is away from.
+    if (!this.enabled) return { ok: false, message: DISABLED_FAILURE.message, neverSynced: false };
     const active = this.state.hosts?.active;
     if (!active) return { ok: false, message: "No host yet; add one on the Host page", neverSynced: false };
     const running = !!this.state.run?.running;
@@ -1136,11 +1136,18 @@ export class Controller {
 
   /**
    * The plugin's on/off toggle (spec 3.19). Off: this device's members
-   * leave the fallback collection, then every entry is hidden (the
-   * reconcile, which reads the new setting). On: the reconcile restores
-   * what `status` and the settings say, the deferred layout walk runs and
-   * the host is checked again. Refused while a run is going (the toggle is
-   * disabled then too): the run owns the library until it is done.
+   * leave the fallback collection -- only while the *Streaming* group is
+   * on, since with it off the plugin retired its collection back then and
+   * a same-named one the user made since is not its to touch -- then
+   * every entry is hidden (the reconcile, which reads the new setting).
+   * On: the reconcile restores what `status` and the settings say, the
+   * deferred layout walk runs and the host is checked again. Refused while
+   * a run is going (the toggle is disabled then too): the run owns the
+   * library until it is done. Beyond the guards in `run`, `setSettings`,
+   * `setDefaultLayout`, `restartRow`, `streamPress`, `checkHost`,
+   * `loadTitles` and the walk, the off state relies on the panel and the
+   * settings route hiding every other entry point (pins, ignore, hosts,
+   * wake, the host-app buttons, *Choose layout*).
    */
   async setEnabled(on: boolean): Promise<Result> {
     if (this.state.run?.running) {
@@ -1157,7 +1164,7 @@ export class Controller {
       void this.layoutWalk();
       void this.checkHost(false);
     } else {
-      await this.retireCollection();
+      if (streamingCollectionEnabled(result.settings)) await this.retireCollection();
       await this.reconcileLibrary();
     }
     return result;

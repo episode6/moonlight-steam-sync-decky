@@ -116,7 +116,8 @@ CLI release)" and you can install the CLI with its own `install.sh`.
   nothing syncs, the host is not probed, and the settings route shows the
   toggle alone until it is on again. Turning it on puts everything back
   as the last status and your settings say, and runs a controller-layout
-  walk that fell due meanwhile. The toggle waits for a sync in flight.
+  walk that fell due meanwhile. The toggle is unavailable while a sync
+  runs; the run finishes on its own.
 - **Host**: a dropdown of your known hosts with the active one selected. A
   green dot and "N apps" when `moonlight list` answered; a red dot, the
   error, and "last seen <when>" from the last successful listing when it did

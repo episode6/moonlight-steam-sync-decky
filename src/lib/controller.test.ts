@@ -1790,13 +1790,25 @@ describe("the on/off toggle (spec 3.19)", () => {
     expect(steam.lib.log).toEqual([]);
   });
 
+  it("off leaves a collection alone when the Streaming group is already off: it is not the plugin's", async () => {
+    settingsFile.streaming_collection = false;
+    steam.lib.collections.set(STREAMING_COLLECTION, new Set([HADES, 570]));
+    const controller = await loaded();
+    steam.lib.log = [];
+    await controller.setEnabled(false);
+    expect(sorted(steam.lib.collections.get(STREAMING_COLLECTION) ?? [])).toEqual(sorted([HADES, 570]));
+    expect(steam.lib.log.filter((line) => !line.startsWith("hide"))).toEqual([]);
+    expect(sorted(steam.lib.hidden)).toEqual(sorted(EVERY_ENTRY));
+  });
+
   it("off refuses runs, settings and the default layout, and a Stream press launches nothing", async () => {
     const controller = await loaded();
     await controller.setEnabled(false);
     calls.length = 0;
     ui.bodies.length = 0;
     expect(await controller.run("sync")).toEqual(DISABLED_FAILURE);
-    expect(controller.state.message).toBe("Moonlight Sync is off");
+    expect(controller.state.message).toBeNull();
+    expect(await controller.loadTitles()).toEqual({ ok: false, message: "Moonlight Sync is off", neverSynced: false });
     expect(await controller.setSettings({ restart_countdown_s: 3 })).toEqual(DISABLED_FAILURE);
     expect(await controller.setDefaultLayout(DEFAULT.url, DEFAULT.title)).toEqual(DISABLED_FAILURE);
     expect(ui.bodies).toEqual(["Moonlight Sync is off"]);

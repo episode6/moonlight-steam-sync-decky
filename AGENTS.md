@@ -161,13 +161,19 @@ src/lib/                    pure modules (vitest)
                             retireCollection() (the setting turned off: wanted = []
                             with every `knownAppids` removable), `enabled` /
                             setEnabled() (spec 3.19: `set_settings({enabled})`,
-                            then off: retireCollection + a reconcile that hides
-                            every entry; on: a reconcile, the deferred walk, a
-                            checkHost; busy while a run is going. Off, run() /
-                            setSettings() / setDefaultLayout() / the restart row
-                            answer DISABLED_FAILURE, streamPress() launches
-                            nothing, checkHost() skips, doWalk resolves null
-                            with the flag kept)
+                            then off: retireCollection -- only while the group
+                            setting is on, a same-named collection made after
+                            the group went off is the user's -- + a reconcile
+                            that hides every entry; on: a reconcile, the
+                            deferred walk, a checkHost; busy while a run is
+                            going. Off, run() / setSettings() /
+                            setDefaultLayout() / the restart row answer
+                            DISABLED_FAILURE, loadTitles() answers its message,
+                            streamPress() launches nothing, checkHost() skips,
+                            doWalk resolves null with the flag kept; every
+                            other entry point (pins, ignore, hosts, wake, the
+                            host-app buttons, Choose layout) is UI-only: the
+                            panel and the settings route hide them while off)
   layouts.ts                DEFAULT_LAYOUT_STRATEGY (the one switch), layoutStrategy(),
                             DEFAULT_LAYOUT_SCHEMES / isShareableUrl() (workshop://,
                             template://), defaultLayoutOf() (null under picker or unset),

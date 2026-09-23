@@ -1,4 +1,4 @@
-import { PanelSection, PanelSectionRow, SidebarNavigation } from "@decky/ui";
+import { Field, PanelSection, PanelSectionRow, SidebarNavigation, Spinner } from "@decky/ui";
 import { useEffect } from "react";
 
 import { SETTINGS_ROUTE, TITLES_ROUTE, controller } from "../instance";
@@ -16,19 +16,26 @@ import { useStore } from "./useStore";
  * Advanced, About. Pages that only touch plugin files work without a CLI;
  * the rest say why they are disabled. While the plugin is off (spec 3.19)
  * the route shows the on/off toggle alone: no page, so no setting can
- * change until it is on again.
+ * change until it is on again -- and a spinner until the settings have
+ * loaded, so a cold open never mounts the pages first.
  */
 export function SettingsPage() {
   const state = useStore(controller.store);
   useEffect(() => {
     void controller.load();
   }, []);
-  if (state.loaded && !pluginEnabled(state.settings)) {
+  if (!state.loaded || !pluginEnabled(state.settings)) {
     return (
       <div style={{ marginTop: 40, padding: "0 2.8vw" }}>
         <PanelSection title="Moonlight Sync">
           <PanelSectionRow>
-            <EnabledToggle state={state} />
+            {state.loaded ? (
+              <EnabledToggle state={state} />
+            ) : (
+              <Field label="Loading…" focusable={false}>
+                <Spinner style={{ width: 20, height: 20 }} />
+              </Field>
+            )}
           </PanelSectionRow>
         </PanelSection>
       </div>

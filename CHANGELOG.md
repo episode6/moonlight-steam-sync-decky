@@ -16,8 +16,9 @@ project uses [semantic versioning](https://semver.org/).
   now, the restart row and the settings answer "Moonlight Sync is off"),
   the host is not probed, and the settings route shows the toggle alone.
   On again puts everything back as the last status and the settings say,
-  and runs a layout walk that was due meanwhile. The toggle waits for a
-  run in flight. New key `enabled` in `settings.json`.
+  and runs a layout walk that was due meanwhile. The toggle is
+  unavailable while a run is going; the run finishes on its own. New key
+  `enabled` in `settings.json`.
 
 ### Changed
 
