@@ -6,6 +6,8 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-09-24
+
 ### Added
 
 - **The moonlight-steam-sync CLI now lives in this repo**, under `cli/`,
@@ -73,16 +75,12 @@ project uses [semantic versioning](https://semver.org/).
   Access menu the client gives that column a 270 px minimum beside an empty
   label column, wider than the panel; the column now grows across the row.
 
-### Fixed
-
 - The Host page said "Not known" for a host whose MAC Moonlight had
   stored. Moonlight's config quotes the whole value when a raw byte of the
   MAC is a character it has to protect (a comma, a bracket), as
   `1\mac="@ByteArray(...)"`, and the reader looked for the `@ByteArray(`
   prefix before taking the quotes off. Found on a device on 2026-09-23 with
   a MAC starting `2c` (a comma); the exact line shape is now a test.
-
-### Fixed
 
 - Pressing *Show 50 more* on the Titles page no longer drops gamepad
   focus below the new rows: focus moves to the last row already shown
