@@ -6,11 +6,13 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-09-24
+
 ### Added
 
 - **The moonlight-steam-sync CLI now lives in this repo**, under `cli/`,
   moved from [episode6/moonlight-steam-sync](https://github.com/episode6/moonlight-steam-sync)
-  (to be archived) with its tests, docs and history file. Each release now
+  (now archived) with its tests, docs and history file. Each release now
   builds the CLI from the same commit, bundles it into the plugin zip and
   also attaches it on its own as `moonlight-steam-sync.pyz` (+ `.sha256`),
   and the CLI takes the plugin's version: it jumps from `0.4.0` to the
@@ -38,7 +40,6 @@ project uses [semantic versioning](https://semver.org/).
   running, and the plugin compares that number to decide whether to
   upgrade the installed CLI. `cli/install.sh` says which download failed,
   and why, when a release has no CLI attached.
-
 - **The plugin no longer asks the host anything on its own** (spec
   Decision 66). Moonlight's command line sends a Wake-on-LAN packet on
   every `list` and `stream`, before it even looks whether the PC is up
@@ -72,18 +73,12 @@ project uses [semantic versioning](https://semver.org/).
   whose child column is fixed-width unless told otherwise, and in the Quick
   Access menu the client gives that column a 270 px minimum beside an empty
   label column, wider than the panel; the column now grows across the row.
-
-### Fixed
-
 - The Host page said "Not known" for a host whose MAC Moonlight had
   stored. Moonlight's config quotes the whole value when a raw byte of the
   MAC is a character it has to protect (a comma, a bracket), as
   `1\mac="@ByteArray(...)"`, and the reader looked for the `@ByteArray(`
   prefix before taking the quotes off. Found on a device on 2026-09-23 with
   a MAC starting `2c` (a comma); the exact line shape is now a test.
-
-### Fixed
-
 - Pressing *Show 50 more* on the Titles page no longer drops gamepad
   focus below the new rows: focus moves to the last row already shown
   before the page grows, so the next press of down steps into the first
