@@ -31,6 +31,13 @@ project uses [semantic versioning](https://semver.org/).
   3.11 and 3.13.5), ruff lints `cli/` too, and packaging is strict on
   every run now that there is no release to wait for; a release tag must
   match `package.json`'s version.
+- The CLI's `--version` (and every `--json` `start` event) is now always
+  its own `__version__`, no longer the installed package's metadata when
+  one is installed: a stale editable install or a stray pip install beside
+  the zipapp could otherwise report a different number than the code
+  running, and the plugin compares that number to decide whether to
+  upgrade the installed CLI. `cli/install.sh` says which download failed,
+  and why, when a release has no CLI attached.
 
 - **The plugin no longer asks the host anything on its own** (spec
   Decision 66). Moonlight's command line sends a Wake-on-LAN packet on

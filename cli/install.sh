@@ -75,8 +75,16 @@ TMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 echo "Downloading ${ASSET} (${VERSION}) from ${REPO}..."
-curl -fsSL "${BASE_URL}/${ASSET}" -o "${TMP_DIR}/${ASSET}"
-curl -fsSL "${BASE_URL}/${ASSET}.sha256" -o "${TMP_DIR}/${ASSET}.sha256"
+# curl exits 22 on a 404, which with -f prints nothing useful. Say which
+# URL failed and the likeliest reason, as the plugin's install.sh does.
+for asset in "${ASSET}" "${ASSET}.sha256"; do
+    if ! curl -fsSL "${BASE_URL}/${asset}" -o "${TMP_DIR}/${asset}"; then
+        echo "install.sh: could not download ${BASE_URL}/${asset} (is ${VERSION} released?" \
+            "CLI releases before the move into ${REPO}, v0.4.0 and older," \
+            "are on episode6/moonlight-steam-sync.)" >&2
+        exit 1
+    fi
+done
 
 echo "Verifying checksum..."
 # Compare hashes rather than `sha256sum -c` against the recorded filename:

@@ -49,7 +49,11 @@ def test_zipapp_builds_and_reports_its_version(tmp_path):
         timeout=30,
     )
     assert result.returncode == 0, result.stderr
-    assert "moonlight-steam-sync" in result.stdout
+    # Exactly the embedded __version__, even though this interpreter may
+    # have the CLI pip-installed (editable) at some other version.
+    from moonlight_steam_sync import __version__
+
+    assert result.stdout.split()[-1] == __version__
 
 
 def test_zipapp_doctor_smoke_run(tmp_path):

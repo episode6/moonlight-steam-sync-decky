@@ -22,11 +22,11 @@ import argparse
 import os
 import platform
 import sys
-from importlib import metadata
 from pathlib import Path
 from typing import Any, TextIO
 
-from moonlight_steam_sync import __version__, hosts, moonlight, procenv, steam, sync
+from moonlight_steam_sync import hosts, moonlight, procenv, steam, sync
+from moonlight_steam_sync import version as _pkg_version
 from moonlight_steam_sync.art.cli import (
     ProviderFactory,
     cmd_art,
@@ -57,23 +57,15 @@ EXIT_SIGINT = 130
 
 
 def _version() -> str:
-    """The version string ``--version`` prints.
+    """The version string ``--version`` prints: :func:`moonlight_steam_sync.version`.
 
     ``pyproject.toml`` declares ``version`` as ``dynamic`` and sourced from
     ``moonlight_steam_sync.__version__`` (see ``[tool.setuptools.dynamic]``),
-    so that attribute is the one place the number is written down. When the
-    tool is installed as a package (``pip install .``, an editable checkout,
-    or a wheel), ``importlib.metadata`` reads the *installed* metadata --
-    the same value, but resolved the way any other installed distribution's
-    version is, so ``--version`` matches ``pip show``. The release zipapp
-    (spec 3.1) is never pip-installed -- it is a bare ``.pyz`` with no
-    ``dist-info`` alongside it -- so metadata lookup fails there and this
-    falls back to the literal ``__version__`` the module was built with.
+    so that attribute is the one place the number is written down, and it is
+    what every copy reports -- the release zipapp, a git checkout and a pip
+    install alike.
     """
-    try:
-        return metadata.version("moonlight-steam-sync")
-    except metadata.PackageNotFoundError:
-        return __version__
+    return _pkg_version()
 
 
 def _add_common_host_flag(parser: argparse.ArgumentParser) -> None:

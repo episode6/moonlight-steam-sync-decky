@@ -127,7 +127,9 @@ def test_a_missing_release_fails_and_installs_nothing(tmp_path: Path) -> None:
     base = release(tmp_path)
     (base / "latest" / "download" / ASSET).unlink()
     result = run_install(tmp_path, base)
-    assert result.returncode != 0
+    assert result.returncode == 1
+    assert f"could not download {base.as_uri()}/latest/download/{ASSET}" in result.stderr
+    assert "(is latest released?" in result.stderr
     assert not installed(tmp_path).exists()
 
 

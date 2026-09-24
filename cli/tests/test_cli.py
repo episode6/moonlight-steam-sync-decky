@@ -190,24 +190,14 @@ def test_version_flag():
     assert "moonlight-steam-sync" in result.stdout
 
 
-def test_version_falls_back_to_module_attribute_when_not_installed(monkeypatch):
-    """The zipapp (spec 3.1) is never pip-installed, so ``importlib.metadata``
-    has no distribution to find -- ``--version`` must still work from the
-    module's own ``__version__`` in that case."""
+def test_version_is_the_module_attribute_whatever_is_installed(monkeypatch):
+    """``--version`` is the running code's own ``__version__``, never the
+    installed distribution's metadata: an editable install's ``dist-info``
+    can predate a version bump, and a stray pip install must not change what
+    the zipapp (spec 3.1) reports, since the plugin compares that number."""
     from importlib import metadata
 
     from moonlight_steam_sync import __version__
 
-    def _raise(name):
-        raise metadata.PackageNotFoundError(name)
-
-    monkeypatch.setattr(main_module.metadata, "version", _raise)
+    monkeypatch.setattr(metadata, "version", lambda name: "9.9.9-test")
     assert main_module._version() == __version__
-
-
-def test_version_prefers_installed_package_metadata(monkeypatch):
-    """When the package *is* installed (an editable checkout, a wheel), the
-    version comes from ``importlib.metadata`` -- the same value `pip show`
-    would print -- not straight from the module attribute."""
-    monkeypatch.setattr(main_module.metadata, "version", lambda name: "9.9.9-test")
-    assert main_module._version() == "9.9.9-test"

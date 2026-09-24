@@ -70,7 +70,7 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 
 echo "Downloading ${ASSET} (${VERSION}) from ${REPO}..."
 # curl exits 22 on a 404, which with -f prints nothing useful. Say which
-# URL failed and the likeliest reason, as backend/entrypoint.sh does.
+# URL failed and the likeliest reason, as cli/install.sh does.
 for asset in "${ASSET}" "${ASSET}.sha256"; do
     if ! curl -fsSL "${BASE_URL}/${asset}" -o "${TMP_DIR}/${asset}"; then
         echo "install.sh: could not download ${BASE_URL}/${asset} (is ${VERSION} released?)" >&2
