@@ -17,6 +17,7 @@ import { lastSyncLine, relativeTime } from "../lib/format";
 import {
   HOST_APPS,
   actionsReady,
+  cachedHostOf,
   ignoredCounter,
   otherHostsLine,
   restartRowView,
@@ -141,7 +142,7 @@ function HostRow({ state }: { state: AppState }) {
   // The host is never asked on its own (every `moonlight list` wakes the
   // PC, Decision 66): until *Check*, an add or a sync says otherwise the
   // row shows what the last listing cached.
-  const cached = hosts.cached_hosts.find((c) => c.name.toLowerCase() === hosts.active!.toLowerCase());
+  const cached = cachedHostOf(hosts, hosts.active);
   let reachLine: ReactNode;
   if (state.reachLoading && !reach) {
     reachLine = <span>Checking {hosts.active}…</span>;

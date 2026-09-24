@@ -68,6 +68,7 @@ import { restartDecision, unwrittenMessage, type RestartDecision } from "./resta
 import {
   applyRunDone,
   applyRunEvent,
+  cachedHostOf,
   initialState,
   layoutEntryFor,
   newRun,
@@ -454,10 +455,10 @@ export class Controller {
 
   /**
    * The host row's reachability (memoised 10 s by the backend; `force`
-   * bypasses). Only ever on the user's own press (*Check*), after
-   * `add_host`'s listing (a memo hit) or from a sync's outcome: the
-   * `moonlight list` behind it wakes the PC (Decision 66), so nothing
-   * calls it on load, on panel open or when the toggle goes on.
+   * bypasses). Only ever on the user's own press (*Check*): the `moonlight
+   * list` behind it wakes the PC (Decision 66), so nothing calls it on
+   * load, on panel open or when the toggle goes on; a sync and an add
+   * paint the row from their own outcome instead.
    */
   async checkHost(force: boolean): Promise<void> {
     const active = this.state.hosts?.active;
@@ -621,7 +622,7 @@ export class Controller {
       return { host: plan.host, reachable: true, count: plan.published + plan.ignored, ignored: plan.ignored, checked_at };
     }
     if (done.exit === 3 && done.failure) {
-      const cached = this.state.hosts?.cached_hosts.find((c) => c.name.toLowerCase() === active.toLowerCase());
+      const cached = cachedHostOf(this.state.hosts, active);
       return {
         host: active,
         reachable: false,
@@ -697,9 +698,14 @@ export class Controller {
     if (written) return written;
     const result = await this.withOwnedRetry(() => this.backend.add_host(name));
     await this.refreshHosts();
-    // add_host's own listing refreshed the backend's memo, so this is a
-    // read of it, not a second `moonlight list` (Decision 66).
-    if (!isFailure(result) && result.made_active) await this.checkHost(false);
+    // add_host's own listing is the check (Decision 66): the row is painted
+    // from its count, so no check_host runs (a memo read could lapse into a
+    // second `moonlight list` behind a slow `host show`; PR 46's review).
+    if (!isFailure(result) && result.made_active) {
+      this.store.set({
+        reach: { host: name, reachable: true, count: result.count, checked_at: new Date().toISOString() },
+      });
+    }
     return result;
   }
 
@@ -741,7 +747,7 @@ export class Controller {
   private cachedStamp(active: string, apps: AppEvent[]): string | null {
     return (
       apps.find((app) => app.cached_when)?.cached_when ??
-      this.state.hosts?.cached_hosts.find((c) => c.name.toLowerCase() === active.toLowerCase())?.when ??
+      cachedHostOf(this.state.hosts, active)?.when ??
       null
     );
   }

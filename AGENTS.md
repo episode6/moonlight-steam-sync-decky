@@ -173,6 +173,9 @@ src/lib/                    pure modules (vitest)
                             never `config` / `env`) and keyFetchText() (spec 3.20.4's
                             state texts),
                             wakeInfoOf() (a host's `wake` entry, any case),
+                            cachedHostOf() (its `cached_hosts` entry, any case: the
+                            host row's line until something asked, a sync's exit-3
+                            *last seen*, the Titles page's stamp),
                             HOST_APPS / hostAppsFromStatus() (the panel's Desktop and
                             Steam Big Picture buttons, by Moonlight name, blind to
                             `hidden`); an `entry.host_app` entry counts toward none of
@@ -198,12 +201,13 @@ src/lib/                    pure modules (vitest)
                             `moonlight list` wakes the PC, Decision 66; `syncing`
                             while a run is going; `status` only reaches the shared store
                             when no run is going, the page always gets its entries),
-                            checkHost() (the row's *Check*, the add-host memo read and
-                            nothing else: never on load, panel open or the toggle),
+                            checkHost() (the row's *Check* and nothing else: never on
+                            load, panel open or the toggle; addHost() paints the row
+                            from add_host's own count, no memo read -- PR 46's review),
                             reachFromRun() (a finished sync paints the host row: a
-                            `plan` event is green with published + ignored, exit 3
-                            red with *last seen* from `cached_hosts`; art / remove
-                            say nothing),
+                            `plan` event is green with published + ignored, a stopped
+                            sync included, exit 3 red with *last seen* from
+                            `cached_hosts`; art / remove say nothing),
                             pinTitle, setIgnored, resetMatchCache() (Advanced's
                             *Reset match cache*: refused while off or while a run
                             is going, else `reset_match_cache`, a `titlesEpoch`
@@ -686,10 +690,11 @@ minute rather than polling.
 looks; captured on the LAN, the PC came up), so the plugin runs a
 Moonlight command only on the user's *Check*, on `add_host`, on a run and
 on a Stream press: `check_host` is not called at load, on panel open, when
-the toggle goes on or after a library retry, and the Titles page reads
-`list_cached` only (`list_apps` stays for the contract, called by nothing
-in the frontend). A finished sync stands in for the check
-(`reachFromRun`). The CLI's `status`, `host show`, `match`, `search`,
+the toggle goes on, after a library retry or after an add, and the Titles
+page reads `list_cached` only (`list_apps` stays for the contract, called
+by nothing in the frontend). A finished sync and a made-active add each
+stand in for the check (`reachFromRun`, `add_host`'s `count`). The CLI's
+`status`, `host show`, `match`, `search`,
 `art` and `remove` never run Moonlight and are unaffected.
 
 ## Commands

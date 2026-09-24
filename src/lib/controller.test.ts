@@ -360,17 +360,24 @@ describe("load order (spec 3.8)", () => {
     expect(names()).not.toContain("check_host");
   });
 
-  it("Check is the one press that asks the host, and add_host reads the memo it left", async () => {
+  it("Check is the one press that asks the host; add_host paints the row from its own count", async () => {
     const controller = new Controller(fakeBackend(calls, { add_host: { ok: true, count: 7, made_active: true } }), steam, ui, instantTiming());
     await controller.load();
     calls.length = 0;
     await controller.checkHost(true);
     expect(calls).toEqual([["check_host", ["MY-GAMING-PC", true]]]);
     expect(controller.state.reach?.reachable).toBe(true);
+    controller.store.set({ reach: null });
     calls.length = 0;
     await controller.addHost("OFFICE-PC");
-    expect(names()).toEqual(["write_owned_apps", "add_host", "hosts", "check_host"]);
-    expect(calls[3][1]).toEqual(["MY-GAMING-PC", false]); // never `force`: add_host's listing is the memo
+    expect(names()).toEqual(["write_owned_apps", "add_host", "hosts"]); // no check_host: add_host's listing was the check
+    expect(controller.state.reach).toMatchObject({ host: "OFFICE-PC", reachable: true, count: 7 });
+    // an add that did not make the host active says nothing about the active one
+    controller.store.set({ reach: null });
+    const second = new Controller(fakeBackend(calls, { add_host: { ok: true, count: 3, made_active: false } }), steam, ui, instantTiming());
+    await second.load();
+    await second.addHost("DEN-PC");
+    expect(second.state.reach).toBeNull();
   });
 
   it("a failed cli_version says why and the next panelOpened() runs the whole order", async () => {
@@ -794,6 +801,14 @@ describe("runs and the restart flow (spec 3.9)", () => {
     await controller.onSyncDone(done("sync", events, 0));
     expect(controller.state.reach).toMatchObject({ host: "MY-GAMING-PC", reachable: true, count: 9, ignored: 1 });
     expect(names()).not.toContain("check_host");
+    // a stopped sync listed too: the one non-zero exit that still says reachable
+    controller.store.set({ reach: null });
+    await controller.sync();
+    const stopped = loadFixture("stopped/sync.ndjson");
+    relay(controller, "sync", stopped);
+    await controller.onSyncDone(done("sync", stopped, 130));
+    expect(controller.state.reach).toMatchObject({ reachable: true, count: 9 });
+    ui.prompts.length = 0;
     // an art run says nothing about the host
     controller.store.set({ reach: null });
     await controller.run("art");
