@@ -8,6 +8,21 @@ project uses [semantic versioning](https://semver.org/).
 
 ### Changed
 
+- **The plugin no longer asks the host anything on its own** (spec
+  Decision 66). Moonlight's command line sends a Wake-on-LAN packet on
+  every `list` and `stream`, before it even looks whether the PC is up
+  (seen in a packet capture on 2026-09-23), so the reachability check the
+  panel ran on every open, at load and when the toggle went on, and the
+  live listing the Titles page ran on every open, were each waking a
+  shut-down PC. A Moonlight command now runs only when you ask for one:
+  **Check** (the host row's new button, in place of *Retry*), adding a
+  host, **Sync now** (whose outcome now paints the host row: green with
+  the plan's counts, or red with *last seen* on exit 3) and a Stream
+  button. Until then the row shows what the last listing cached ("N apps
+  · listed <when>"), with Check and Wake under it. The Titles page reads
+  the cached listing only ("N published by <host> · listed <when>"); a
+  host that was never synced says "Sync now lists its titles". The Wake
+  toast says "then Check".
 - The CI, Release and Claude workflows moved every action to its current
   Node 24 major (`actions/checkout@v7`, `actions/setup-node@v7`,
   `actions/setup-python@v7`, `actions/upload-artifact@v7`,
@@ -26,6 +41,15 @@ project uses [semantic versioning](https://semver.org/).
   whose child column is fixed-width unless told otherwise, and in the Quick
   Access menu the client gives that column a 270 px minimum beside an empty
   label column, wider than the panel; the column now grows across the row.
+
+### Fixed
+
+- The Host page said "Not known" for a host whose MAC Moonlight had
+  stored. Moonlight's config quotes the whole value when a raw byte of the
+  MAC is a character it has to protect (a comma, a bracket), as
+  `1\mac="@ByteArray(...)"`, and the reader looked for the `@ByteArray(`
+  prefix before taking the quotes off. Found on a device on 2026-09-23 with
+  a MAC starting `2c` (a comma); the exact line shape is now a test.
 
 ## [0.9.0] - 2026-09-23
 

@@ -101,14 +101,20 @@ py_modules/moonlight_sync/  the backend (imports nothing from decky)
                             moonlight_hosts() / moonlight_entries() / find_host() /
                             moonlight_host() (Moonlight.conf's [hosts] group, the
                             flatpak path then the native one, read only: QSettings
-                            INI, the MAC an @ByteArray of 6 bytes or empty; hosts()
-                            reads the entries once for its whole map),
+                            INI, the MAC an @ByteArray of 6 bytes or empty, the
+                            whole value quoted when a raw byte is a comma or a
+                            bracket -- a device's 2026-09-23; hosts() reads the
+                            entries once for its whole map),
                             send_magic_packet() (broadcast + every address Moonlight
                             knows, WAKE_PORTS; the SOCKET seam so no test sends a
                             datagram; run through asyncio.to_thread, since a hostname
                             among the addresses resolves with a blocking
                             getaddrinfo). Moonlight's CLI has no wake action
-                            (list / quit / stream / pair only), so the plugin sends it
+                            (list / quit / stream / pair only), so the plugin sends
+                            it. But every one of those actions wakes the host on
+                            its own (ComputerSeeker calls NvComputer::wake() before
+                            it looks; a magic packet captured 2026-09-23), which is
+                            why no Moonlight command ever runs unasked (Decision 66)
   events.py                 parse_line(), restart_decision(), next_pending()
   cdp.py                    the Chrome DevTools Protocol client over Steam's CEF
                             debugger (spec 3.20.2; the port Decky injects through):
@@ -167,6 +173,9 @@ src/lib/                    pure modules (vitest)
                             never `config` / `env`) and keyFetchText() (spec 3.20.4's
                             state texts),
                             wakeInfoOf() (a host's `wake` entry, any case),
+                            cachedHostOf() (its `cached_hosts` entry, any case: the
+                            host row's line until something asked, a sync's exit-3
+                            *last seen*, the Titles page's stamp),
                             HOST_APPS / hostAppsFromStatus() (the panel's Desktop and
                             Steam Big Picture buttons, by Moonlight name, blind to
                             `hidden`); an `entry.host_app` entry counts toward none of
@@ -188,9 +197,17 @@ src/lib/                    pure modules (vitest)
                             payload's source + hint), the "SteamGridDB key saved (…hint)"
                             toast, then test_sgdb_key with its verdict toasted;
                             failed: its message toasted, nothing else),
-                            loadTitles() (list -> list_cached fallback, and list_cached
+                            loadTitles() (list_cached only, never a live list -- a
+                            `moonlight list` wakes the PC, Decision 66; `syncing`
                             while a run is going; `status` only reaches the shared store
                             when no run is going, the page always gets its entries),
+                            checkHost() (the row's *Check* and nothing else: never on
+                            load, panel open or the toggle; addHost() paints the row
+                            from add_host's own count, no memo read -- PR 46's review),
+                            reachFromRun() (a finished sync paints the host row: a
+                            `plan` event is green with published + ignored, a stopped
+                            sync included, exit 3 red with *last seen* from
+                            `cached_hosts`; art / remove say nothing),
                             pinTitle, setIgnored, resetMatchCache() (Advanced's
                             *Reset match cache*: refused while off or while a run
                             is going, else `reset_match_cache`, a `titlesEpoch`
@@ -239,8 +256,8 @@ src/lib/                    pure modules (vitest)
                             then off: retireCollection -- only while the group
                             setting is on, a same-named collection made after
                             the group went off is the user's -- + a reconcile
-                            that hides every entry; on: a reconcile, the
-                            deferred walk, a checkHost; busy while a run is
+                            that hides every entry; on: a reconcile and the
+                            deferred walk, no checkHost; busy while a run is
                             going. Off, run() / setSettings() /
                             setDefaultLayout() / the restart row answer
                             DISABLED_FAILURE, loadTitles() answers its message,
@@ -391,8 +408,10 @@ src/components/             adoptDefault (inspectLayout -> refusal toasts -> Con
                             -> setDefaultLayout, shared by the Titles row and the gear
                             menu; the walk-running refusal), QuickAccess (HostAppRow: the launch button plus the icon-only
                             layout button, plain ButtonItem when the client has no
-                            configurator; the unreachable row's *Retry* + *Wake*, the
-                            latter only when `wakeInfoOf` finds a MAC), SyncProgress,
+                            configurator; the host row: the cached "N apps · listed
+                            <when>" until a check, then *Check* + *Wake* whenever the
+                            host is not known reachable, the latter only when
+                            `wakeInfoOf` finds a MAC), SyncProgress,
                             RestartModal, SettingsPage, HostPage (+ WakeMacRow per host:
                             the entered MAC, or Moonlight's shown), TitlesPage (layout text; the *Layout* menu:
                             *Choose layout…* and *Use as the default layout*, which
@@ -660,11 +679,23 @@ address and every address Moonlight knows for the host on `WAKE_PORTS`, in
 a worker thread (a hostname among them resolves with a blocking
 `getaddrinfo`), answers `{host, mac, source, sent}`, `no-mac` when nothing knows a MAC,
 `io` only when not one datagram went out, and drops the `check_host` memo
-so the next *Retry* asks; `set_wake_mac(name, mac)` stores a known host's
+so the next *Check* asks; `set_wake_mac(name, mac)` stores a known host's
 MAC normalised (`None` / empty drops it; `set_settings` refuses the
 `wake_macs` key) and `forget_host` drops the forgotten host's. Sending
-proves nothing about the PC, so the frontend's toast says to Retry in a
+proves nothing about the PC, so the frontend's toast says to Check in a
 minute rather than polling.
+**No Moonlight command runs unasked (Decision 66, the user's
+2026-09-23).** Moonlight's command line sends a magic packet on every
+`list` and `stream` (its ComputerSeeker wakes the matching host before it
+looks; captured on the LAN, the PC came up), so the plugin runs a
+Moonlight command only on the user's *Check*, on `add_host`, on a run and
+on a Stream press: `check_host` is not called at load, on panel open, when
+the toggle goes on, after a library retry or after an add, and the Titles
+page reads `list_cached` only (`list_apps` stays for the contract, called
+by nothing in the frontend). A finished sync and a made-active add each
+stand in for the check (`reachFromRun`, `add_host`'s `count`). The CLI's
+`status`, `host show`, `match`, `search`,
+`art` and `remove` never run Moonlight and are unaffected.
 
 ## Commands
 

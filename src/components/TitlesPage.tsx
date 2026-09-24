@@ -152,16 +152,18 @@ function Row({
   );
 }
 
+/**
+ * The page reads the per-host cache only (a live `list` wakes the PC,
+ * Decision 66), so the headline says when it was listed; *Sync now* is
+ * what refreshes it.
+ */
 function headline(data: TitlesData, rows: readonly TitleRow[]): string {
   const published = publishedCount(rows);
-  if (data.source === "cached") {
-    return `${published} titles cached from ${relativeTime(data.cachedWhen)} · ${data.host} is unreachable · sorted by name`;
-  }
+  const when = data.cachedWhen ? ` · listed ${relativeTime(data.cachedWhen)}` : "";
   if (data.source === "syncing") {
-    const when = data.cachedWhen ? ` from ${relativeTime(data.cachedWhen)}` : "";
-    return `${published} titles cached${when} · refreshes when the sync finishes`;
+    return `${published} published by ${data.host}${when} · refreshes when the sync finishes`;
   }
-  return `${published} published by ${data.host} · sorted by name`;
+  return `${published} published by ${data.host}${when} · sorted by name`;
 }
 
 /**
@@ -307,9 +309,6 @@ export function TitlesPage() {
         <span>{headline(data, rows)}</span>
         {loading ? <Spinner style={{ width: 14, height: 14 }} /> : null}
       </div>
-      {data.unreachable ? (
-        <div style={{ fontSize: 11.5, color: "#ff9a9a", marginBottom: 6 }}>{data.unreachable}</div>
-      ) : null}
       {data.statusError ? (
         <div style={{ fontSize: 11.5, opacity: 0.7, marginBottom: 6 }}>status: {data.statusError}</div>
       ) : null}

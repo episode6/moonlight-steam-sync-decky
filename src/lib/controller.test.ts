@@ -334,25 +334,50 @@ beforeEach(() => {
 const names = () => calls.map(([name]) => name);
 
 describe("load order (spec 3.8)", () => {
-  it("cli_version, then the parallel reads, then owned apps before status and check_host", async () => {
+  it("cli_version, then the parallel reads, then owned apps before status; the host is never asked", async () => {
     const controller = new Controller(fakeBackend(calls), steam, ui, instantTiming());
     await controller.load();
     const order = names();
     expect(order[0]).toBe("cli_version");
     expect(order.slice(1, 6).sort()).toEqual(["get_settings", "hosts", "layouts", "pending", "sync_state"]);
     expect(order.indexOf("write_owned_apps")).toBeLessThan(order.indexOf("status"));
-    expect(order.indexOf("write_owned_apps")).toBeLessThan(order.indexOf("check_host"));
     expect(calls.find(([n]) => n === "write_owned_apps")?.[1]).toEqual([
       12345678,
       { "2379780": "Balatro", "1244090": "Sea of Stars" },
     ]);
-    expect(calls.find(([n]) => n === "check_host")?.[1]).toEqual(["MY-GAMING-PC", false]);
+    // Decision 66: a `moonlight list` wakes the PC, so neither the load nor
+    // the panel opening runs check_host; the row shows the cache until Check
+    expect(order).not.toContain("check_host");
+    expect(order).not.toContain("list_apps");
     const state = controller.state;
     expect(state.library).toBe("ready");
     expect(state.counters).toEqual({ stream: 2, shortcuts: 2, unmatched: 1, parked: 1 });
     expect(state.clientAppid).toBe(2400000001);
-    expect(state.reach?.reachable).toBe(true);
+    expect(state.reach).toBeNull();
     expect(state.ignoredCount).toBe(1);
+    calls.length = 0;
+    await controller.panelOpened();
+    expect(names()).not.toContain("check_host");
+  });
+
+  it("Check is the one press that asks the host; add_host paints the row from its own count", async () => {
+    const controller = new Controller(fakeBackend(calls, { add_host: { ok: true, count: 7, made_active: true } }), steam, ui, instantTiming());
+    await controller.load();
+    calls.length = 0;
+    await controller.checkHost(true);
+    expect(calls).toEqual([["check_host", ["MY-GAMING-PC", true]]]);
+    expect(controller.state.reach?.reachable).toBe(true);
+    controller.store.set({ reach: null });
+    calls.length = 0;
+    await controller.addHost("OFFICE-PC");
+    expect(names()).toEqual(["write_owned_apps", "add_host", "hosts"]); // no check_host: add_host's listing was the check
+    expect(controller.state.reach).toMatchObject({ host: "OFFICE-PC", reachable: true, count: 7 });
+    // an add that did not make the host active says nothing about the active one
+    controller.store.set({ reach: null });
+    const second = new Controller(fakeBackend(calls, { add_host: { ok: true, count: 3, made_active: false } }), steam, ui, instantTiming());
+    await second.load();
+    await second.addHost("DEN-PC");
+    expect(second.state.reach).toBeNull();
   });
 
   it("a failed cli_version says why and the next panelOpened() runs the whole order", async () => {
@@ -472,7 +497,7 @@ describe("load order (spec 3.8)", () => {
     expect(controller.state.library).toBe("ready");
     expect(names()).toContain("hosts");
     expect(names()).toContain("status");
-    expect(names()).toContain("check_host");
+    expect(names()).not.toContain("check_host");
   });
 
   it("waits for the library and gives up after 60 s", async () => {
@@ -742,13 +767,55 @@ describe("runs and the restart flow (spec 3.9)", () => {
   });
 
   it("an unreachable host is a message, and nothing changes", async () => {
-    const controller = await loaded();
+    const controller = await loaded({
+      hosts: {
+        ok: true,
+        active: "MY-GAMING-PC",
+        source: "state",
+        cached_hosts: [{ name: "MY-GAMING-PC", when: "2026-09-18T14:02:00Z", count: 7 }],
+        known: ["MY-GAMING-PC", "OFFICE-PC"],
+      },
+    });
     await controller.sync();
     const events = loadFixture("unreachable/sync.ndjson");
     relay(controller, "sync", events);
     await controller.onSyncDone(done("sync", events, 3));
     expect(ui.prompts).toHaveLength(0);
     expect(controller.state.message).toBe("Host unreachable: sync: moonlight: host MY-GAMING-PC unreachable");
+    // the sync is the check (Decision 66): the row goes red with *last seen* from the cache
+    expect(controller.state.reach).toMatchObject({
+      reachable: false,
+      message: "sync: moonlight: host MY-GAMING-PC unreachable",
+      exit: 3,
+      last_seen: "2026-09-18T14:02:00Z",
+      cached_count: 7,
+    });
+    expect(names()).not.toContain("check_host");
+  });
+
+  it("a sync that listed is the reachability check: green, with the plan's counts", async () => {
+    const controller = await loaded();
+    await controller.sync();
+    const events = loadFixture("full-sync/sync.ndjson");
+    relay(controller, "sync", events);
+    await controller.onSyncDone(done("sync", events, 0));
+    expect(controller.state.reach).toMatchObject({ host: "MY-GAMING-PC", reachable: true, count: 9, ignored: 1 });
+    expect(names()).not.toContain("check_host");
+    // a stopped sync listed too: the one non-zero exit that still says reachable
+    controller.store.set({ reach: null });
+    await controller.sync();
+    const stopped = loadFixture("stopped/sync.ndjson");
+    relay(controller, "sync", stopped);
+    await controller.onSyncDone(done("sync", stopped, 130));
+    expect(controller.state.reach).toMatchObject({ reachable: true, count: 9 });
+    ui.prompts.length = 0;
+    // an art run says nothing about the host
+    controller.store.set({ reach: null });
+    await controller.run("art");
+    const art = loadFixture("art-only/sync.ndjson");
+    relay(controller, "art", art);
+    await controller.onSyncDone(done("art", art, 0));
+    expect(controller.state.reach).toBeNull();
   });
 
   it("a steamid3 mismatch rewrites owned-apps.json and retries once", async () => {
@@ -821,9 +888,11 @@ describe("the Titles page (spec 3.8)", () => {
     exit: 3,
   };
 
+  const cached = { ok: true, apps: cachedApps, host: "MY-GAMING-PC", count: 7, notes: [] };
+
   async function loaded(answers: Partial<Record<keyof Backend, unknown>> = {}) {
     const controller = new Controller(
-      fakeBackend(calls, { list_apps: listed, ...answers }),
+      fakeBackend(calls, { list_apps: listed, list_cached: cached, ...answers }),
       steam,
       ui,
       instantTiming(),
@@ -833,39 +902,23 @@ describe("the Titles page (spec 3.8)", () => {
     return controller;
   }
 
-  it("reads the live list, status and ignore.json", async () => {
+  it("reads the per-host cache, status and ignore.json, never a live list (Decision 66)", async () => {
     const controller = await loaded();
     const load = await controller.loadTitles();
-    expect(names().sort()).toEqual(["get_ignored", "list_apps", "status"]);
-    expect(load.ok).toBe(true);
-    if (!load.ok) return;
-    expect(load.data.source).toBe("live");
-    expect(load.data.apps).toHaveLength(9);
-    expect(load.data.entries).toHaveLength(8);
-    expect(load.data.ignored).toEqual(["Demo Launcher"]);
-    expect(load.data.host).toBe("MY-GAMING-PC");
-    expect(load.data.unreachable).toBeNull();
-    expect(load.data.cachedWhen).toBeNull();
-  });
-
-  it("falls back to the per-host cache when the host is unreachable", async () => {
-    const controller = await loaded({
-      list_apps: unreachable,
-      list_cached: { ok: true, apps: cachedApps, host: "MY-GAMING-PC", count: 7, notes: [] },
-    });
-    const load = await controller.loadTitles();
+    expect(names().sort()).toEqual(["get_ignored", "list_cached", "status"]);
     expect(calls.find(([n]) => n === "list_cached")?.[1]).toEqual(["MY-GAMING-PC"]);
     expect(load.ok).toBe(true);
     if (!load.ok) return;
     expect(load.data.source).toBe("cached");
+    expect(load.data.apps).toHaveLength(cachedApps.length);
+    expect(load.data.entries).toHaveLength(8);
+    expect(load.data.ignored).toEqual(["Demo Launcher"]);
+    expect(load.data.host).toBe("MY-GAMING-PC");
     expect(load.data.cachedWhen).toBe("2026-09-18T14:02:00Z");
-    expect(load.data.unreachable).toBe("list: moonlight: host MY-GAMING-PC unreachable");
   });
 
-  it("reads the cache instead of a live list while a run is going", async () => {
-    const controller = await loaded({
-      list_cached: { ok: true, apps: cachedApps, host: "MY-GAMING-PC", count: 7, notes: [] },
-    });
+  it("reads the same cache while a run is going, as 'syncing'", async () => {
+    const controller = await loaded();
     await controller.sync();
     calls.length = 0;
     const countersBefore = controller.state.counters;
@@ -878,7 +931,6 @@ describe("the Titles page (spec 3.8)", () => {
     if (!load.ok) return;
     expect(load.data.source).toBe("syncing");
     expect(load.data.cachedWhen).toBe("2026-09-18T14:02:00Z");
-    expect(load.data.unreachable).toBeNull();
     // the mid-run status snapshot reaches the page but not the shared store:
     // the panel's counters and stream map stay as the run left them
     expect(load.data.entries.length).toBeGreaterThan(0);
@@ -899,28 +951,27 @@ describe("the Titles page (spec 3.8)", () => {
     });
   });
 
-  it("an unreachable host with no cache is never synced", async () => {
+  it("a host with no cache is never synced, and Sync now is what lists it", async () => {
     const controller = await loaded({
-      list_apps: unreachable,
       list_cached: { ...unreachable, message: "list: no cached app list for host MY-GAMING-PC" },
     });
     expect(await controller.loadTitles()).toEqual({
       ok: false,
-      message: "MY-GAMING-PC is unreachable and was never synced",
+      message: "MY-GAMING-PC was never synced; Sync now lists its titles",
       neverSynced: true,
     });
+    expect(names()).not.toContain("list_apps");
   });
 
   it("any other list failure is shown as is", async () => {
     const controller = await loaded({
-      list_apps: { ok: false, error: "timeout", message: "timed out after 90 s", timeout_s: 90 },
+      list_cached: { ok: false, error: "timeout", message: "timed out after 30 s", timeout_s: 30 },
     });
     expect(await controller.loadTitles()).toEqual({
       ok: false,
-      message: "Timed out after 90 s",
+      message: "Timed out after 30 s",
       neverSynced: false,
     });
-    expect(names()).not.toContain("list_cached");
   });
 
   it("a failed status still shows the list", async () => {
@@ -943,8 +994,8 @@ describe("the Titles page (spec 3.8)", () => {
   it("retries once after rewriting owned apps on a steamid3 mismatch", async () => {
     let first = true;
     const controller = await loaded({
-      list_apps: () => {
-        if (!first) return listed;
+      list_cached: () => {
+        if (!first) return cached;
         first = false;
         return {
           ok: false,
@@ -955,7 +1006,7 @@ describe("the Titles page (spec 3.8)", () => {
       },
     });
     expect((await controller.loadTitles()).ok).toBe(true);
-    expect(names().filter((n) => n === "list_apps")).toHaveLength(2);
+    expect(names().filter((n) => n === "list_cached")).toHaveLength(2);
     expect(names().filter((n) => n === "write_owned_apps")).toHaveLength(1);
   });
 
@@ -969,8 +1020,8 @@ describe("the Titles page (spec 3.8)", () => {
     let listFirst = true;
     let armed = false; // the load order's own status() call must succeed first
     const controller = await loaded({
-      list_apps: () => {
-        if (!listFirst) return listed;
+      list_cached: () => {
+        if (!listFirst) return cached;
         listFirst = false;
         return mismatch("list");
       },
@@ -984,7 +1035,7 @@ describe("the Titles page (spec 3.8)", () => {
     const load = await controller.loadTitles();
     expect(load.ok).toBe(true);
     expect(names().filter((n) => n === "write_owned_apps")).toHaveLength(1);
-    expect(names().filter((n) => n === "list_apps")).toHaveLength(2);
+    expect(names().filter((n) => n === "list_cached")).toHaveLength(2);
     expect(names().filter((n) => n === "status")).toHaveLength(2);
   });
 
@@ -1000,6 +1051,8 @@ describe("the Titles page (spec 3.8)", () => {
 
   it("Ignore writes ignore.json and the Ignored counter follows it", async () => {
     const controller = await loaded({ set_ignored: { ok: true, ignored: ["Demo Launcher", "Tunic"] } });
+    await controller.checkHost(true); // the user's press: the one way the row gets a count
+    calls.length = 0;
     const reach = () => controller.state.reach;
     expect((reach() as { ignored?: number }).ignored).toBe(1);
     expect((await controller.setIgnored("Tunic", true)).ok).toBe(true);
@@ -1856,12 +1909,13 @@ describe("the on/off toggle (spec 3.19)", () => {
     expect(controller.state.pending?.layout_walk).toBe(true);
     expect(controller.state.reach).toBeNull();
 
-    // on again: the client is put back, the host checked, the walk run
+    // on again: the client is put back and the walk run; the host is still
+    // not asked (Decision 66: that is the user's Check, or a sync)
     calls.length = 0;
     expect(await controller.setEnabled(true)).toMatchObject({ ok: true });
     await controller.layoutWalk();
     expect(sorted(steam.lib.hidden)).toEqual(sorted(HIDDEN_WHEN_ON));
-    expect(names()).toContain("check_host");
+    expect(names()).not.toContain("check_host");
     expect(names()).toContain("clear_pending");
     expect(steam.steamInput.sets.length).toBeGreaterThan(0);
   });
@@ -1899,7 +1953,7 @@ describe("Wake-on-LAN (spec 3.18)", () => {
     const result = await controller.wakeHost();
     expect(result).toMatchObject({ ok: true, sent: 24 });
     expect(calls).toEqual([["wake_host", ["MY-GAMING-PC"]]]);
-    expect(ui.bodies).toEqual(["Wake-on-LAN packet sent to MY-GAMING-PC. Give it a minute, then Retry."]);
+    expect(ui.bodies).toEqual(["Wake-on-LAN packet sent to MY-GAMING-PC. Give it a minute, then Check."]);
   });
 
   it("a host with no MAC is a toast pointing at the Host page", async () => {

@@ -119,6 +119,26 @@ def test_moonlight_hosts_tolerates_a_missing_or_odd_file(tmp_path: Path) -> None
     assert wake.moonlight_hosts(str(empty)) == []
 
 
+def test_moonlight_hosts_reads_a_quoted_byte_array(tmp_path: Path) -> None:
+    """QSettings quotes the value when a raw MAC byte is a comma or a bracket.
+
+    The exact line a device wrote on 2026-09-23 (the MAC masked): read as
+    unknown until the quotes came off before the prefix check, so the Host
+    page said "Not known" for a host Moonlight knew perfectly well.
+    """
+    quoted = tmp_path / "quoted.conf"
+    quoted.write_text(
+        "[hosts]\n1\\hostname=MY-GAMING-PC\n"
+        '1\\mac="@ByteArray(,\\xf0]\\xdd\\x13\\xe)"\n'
+        "1\\localaddress=192.168.1.20\nsize=1\n"
+    )
+    hosts = wake.moonlight_hosts(str(quoted))
+    assert hosts[0]["mac"] == "2c:f0:5d:dd:13:0e"
+    # and a quoted empty one is still no MAC
+    quoted.write_text('[hosts]\n1\\hostname=X\n1\\mac="@ByteArray()"\nsize=1\n')
+    assert wake.moonlight_hosts(str(quoted))[0]["mac"] is None
+
+
 def test_moonlight_host_prefers_the_flatpak_file_and_ignores_case(tmp_path: Path) -> None:
     write_moonlight_conf(tmp_path, native=True)
     assert wake.moonlight_host(str(tmp_path), "my-gaming-pc")["mac"] == MAC  # type: ignore[index]

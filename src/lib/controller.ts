@@ -16,8 +16,10 @@ import {
   isSteamUserMismatch,
   type AppEvent,
   type Backend,
+  type CliEvent,
   type EntryEvent,
   type Failure,
+  type HostCheck,
   type LayoutResult,
   type MatchCacheReset,
   type KeyState,
@@ -33,6 +35,7 @@ import {
   type WakeResult,
   SGDB_API_PAGE,
 } from "./cli";
+import { lastOf } from "./events";
 import type { PinChoice } from "./join";
 import {
   applyDefault,
@@ -65,6 +68,7 @@ import { restartDecision, unwrittenMessage, type RestartDecision } from "./resta
 import {
   applyRunDone,
   applyRunEvent,
+  cachedHostOf,
   initialState,
   layoutEntryFor,
   newRun,
@@ -124,7 +128,7 @@ export interface Timing {
 
 /** What the Titles page renders from (spec 3.8, PR-6's amendment). */
 export interface TitlesData {
-  /** `list`'s apps: live, or from the per-host cache when the host is unreachable. */
+  /** `list --cached`'s apps: the per-host cache the last sync (or add) wrote. */
   apps: AppEvent[];
   /** `status`'s entries (empty when `status` failed; `statusError` says why). */
   entries: EntryEvent[];
@@ -132,14 +136,13 @@ export interface TitlesData {
   ignored: string[];
   host: string;
   /**
-   * `live` = a fresh `list`; `cached` = the per-host cache because the host
-   * is unreachable; `syncing` = the cache because a run is rewriting it.
+   * `cached` = the per-host cache, which is all the page ever reads (a
+   * live `list` wakes the PC, Decision 66); `syncing` = the same cache
+   * while a run is rewriting it, so the page re-lists when the run ends.
    */
-  source: "live" | "cached" | "syncing";
-  /** The cache's timestamp for a cached listing ("cached from <when>"). */
+  source: "cached" | "syncing";
+  /** The cache's timestamp ("listed <when>"). */
   cachedWhen: string | null;
-  /** The CLI's message when the live listing failed with exit 3. */
-  unreachable: string | null;
   statusError: string | null;
 }
 
@@ -341,11 +344,14 @@ export class Controller {
     await this.loadLibrary();
     if (this.state.library !== "ready") return;
 
-    // (4) status + reachability, then the layout walk when a sync's restart
-    // just happened (`pending.layout_walk`, spec 3.10); the persistent
-    // restart row renders from `pending`. The walk can take 90 s, so the
-    // load does not wait for it (it is kept from running twice by itself).
-    await Promise.all([this.refreshStatus(), this.checkHost(false)]);
+    // (4) status, then the layout walk when a sync's restart just happened
+    // (`pending.layout_walk`, spec 3.10); the persistent restart row
+    // renders from `pending`. The walk can take 90 s, so the load does not
+    // wait for it (it is kept from running twice by itself). No
+    // reachability check: every `moonlight list` wakes the PC (the client
+    // sends a magic packet before it even looks), so the host is only
+    // asked when the user asks (Decision 66).
+    await this.refreshStatus();
     // Hiding first: right after a sync's restart it is what takes the new
     // tiles out of the library, and the walk can take minutes.
     void this.reconcileLibrary(true).then(() => this.layoutWalk());
@@ -447,7 +453,13 @@ export class Controller {
     if (!isFailure(result)) this.store.set({ ignoredCount: result.ignored.length });
   }
 
-  /** The host row's reachability (memoised 10 s by the backend; `force` bypasses). */
+  /**
+   * The host row's reachability (memoised 10 s by the backend; `force`
+   * bypasses). Only ever on the user's own press (*Check*): the `moonlight
+   * list` behind it wakes the PC (Decision 66), so nothing calls it on
+   * load, on panel open or when the toggle goes on; a sync and an add
+   * paint the row from their own outcome instead.
+   */
   async checkHost(force: boolean): Promise<void> {
     const active = this.state.hosts?.active;
     // Off: no probe of a host the Deck is away from (spec 3.19).
@@ -462,7 +474,7 @@ export class Controller {
   async panelOpened(): Promise<void> {
     await this.load();
     if (this.state.library === "ready" && !this.state.run?.running) {
-      await Promise.all([this.checkHost(false), this.refreshPending()]);
+      await this.refreshPending();
     }
   }
 
@@ -587,7 +599,41 @@ export class Controller {
     this.store.set({ message });
     // layouts.json too: a remove run deletes it
     await Promise.all([this.refreshStatus(), this.refreshHosts(), this.refreshIgnored(), this.refreshLayouts()]);
+    const reach = this.reachFromRun(run.events, done);
+    if (reach) this.store.set({ reach });
     void this.reconcileLibrary();
+  }
+
+  /**
+   * What a finished sync says about the host, for the host row: the sync
+   * is one of the two moments the host is asked (Decision 66), so its
+   * outcome is the check. A `plan` event means the listing answered
+   * (`count` is what `check_host` would count: published plus ignored);
+   * exit 3 means unreachable, with *last seen* from the cache. Any other
+   * run, or a sync that failed before listing, says nothing (`null`).
+   */
+  private reachFromRun(events: readonly CliEvent[], done: SyncDonePayload): HostCheck | null {
+    if (done.kind !== "sync") return null;
+    const active = this.state.hosts?.active;
+    if (!active) return null;
+    const checked_at = new Date().toISOString();
+    const plan = lastOf(events, "plan");
+    if (plan) {
+      return { host: plan.host, reachable: true, count: plan.published + plan.ignored, ignored: plan.ignored, checked_at };
+    }
+    if (done.exit === 3 && done.failure) {
+      const cached = cachedHostOf(this.state.hosts, active);
+      return {
+        host: active,
+        reachable: false,
+        message: done.failure.message,
+        exit: 3,
+        last_seen: cached?.when ?? null,
+        cached_count: cached?.count ?? null,
+        checked_at,
+      };
+    }
+    return null;
   }
 
   private showPrompt(
@@ -652,7 +698,14 @@ export class Controller {
     if (written) return written;
     const result = await this.withOwnedRetry(() => this.backend.add_host(name));
     await this.refreshHosts();
-    if (!isFailure(result) && result.made_active) await this.checkHost(true);
+    // add_host's own listing is the check (Decision 66): the row is painted
+    // from its count, so no check_host runs (a memo read could lapse into a
+    // second `moonlight list` behind a slow `host show`; PR 46's review).
+    if (!isFailure(result) && result.made_active) {
+      this.store.set({
+        reach: { host: name, reachable: true, count: result.count, checked_at: new Date().toISOString() },
+      });
+    }
     return result;
   }
 
@@ -662,14 +715,14 @@ export class Controller {
     return result;
   }
 
-  /** The panel's *Wake* on an unreachable host (spec 3.18): what its toast says, exactly. */
+  /** The panel's *Wake* (spec 3.18): what its toast says, exactly. */
   static wakeToast(result: WakeResult): string {
-    return `Wake-on-LAN packet sent to ${result.host}. Give it a minute, then Retry.`;
+    return `Wake-on-LAN packet sent to ${result.host}. Give it a minute, then Check.`;
   }
 
   /**
    * Send a magic packet to the active host (spec 3.18). A toast either way:
-   * the packet proves nothing about the PC, so the row's *Retry* stays the
+   * the packet proves nothing about the PC, so the row's *Check* stays the
    * check. Never held back by a run or `inGame`: nothing is written.
    */
   async wakeHost(): Promise<Result<WakeResult> | null> {
@@ -694,66 +747,44 @@ export class Controller {
   private cachedStamp(active: string, apps: AppEvent[]): string | null {
     return (
       apps.find((app) => app.cached_when)?.cached_when ??
-      this.state.hosts?.cached_hosts.find((c) => c.name.toLowerCase() === active.toLowerCase())?.when ??
+      cachedHostOf(this.state.hosts, active)?.when ??
       null
     );
   }
 
   /**
-   * `list_apps()`, `status()` and `ignore.json` for the Titles page. When
-   * the live listing fails with exit 3 (host unreachable) the page reads
-   * `list_cached(active)` instead; exit 3 there means there is no cache for
-   * the host yet ("never synced").
+   * `list_cached(active)`, `status()` and `ignore.json` for the Titles page.
+   * The page only ever reads the per-host cache the last sync (or the
+   * add-host listing) wrote: a live `list` wakes the PC (Decision 66), and
+   * a sync refreshes the cache anyway. Exit 3 from the cache means there
+   * is no cache for the host yet ("never synced").
    *
-   * While a run is going the page reads `list_cached(active)` from the
-   * start (`source: "syncing"`): a live `list` would race the running CLI's
-   * own listing and cache write, and buys nothing because the page re-lists
-   * when the run finishes.
+   * While a run is going the source is `"syncing"` (the run is rewriting
+   * that cache; the page re-lists when it finishes), else `"cached"`.
    */
   async loadTitles(): Promise<TitlesLoad> {
-    // Off (spec 3.19): the page is not reachable, and a live `list` would
-    // ask the very host the Deck is away from.
+    // Off (spec 3.19): the page is not reachable.
     if (!this.enabled) return { ok: false, message: DISABLED_FAILURE.message, neverSynced: false };
     const active = this.state.hosts?.active;
     if (!active) return { ok: false, message: "No host yet; add one on the Host page", neverSynced: false };
     const running = !!this.state.run?.running;
     const [listed, status, ignored] = await Promise.all([
-      running
-        ? this.withOwnedRetry(() => this.backend.list_cached(active))
-        : this.withOwnedRetry(() => this.backend.list_apps()),
+      this.withOwnedRetry(() => this.backend.list_cached(active)),
       this.withOwnedRetry(() => this.backend.status()),
       this.backend.get_ignored(),
     ]);
-    let apps: AppEvent[];
-    let source: TitlesData["source"] = running ? "syncing" : "live";
-    let cachedWhen: string | null = null;
-    let unreachable: string | null = null;
-    if (!isFailure(listed)) {
-      apps = listed.apps;
-      if (running) cachedWhen = this.cachedStamp(active, apps);
-    } else if (running) {
+    const source: TitlesData["source"] = running ? "syncing" : "cached";
+    if (isFailure(listed)) {
       const neverSynced = listed.error === "cli-error" && listed.exit === 3;
-      const message = neverSynced
-        ? `${active} was never synced; this list fills in when the sync finishes`
-        : errorText(listed);
+      const message = !neverSynced
+        ? errorText(listed)
+        : running
+          ? `${active} was never synced; this list fills in when the sync finishes`
+          : `${active} was never synced; Sync now lists its titles`;
       return { ok: false, message, neverSynced };
-    } else if (listed.error === "cli-error" && listed.exit === 3) {
-      unreachable = listed.message;
-      const cached = await this.withOwnedRetry(() => this.backend.list_cached(active));
-      if (isFailure(cached)) {
-        const neverSynced = cached.error === "cli-error" && cached.exit === 3;
-        return {
-          ok: false,
-          message: neverSynced ? `${active} is unreachable and was never synced` : errorText(cached),
-          neverSynced,
-        };
-      }
-      apps = cached.apps;
-      source = "cached";
-      cachedWhen = this.cachedStamp(active, apps);
-    } else {
-      return { ok: false, message: errorText(listed), neverSynced: false };
     }
+    const apps: AppEvent[] = listed.apps;
+    const cachedWhen = this.cachedStamp(active, apps);
     // Only fold status into the shared store when nothing is running: while
     // a run is going the panel's counters and stream map belong to the run
     // (the Titles page is reading the cache anyway), and a mid-run `status`
@@ -773,7 +804,6 @@ export class Controller {
         host: active,
         source,
         cachedWhen,
-        unreachable,
         statusError: isFailure(status) ? errorText(status) : null,
       },
     };
@@ -1316,7 +1346,6 @@ export class Controller {
     if (on) {
       await this.reconcileLibrary();
       void this.layoutWalk();
-      void this.checkHost(false);
     } else {
       if (streamingCollectionEnabled(result.settings)) await this.retireCollection();
       await this.reconcileLibrary();
@@ -1348,7 +1377,7 @@ export class Controller {
   async retryLibrary(): Promise<void> {
     await this.loadLibrary();
     if (this.state.library === "ready") {
-      await Promise.all([this.refreshStatus(), this.checkHost(false)]);
+      await this.refreshStatus();
       void this.reconcileLibrary();
     }
   }

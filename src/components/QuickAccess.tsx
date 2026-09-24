@@ -17,6 +17,7 @@ import { lastSyncLine, relativeTime } from "../lib/format";
 import {
   HOST_APPS,
   actionsReady,
+  cachedHostOf,
   ignoredCounter,
   otherHostsLine,
   restartRowView,
@@ -138,11 +139,21 @@ function HostRow({ state }: { state: AppState }) {
     );
   }
   const reach = state.reach;
+  // The host is never asked on its own (every `moonlight list` wakes the
+  // PC, Decision 66): until *Check*, an add or a sync says otherwise the
+  // row shows what the last listing cached.
+  const cached = cachedHostOf(hosts, hosts.active);
   let reachLine: ReactNode;
   if (state.reachLoading && !reach) {
     reachLine = <span>Checking {hosts.active}…</span>;
   } else if (!reach) {
-    reachLine = <span>{hosts.active}</span>;
+    reachLine = cached ? (
+      <span>
+        {cached.count} apps · listed {relativeTime(cached.when)}
+      </span>
+    ) : (
+      <span>{hosts.active} · never synced</span>
+    );
   } else if (reach.reachable) {
     reachLine = (
       <span>
@@ -183,11 +194,18 @@ function HostRow({ state }: { state: AppState }) {
           }}
         />
       </PanelSectionRow>
-      {reach && !reach.reachable ? (
+      {!reach?.reachable ? (
         <PanelSectionRow>
           <Focusable style={{ display: "flex", gap: 8 }}>
-            <DialogButton style={{ minWidth: 0, flex: 1 }} onClick={() => void controller.checkHost(true)}>
-              Retry
+            {/* *Check* is the one way the panel asks the host (Decision 66);
+                the `moonlight list` behind it wakes the PC by itself, which
+                is why it is never pressed for the user. */}
+            <DialogButton
+              style={{ minWidth: 0, flex: 1 }}
+              disabled={state.reachLoading || !actionsReady(state) || !!state.run?.running}
+              onClick={() => void controller.checkHost(true)}
+            >
+              Check
             </DialogButton>
             {/* Wake-on-LAN (spec 3.18): only when a MAC is known for the host,
                 from the Host page or Moonlight's own list; otherwise the Host

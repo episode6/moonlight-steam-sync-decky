@@ -11,6 +11,7 @@
  */
 
 import type {
+  CachedHost,
   CliEvent,
   CliVersion,
   CommitEvent,
@@ -118,6 +119,17 @@ export function hostAppsFromStatus(entries: readonly EntryEvent[]): Record<HostA
     if (entry) apps[app.key] = entry.appid;
   }
   return apps;
+}
+
+/**
+ * A host's entry in `hosts().cached_hosts` (the last listing's count and
+ * time), by name in any case: the host row's line until something has asked
+ * the host (Decision 66), and a sync's *last seen* on exit 3.
+ */
+export function cachedHostOf(hosts: HostsInfo | null, name: string | null): CachedHost | null {
+  if (!hosts || !name) return null;
+  const wanted = name.toLowerCase();
+  return hosts.cached_hosts.find((c) => c.name.toLowerCase() === wanted) ?? null;
 }
 
 /**
