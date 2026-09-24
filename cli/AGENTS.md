@@ -132,9 +132,10 @@ drifting apart.
 (the artwork engine plus the `art` and `status` subcommands) in PR-4;
 `sync.py` (the `sync`, `list`, `ignore` and `remove` subcommands, the one
 shutdown -> write -> relaunch path, and the resumability e2e tests) in PR-5;
-and the release pipeline (`release.yml`, `install.sh`, `--version` from
-package metadata, `CHANGELOG.md`) in PR-6. Every subcommand in the original
-spec 3.3 is real and `v0.1.0` through `v0.2.0` are released; PR-7 (the
+and the release pipeline (`release.yml`, `install.sh`, `--version`,
+`CHANGELOG.md`) in PR-6 (`--version` is always the literal `__version__`
+now, never installed package metadata; see `__init__.py`'s `version()`).
+Every subcommand in the original spec 3.3 is real and `v0.1.0` through `v0.2.0` are released; PR-7 (the
 `server-scripts` switch-over) has landed too.
 
 That was the whole first spec (`initial-build.md`). The second spec

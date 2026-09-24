@@ -824,9 +824,11 @@ There is no Steam Deck during development; everything else is tested.
   `tests/stubs/decky.py` stub, with the fake CLI copied to
   `<home>/.local/bin/moonlight-steam-sync`.
 - `tests/test_hard_rules.py` greps for what can be proven mechanically:
-  `flags: []`, no live shortcut API call in `src/`, the pin only in
-  `package.json`, the placeholder SteamGridDB key
-  (`tests/fixtures/sgdb/api.html`'s) spelled nowhere else under `tests/`
+  `flags: []`, no live shortcut API call in `src/`, one version
+  (`package.json`'s, spelled once more as the CLI's `__version__` and in no
+  script or workflow; the match is anchored, so a third-party pin that
+  shares the number does not count), the CLI's empty `dependencies`, the
+  placeholder SteamGridDB key (`tests/fixtures/sgdb/api.html`'s) spelled nowhere else under `tests/`
   but that file, and, over a whole browser fetch, the key in no result,
   event or log line (hard rule 4 for spec 3.20).
 - The key fetch (spec 3.20) never opens a socket in a test: `conftest.py`'s
