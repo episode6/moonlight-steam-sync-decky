@@ -6,13 +6,6 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Fixed
-
-- Pressing *Show 50 more* on the Titles page no longer drops gamepad
-  focus below the new rows: focus moves to the last row already shown
-  before the page grows, so the next press of down steps into the first
-  new row.
-
 ### Changed
 
 - The CI, Release and Claude workflows moved every action to its current
@@ -23,6 +16,13 @@ project uses [semantic versioning](https://semver.org/).
   the move of `ubuntu-latest` to Ubuntu 26 (from 2026-10-19) happens as a
   deliberate bump rather than under a release. `probe.yml`, the probe
   kit's own workflow, is unchanged.
+
+### Fixed
+
+- Pressing *Show 50 more* on the Titles page no longer drops gamepad
+  focus below the new rows: focus moves to the last row already shown
+  before the page grows, so the next press of down steps into the first
+  new row.
 
 ## [0.9.0] - 2026-09-23
 

@@ -236,10 +236,11 @@ export function TitlesPage() {
   // Gamepad focus stays on the button that was pressed, and the button moves
   // down past the new rows, so the user would land below them. Focus the last
   // row already shown first, then grow the page: the next press of down steps
-  // into the first new row.
+  // into the first new row. Disabled controls are skipped: focus() on one is a
+  // no-op (*Change match* while a run is going, *Ignored in config.toml*).
   const showMore = () => {
     const row = lastRowRef.current;
-    const target = row?.querySelector<HTMLElement>("button, [tabindex]") ?? row;
+    const target = row?.querySelector<HTMLElement>("button:not(:disabled), [tabindex]") ?? row;
     target?.focus();
     requestAnimationFrame(() => setPages((current) => current + 1));
   };
