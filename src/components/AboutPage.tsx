@@ -34,7 +34,6 @@ export function AboutPage() {
       {row("Installed at", info?.installed_path)}
       {row("Bundled CLI", info ? bundledLine(info) : null)}
       {row("Bundled at", info?.bundled_path)}
-      {row("Pinned CLI release", info?.pinned)}
       {row("Minimum CLI", info?.minimum)}
       {info?.install_error ? row("Install error", info.install_error) : null}
       {row("Plugin version", info?.plugin_version)}

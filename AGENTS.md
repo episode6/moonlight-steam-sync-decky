@@ -7,12 +7,24 @@ to 3.13 are the plugin); this file is the day-to-day summary.
 ## What this is
 
 **Moonlight Sync**, a Decky Loader plugin that drives the
-[moonlight-steam-sync](https://github.com/episode6/moonlight-steam-sync) CLI
-from Game Mode: a Python backend that shells out to
+moonlight-steam-sync CLI from Game Mode: a Python backend that shells out to
 `~/.local/bin/moonlight-steam-sync --json …` and relays its NDJSON events,
 and a TypeScript frontend (Quick Access panel, settings route with the
 Titles page, restart prompt). The CLI is the product; the plugin is a thin
 UI over it.
+
+**The CLI lives in `cli/`** (moved here from the now-archived
+[episode6/moonlight-steam-sync](https://github.com/episode6/moonlight-steam-sync)
+on 2026-09-23, at its `v0.4.0`). It keeps its own guide,
+[`cli/AGENTS.md`](cli/AGENTS.md) (its hard rules -- Python 3.11 floor, zero
+runtime dependencies, stdlib only, never `moonlight list --csv`, never
+writing `config.toml` -- its module map, the resumability contract, its
+fixtures), its own `cli/README.md` and `cli/pyproject.toml`, and its own
+test suite (`cli/tests`). Read that guide before touching anything under
+`cli/`. The plugin still talks to the CLI only as a subprocess, over the
+spec's contract (hard rule 7): the backend never imports
+`moonlight_steam_sync`, and a change to a flag, subcommand or event key is
+a change to both halves in one PR.
 
 ## Hard rules
 
@@ -53,9 +65,14 @@ Breaking any of these is a blocker, not a judgement call.
 6. **No host-side component.** Nothing runs on the gaming PC.
 7. **Build against the spec's CLI contract** (§3.4 flags, §3.4.6 events),
    never against CLI 0.2.0 behaviour. The minimum CLI is `0.4.0`
-   (`install.MIN_CLI_VERSION`, the one place it lives).
-8. **One pin.** The bundled CLI release is `package.json`'s
-   `"moonlightSteamSync"`; every script reads it from there.
+   (`install.MIN_CLI_VERSION`, the one place it lives). The contract is
+   additive-only; the plugin runs whatever CLI is installed, which may be
+   newer or older than the bundled one.
+8. **One version.** `package.json`'s `"version"` is the plugin's and the
+   CLI's: the CLI's `__version__` (`cli/src/moonlight_steam_sync/__init__.py`)
+   is its one other spelling, `scripts/build_cli.py` refuses to build when
+   they differ, and a release tag must be `v<version>`. No script or
+   workflow spells the number.
 9. **`src/lib/` is pure**: no `@decky/*`, `react` or `react-icons` import
    (an eslint `no-restricted-imports` rule enforces it), so vitest can load
    all of it. Decky-facing code lives in `src/components/`, `src/instance.tsx`
@@ -70,10 +87,18 @@ Breaking any of these is a blocker, not a judgement call.
 
 ```
 plugin.json                 name "Moonlight Sync", flags []
-package.json                scripts, deps, the CLI pin ("moonlightSteamSync")
+package.json                scripts, deps, "version" (the plugin's and the CLI's)
+project-icon.svg            the repo's icon (moved over with the CLI)
 install.sh                  the end-user installer: curl the latest (or pinned) release
                             zip + .sha256, verify, unzip into ~/homebrew/plugins/, restart
                             plugin_loader (two explained sudo prompts, never non-interactive)
+cli/                        the moonlight-steam-sync CLI (its own AGENTS.md, README.md,
+                            CHANGELOG.md up to 0.4.0, pyproject.toml, src/, tests/,
+                            scripts/record_fixtures.py); install.sh: the CLI-only
+                            installer, curl the release's moonlight-steam-sync.pyz +
+                            .sha256 into ~/.local/bin (MOONLIGHT_STEAM_SYNC_VERSION,
+                            INSTALL_DIR, NO_MODIFY_PATH, and the
+                            MOONLIGHT_STEAM_SYNC_BASE_URL test seam)
 DEVICE-CHECKLIST.md         every on-device check (PR-0 probes, PR-5/6/7/8 items, §3.14,
                             §3.15 and the §3.16 default layout's [verify] items, then
                             §3.17-§3.20; the key fetch is §14), in order
@@ -146,8 +171,14 @@ py_modules/moonlight_sync/  the backend (imports nothing from decky)
                             poll, closed after it; only a `page` target on one of
                             the two hosts is ever evaluated in; the stop event's
                             wait() is the 500 ms poll, so a cancel lands within one
-backend/entrypoint.sh       the one CLI downloader (strict), also the Decky store hook
+backend/entrypoint.sh       the one CLI build step (strict): scripts/build_cli.py into
+                            backend/out/, then a --version smoke run; also the Decky
+                            store hook (/plugin/cli/src inside its container)
 backend/Dockerfile          template's holo-base image, only for `decky plugin build`
+scripts/build_cli.py        cli/src -> moonlight-steam-sync.pyz (zipapp, deflated,
+                            `/usr/bin/env python3`, moonlight_steam_sync/ only: no
+                            __pycache__ or egg-info), refusing a __version__ that is not
+                            package.json's "version"
 scripts/package.py          Docker-free zip: out/Moonlight-Sync.zip ("Moonlight Sync/")
 src/index.tsx               definePlugin: events (sync_event / sync_done, sgdb_key_event /
                             sgdb_key_done), settings route, running-app watch, load()
@@ -450,12 +481,13 @@ src/test/fixtures.ts        loads tests/fixtures for vitest
 tests/                      pytest: fake_cli.py, fixtures/, conftest.py, test_*.py,
                             test_install_sh.py (install.sh end to end via
                             MOONLIGHT_SYNC_BASE_URL against a file:// fixture,
-                            sudo/systemctl shimmed on PATH)
-.github/workflows/release.yml  on a v* tag: strict entrypoint.sh + package.py --require-cli,
-                            Moonlight-Sync.zip + .sha256 attached to a GitHub release;
-                            build-and-package also runs on pull_request, where the CLI
-                            fetch tolerates the release not existing yet (a ::warning::,
-                            like CI's package job) instead of failing the run
+                            sudo/systemctl shimmed on PATH), test_cli_install_sh.py
+                            (cli/install.sh the same way, HOME in tmp_path)
+.github/workflows/release.yml  entrypoint.sh (the CLI from cli/src) + doctor smoke +
+                            package.py --require-cli; on a v* tag (which must be
+                            v<package.json version>) Moonlight-Sync.zip,
+                            moonlight-steam-sync.pyz and their .sha256 files attached to
+                            one GitHub release; the build job also runs on pull_request
 ```
 
 PR-6 made `search` / `pin` / `unpin` / `set_ignored` real (the Titles page
@@ -706,8 +738,10 @@ pnpm run lint                     # eslint .
 pnpm run test                     # vitest run (src/**/*.test.ts, node environment)
 pnpm run build                    # rollup -> dist/index.js
 python3 -m pytest                 # tests/ only (pyproject testpaths)
-ruff check .                      # probes/ excluded in ruff.toml
-backend/entrypoint.sh             # download + verify the pinned CLI -> backend/out/
+pip install -r requirements-dev.txt && pip install --no-deps -e ./cli
+python3 -m pytest cli             # the CLI's suite (cli/pyproject.toml's settings)
+ruff check .                      # plugin and cli/; probes/ excluded in ruff.toml
+backend/entrypoint.sh             # build cli/src -> backend/out/moonlight-steam-sync.pyz
 python3 scripts/package.py        # out/Moonlight-Sync.zip (pnpm run package)
 ```
 
@@ -790,9 +824,11 @@ There is no Steam Deck during development; everything else is tested.
   `tests/stubs/decky.py` stub, with the fake CLI copied to
   `<home>/.local/bin/moonlight-steam-sync`.
 - `tests/test_hard_rules.py` greps for what can be proven mechanically:
-  `flags: []`, no live shortcut API call in `src/`, the pin only in
-  `package.json`, the placeholder SteamGridDB key
-  (`tests/fixtures/sgdb/api.html`'s) spelled nowhere else under `tests/`
+  `flags: []`, no live shortcut API call in `src/`, one version
+  (`package.json`'s, spelled once more as the CLI's `__version__` and in no
+  script or workflow; the match is anchored, so a third-party pin that
+  shares the number does not count), the CLI's empty `dependencies`, the
+  placeholder SteamGridDB key (`tests/fixtures/sgdb/api.html`'s) spelled nowhere else under `tests/`
   but that file, and, over a whole browser fetch, the key in no result,
   event or log line (hard rule 4 for spec 3.20).
 - The key fetch (spec 3.20) never opens a socket in a test: `conftest.py`'s
@@ -825,9 +861,16 @@ There is no Steam Deck during development; everything else is tested.
   against a loopback fake debugger in a thread (handshake, masking, the
   126- and 127-length forms, a fragmented reply, a ping, close, a
   protocol error, a timeout) and `targets()` over a stubbed `urlopen`.
-- `tests/test_entrypoint.py` runs `backend/entrypoint.sh` from a copy of
-  `backend/` with `MSY_CLI_BASE_URL=file://…`; `tests/test_package.py`
-  builds a fixture tree and checks the exact zip entry list and modes.
+- `tests/test_entrypoint.py` runs `backend/entrypoint.sh` from a sandbox
+  copy of `backend/`, `scripts/build_cli.py`, `cli/src` and a
+  `package.json` (the zipapp's entries, mode and `--version`; a version
+  mismatch, a missing source) and holds the real CLI's `__version__` to
+  `package.json`'s; `tests/test_package.py` builds a fixture tree and checks
+  the exact zip entry list and modes.
+- The CLI's own suite is `cli/tests` (see `cli/AGENTS.md`, "Testing"): it
+  has its own conftest and fakes, runs apart from `tests/` (`python3 -m
+  pytest cli`), and `cli/tests/test_release_zipapp.py` builds through
+  `scripts/build_cli.py`.
 
 On-device checks are not merge criteria; they are collected in
 `DEVICE-CHECKLIST.md` (arrives with PR-8).
@@ -835,33 +878,36 @@ On-device checks are not merge criteria; they are collected in
 ## CI and release outline
 
 - `.github/workflows/ci.yml` (push to `main`, every `pull_request`):
-  `shellcheck` (`sh -n` on `install.sh` and `backend/entrypoint.sh`, then
-  `ludeeus/action-shellcheck` over the whole tree), `frontend` (pnpm 9, Node
-  20: typecheck, lint, vitest, build, upload `dist`), `backend` (Python
-  3.13.5: ruff, pytest), `package` (HEAD-checks the
-  pinned CLI's `.sha256` asset: absent → a
-  `::warning title=CLI v<pin> not released::` and no `bin/`; present →
-  `backend/entrypoint.sh` strict; then `scripts/package.py` and the
-  `Moonlight-Sync` artifact).
-- `.github/workflows/release.yml`: on a `v*` tag, the same frontend build
-  then strict `entrypoint.sh`, `package.py --require-cli`,
-  `Moonlight-Sync.zip` + `.sha256` (`sha256sum` against the bare filename,
-  matching `install.sh`'s check) attached to the GitHub release via the
-  CLI repo's idempotent `gh release view || create` / `upload --clobber`
-  step. The build-and-package job also runs on `pull_request` and
-  `workflow_dispatch`, exactly like CI's `package` job (HEAD-check the
-  CLI's `.sha256` asset; absent → the same `::warning::` and no `bin/`;
-  present → `entrypoint.sh` strict), never strict on those triggers, so it
-  is exercised and green before the first tag; only the
-  `github-release` job is tag-gated (`startsWith(github.ref,
-  'refs/tags/')`).
-- `install.sh`: the end-user installer, mirroring the CLI repo's own (curl
-  the release zip + `.sha256`, verify, remove any previous install, unzip
-  into `~/homebrew/plugins/`, restart `plugin_loader`); its
-  `MOONLIGHT_SYNC_BASE_URL` seam (mirroring `backend/entrypoint.sh`'s
-  `MSY_CLI_BASE_URL`) lets `tests/test_install_sh.py` point the real `curl`
-  at a `file://` fixture tree, with only `sudo`/`systemctl` shimmed on
-  `PATH`, so no sudo and no network are ever touched by the test.
+  `shellcheck` (`sh -n` on `install.sh`, `backend/entrypoint.sh` and
+  `cli/install.sh`, then `ludeeus/action-shellcheck` over the whole tree),
+  `frontend` (pnpm 9, Node 20: typecheck, lint, vitest, build, upload
+  `dist`), `backend` (Python 3.13.5: ruff over the whole repo, `cli/`
+  included; pytest `tests/`), `cli` (Python 3.11 -- the CLI's floor -- and
+  3.13.5: `pip install --no-deps -e ./cli`, pytest `cli`, then
+  `scripts/build_cli.py` and the zipapp's `--version` and `doctor` smoke
+  runs), `package` (after all three: `backend/entrypoint.sh`, then
+  `scripts/package.py --require-cli` and the `Moonlight-Sync` artifact).
+  When SteamOS moves to a new Python, change `3.13.5` in both workflows.
+- `.github/workflows/release.yml`: the same frontend build, then
+  `entrypoint.sh` (the CLI from `cli/src`, its `--version` smoke run), a
+  `doctor` smoke run, `package.py --require-cli`, and `sha256sum` of
+  `Moonlight-Sync.zip` and `moonlight-steam-sync.pyz` against their bare
+  filenames. On a `v*` tag it first checks the tag is `v` + `package.json`'s
+  `"version"`, and the tag-gated `github-release` job attaches all four
+  files to one release through an idempotent `gh release view || create` /
+  `upload --clobber` step. The build job also runs on `pull_request` and
+  `workflow_dispatch`, so it is exercised before any tag.
+- `install.sh`: the plugin installer (curl the release zip + `.sha256`,
+  verify, remove any previous install, unzip into `~/homebrew/plugins/`,
+  restart `plugin_loader`); its `MOONLIGHT_SYNC_BASE_URL` seam lets
+  `tests/test_install_sh.py` point the real `curl` at a `file://` fixture
+  tree, with only `sudo`/`systemctl` shimmed on `PATH`, so no sudo and no
+  network are ever touched by the test. `cli/install.sh` is the CLI-only
+  installer (the release's `moonlight-steam-sync.pyz` into `~/.local/bin`,
+  adding it to `PATH` in the rc file once), with the same kind of seam,
+  `MOONLIGHT_STEAM_SYNC_BASE_URL`, for `tests/test_cli_install_sh.py`. The
+  README advertises it only in its "Command-line tool only" section, near
+  the end: the plugin is the recommended install.
 - The plugin PRs are stacked (PR-0 → PR-5 → PR-6 → PR-7 → PR-8), each branch
   on the previous one; never push to `main`, force-push only with
   `--force-with-lease` on this stack's own branches.
@@ -870,15 +916,16 @@ On-device checks are not merge criteria; they are collected in
 
 **No agent pushes a tag or creates a release** unless the user asks for
 that release explicitly (they did for `v0.1.1`, 2026-09-20, which moved the
-pin to the CLI's `v0.3.1`). It happens only once the pinned
-moonlight-steam-sync release exists: `release.yml`'s
-build job fails hard on the missing CLI release **only when it runs from
-a `v*` tag push**; its `pull_request` and `workflow_dispatch` runs tolerate
-the CLI not being released yet with the same `::warning::` CI's `package`
-job prints, so the workflow stays green on every PR in this stack. The
-CLI's `v0.3.0` was released on 2026-09-20 and the plugin's `v0.1.0`
-follows it; the lenient path only matters again when the pin moves to a
-CLI release that does not exist yet.
+pin to the CLI's `v0.3.1`).
+
+**Since the CLI moved into `cli/` (2026-09-23) one release is both.** The
+CLI takes the plugin's version (it jumps from `0.4.0` to the plugin's
+number), `release.yml` builds it from the tagged commit, and the release
+carries `moonlight-steam-sync.pyz` beside `Moonlight-Sync.zip`, which is
+what `cli/install.sh` downloads. There is no CLI release to wait for and no
+pin to move any more; the history below is from when there was (until
+then the plugin bundled a pinned release of the separate CLI repo, whose
+releases up to `v0.4.0` stay on the archived repo).
 
 The pin **and** `MIN_CLI_VERSION` moved to the CLI's `v0.4.0` (released
 2026-09-20) together: one CLI version per plugin version, so the bundled,
@@ -924,46 +971,47 @@ browser), and Advanced's *Reset match cache*, plus the fix that brings back
 the gear menu's *Use as Moonlight Sync default layout*; same CLI pin and
 minimum.
 
-Modelled on the CLI repo's own "Cutting a release" (the example below is
-the plugin's first release, `v0.1.0`, which waited for the CLI's `v0.3.0`;
-substitute the version being cut), once the pinned CLI release exists and
-everything intended for the plugin release has merged to `main`:
+Once everything intended for the release has merged to `main`
+(substitute the version being cut for `X.Y.Z`):
 
 ```sh
 git checkout main && git pull
 
-# 1. package.json's "version" is the single source of truth
-#    (decky-loader exports it as DECKY_PLUGIN_VERSION); it is already
-#    "0.1.0" as of this PR, so this step is only needed for v0.2.0+.
-$EDITOR package.json
+# 1. Bump the one version in both of its spellings (hard rule 8):
+#    package.json's "version" (decky-loader exports it as
+#    DECKY_PLUGIN_VERSION) and the CLI's __version__ (cli/pyproject.toml's
+#    version is dynamic and reads it). build_cli.py refuses a mismatch.
+$EDITOR package.json cli/src/moonlight_steam_sync/__init__.py
 
-# 2. Move the CHANGELOG's [Unreleased] entries into a new dated
-#    [X.Y.Z] section and open a new empty [Unreleased] section above it
-#    (v0.1.0's entry is already dated, so this step too is only needed
-#    for v0.2.0+).
+# 2. Move the CHANGELOG's [Unreleased] entries (the plugin's and the
+#    CLI's alike) into a new dated [X.Y.Z] section and open a new empty
+#    [Unreleased] section above it. cli/CHANGELOG.md is the CLI's history
+#    up to 0.4.0 and is not edited any more.
 $EDITOR CHANGELOG.md
 
 # 3. Commit the bump.
-git add package.json CHANGELOG.md
-git commit -m "Release v0.1.0"
+git add package.json cli/src/moonlight_steam_sync/__init__.py CHANGELOG.md
+git commit -m "Release vX.Y.Z"
 
 # 4. Push, then create the release. `gh release create` makes the tag and
 #    the release page in one step; the tag reaching GitHub triggers
-#    release.yml's github-release job, which builds the zip and uploads it
-#    into the release that now already exists (idempotent, see the
-#    comment on that step).
+#    release.yml, whose build job checks the tag against package.json and
+#    whose github-release job uploads the assets into the release that
+#    now already exists (idempotent, see the comment on that step).
 git push origin main
-gh release create v0.1.0 --target main --title v0.1.0 --generate-notes
+gh release create vX.Y.Z --target main --title vX.Y.Z --generate-notes
 ```
 
 Pushing a plain `git tag` works too and takes the same path; the workflow
 creates the release itself in that case. After the push, watch the
 `Release` workflow to completion and confirm the release page has
-`Moonlight-Sync.zip` and `Moonlight-Sync.zip.sha256` attached, then
-sanity-check the install path end to end on a Deck:
+`Moonlight-Sync.zip`, `moonlight-steam-sync.pyz` and both `.sha256` files
+attached, then sanity-check both install paths end to end on a Deck:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/episode6/moonlight-steam-sync-decky/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/episode6/moonlight-steam-sync-decky/main/cli/install.sh | sh
+moonlight-steam-sync --version     # X.Y.Z
 ```
 
 Then walk `DEVICE-CHECKLIST.md` from the top.
@@ -971,7 +1019,9 @@ Then walk `DEVICE-CHECKLIST.md` from the top.
 ## Docs to keep current
 
 README (install, panel, restart, hosts, Titles page, hidden shortcuts and
-the Streaming tab, key, files,
+the Streaming tab, key, files, the CLI-only install,
 developing), this file (module map, harness, release), `CHANGELOG.md`
 `[Unreleased]`, `DEVICE-CHECKLIST.md`, and docstrings, in the same PR as
-the change.
+the change. A CLI change also keeps `cli/README.md` (its usage and
+`--help` text) and `cli/AGENTS.md` current; its changelog entry goes in the
+root `CHANGELOG.md`.

@@ -116,10 +116,33 @@ def test_the_fetched_key_never_appears_in_an_event_or_a_log_line(
         assert handle.read() == PLACEHOLDER_KEY + "\n"
 
 
-def test_the_cli_pin_lives_only_in_package_json() -> None:
+def test_one_version_lives_in_package_json_and_the_cli() -> None:
+    # Hard rule 8: package.json's "version" is the plugin's and the CLI's;
+    # the CLI's __version__ is the one other spelling (build_cli.py refuses
+    # a mismatch) and no script or workflow spells it. Anchored, so a
+    # third-party pin that happens to share the number (an action's
+    # `@2.0.0`, a tool's `==1.2.3`, a longer `10.9.0`) is not the version.
     package = json.loads((ROOT / "package.json").read_text())
-    assert package["moonlightSteamSync"] == "0.4.0"
+    version = package["version"]
+    assert "moonlightSteamSync" not in package
     assert package["license"] == "MIT"
     assert "remote_binary" not in package
-    for path in (ROOT / "backend" / "entrypoint.sh", ROOT / ".github" / "workflows" / "ci.yml"):
-        assert "0.4.0" not in path.read_text(), path
+    init = (ROOT / "cli" / "src" / "moonlight_steam_sync" / "__init__.py").read_text()
+    assert f'__version__ = "{version}"' in init
+    spelled = re.compile(rf"(?<![\w.@=-])v?{re.escape(version)}(?![\w.])")
+    assert spelled.search(f'"{version}"') and spelled.search(f"v{version}")
+    assert not spelled.search(f"@{version}") and not spelled.search(f"1{version}")
+    for path in (
+        ROOT / "backend" / "entrypoint.sh",
+        ROOT / "scripts" / "build_cli.py",
+        ROOT / "cli" / "install.sh",
+        *(ROOT / ".github" / "workflows").glob("*.yml"),
+    ):
+        assert not spelled.search(path.read_text()), path
+
+
+def test_the_cli_has_no_runtime_dependencies() -> None:
+    # The CLI's own hard rules (cli/AGENTS.md): stdlib only, dependencies = [].
+    pyproject = (ROOT / "cli" / "pyproject.toml").read_text()
+    assert "dependencies = []" in pyproject
+    assert not (ROOT / "cli" / "requirements.txt").exists()

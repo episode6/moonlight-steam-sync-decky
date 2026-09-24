@@ -1,60 +1,62 @@
-"""backend/entrypoint.sh: the strict download-and-verify step (spec 3.6.2).
+"""backend/entrypoint.sh and scripts/build_cli.py: the CLI built from cli/src.
 
-The script runs from a copy of backend/ under tmp_path (so the real
-backend/out/ is never touched) with MSY_CLI_BASE_URL pointing at a file://
-directory of fixtures.
+The script runs from a sandbox copy of the repo's relevant parts under
+tmp_path (backend/entrypoint.sh, scripts/build_cli.py, cli/src and a
+package.json), so the real backend/out/ is never touched.
 """
 
 from __future__ import annotations
 
-import hashlib
-import os
+import json
 import shutil
 import stat
 import subprocess
+import sys
+import zipfile
 from pathlib import Path
 
 import pytest
 
 from conftest import ROOT
 
-pytestmark = pytest.mark.skipif(
-    not (shutil.which("curl") and shutil.which("sha256sum") and shutil.which("sh")),
-    reason="needs sh, curl and sha256sum",
-)
+pytestmark = pytest.mark.skipif(not shutil.which("sh"), reason="needs sh")
+
+sys.path.insert(0, str(ROOT / "scripts"))
+import build_cli  # noqa: E402
 
 PYZ = "moonlight-steam-sync.pyz"
+INIT = Path("cli") / "src" / "moonlight_steam_sync" / "__init__.py"
+
+
+def plugin_version() -> str:
+    return json.loads((ROOT / "package.json").read_text())["version"]
 
 
 @pytest.fixture
 def sandbox(tmp_path: Path) -> Path:
     plugin = tmp_path / "plugin"
     (plugin / "backend").mkdir(parents=True)
+    (plugin / "scripts").mkdir()
     shutil.copy2(ROOT / "backend" / "entrypoint.sh", plugin / "backend" / "entrypoint.sh")
-    (plugin / "package.json").write_text('{\n  "name": "x",\n  "moonlightSteamSync": "0.3.0"\n}\n')
+    shutil.copy2(ROOT / "scripts" / "build_cli.py", plugin / "scripts" / "build_cli.py")
+    shutil.copytree(
+        ROOT / "cli" / "src",
+        plugin / "cli" / "src",
+        ignore=shutil.ignore_patterns("__pycache__", "*.egg-info"),
+    )
+    (plugin / "package.json").write_text(
+        json.dumps({"name": "x", "version": plugin_version()}, indent=2) + "\n"
+    )
     return plugin
 
 
-def release(tmp_path: Path, payload: bytes = b"#!/usr/bin/env python3\nPK fake zipapp\n") -> Path:
-    directory = tmp_path / "release"
-    directory.mkdir(exist_ok=True)
-    (directory / PYZ).write_bytes(payload)
-    digest = hashlib.sha256(payload).hexdigest()
-    (directory / f"{PYZ}.sha256").write_text(f"{digest}  {PYZ}\n")
-    return directory
-
-
-def run_entrypoint(plugin: Path, base: Path | None) -> subprocess.CompletedProcess[str]:
-    env = dict(os.environ)
-    if base is not None:
-        env["MSY_CLI_BASE_URL"] = base.as_uri()
+def run_entrypoint(plugin: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["sh", str(plugin / "backend" / "entrypoint.sh")],
         capture_output=True,
         text=True,
-        env=env,
         cwd=str(plugin.parent),
-        timeout=60,
+        timeout=120,
         check=False,
     )
 
@@ -63,57 +65,63 @@ def out_file(plugin: Path) -> Path:
     return plugin / "backend" / "out" / PYZ
 
 
-def test_good_checksum_installs_with_mode_0755(sandbox: Path, tmp_path: Path) -> None:
-    base = release(tmp_path)
-    result = run_entrypoint(sandbox, base)
+def test_builds_a_runnable_zipapp_with_mode_0755(sandbox: Path) -> None:
+    result = run_entrypoint(sandbox)
     assert result.returncode == 0, result.stderr
-    assert out_file(sandbox).read_bytes() == (base / PYZ).read_bytes()
-    assert stat.S_IMODE(out_file(sandbox).stat().st_mode) == 0o755
-    assert "moonlight-steam-sync v0.3.0 ->" in result.stdout
+    pyz = out_file(sandbox)
+    assert stat.S_IMODE(pyz.stat().st_mode) == 0o755
+    assert pyz.read_bytes().startswith(b"#!/usr/bin/env python3\n")
+    assert f"moonlight-steam-sync v{plugin_version()} ->" in result.stdout
+    assert result.stdout.strip().endswith(plugin_version())
 
 
-def test_wrong_checksum_fails_and_leaves_nothing(sandbox: Path, tmp_path: Path) -> None:
-    base = release(tmp_path)
-    (base / f"{PYZ}.sha256").write_text(f"{'0' * 64}  {PYZ}\n")
-    result = run_entrypoint(sandbox, base)
+def test_the_zipapp_holds_the_package_only(sandbox: Path) -> None:
+    # What an editable install and a test run leave behind in cli/src.
+    package = sandbox / "cli" / "src" / "moonlight_steam_sync"
+    (package / "__pycache__").mkdir()
+    (package / "__pycache__" / "sync.cpython-313.pyc").write_bytes(b"x")
+    (sandbox / "cli" / "src" / "moonlight_steam_sync.egg-info").mkdir()
+    (sandbox / "cli" / "src" / "moonlight_steam_sync.egg-info" / "PKG-INFO").write_text("x")
+    result = run_entrypoint(sandbox)
+    assert result.returncode == 0, result.stderr
+    names = zipfile.ZipFile(out_file(sandbox)).namelist()
+    assert "__main__.py" in names
+    assert "moonlight_steam_sync/__init__.py" in names
+    assert "moonlight_steam_sync/art/sgdb.py" in names
+    assert all(
+        name == "__main__.py" or name.startswith("moonlight_steam_sync/") for name in names
+    ), names
+    assert not [name for name in names if "__pycache__" in name or name.endswith(".pyc")]
+
+
+def test_a_version_mismatch_fails_and_leaves_nothing(sandbox: Path) -> None:
+    (sandbox / "package.json").write_text('{"name": "x", "version": "99.0.0"}\n')
+    result = run_entrypoint(sandbox)
     assert result.returncode == 1
-    assert "checksum mismatch" in result.stderr
+    assert "is not package.json's version (99.0.0)" in result.stderr
     assert not out_file(sandbox).exists()
 
 
-def test_missing_asset_fails_and_leaves_nothing(sandbox: Path, tmp_path: Path) -> None:
-    base = release(tmp_path)
-    (base / PYZ).unlink()
-    result = run_entrypoint(sandbox, base)
-    assert result.returncode == 1
-    assert "could not download" in result.stderr
-    assert not out_file(sandbox).exists()
-
-
-def test_missing_checksum_fails_and_leaves_nothing(sandbox: Path, tmp_path: Path) -> None:
-    base = release(tmp_path)
-    (base / f"{PYZ}.sha256").unlink()
-    result = run_entrypoint(sandbox, base)
-    assert result.returncode == 1
-    assert not out_file(sandbox).exists()
-
-
-def test_empty_checksum_file_fails(sandbox: Path, tmp_path: Path) -> None:
-    base = release(tmp_path)
-    (base / f"{PYZ}.sha256").write_text("")
-    result = run_entrypoint(sandbox, base)
-    assert result.returncode == 1
-    assert not out_file(sandbox).exists()
-
-
-def test_missing_pin_fails(sandbox: Path, tmp_path: Path) -> None:
+def test_a_failed_build_removes_an_older_zipapp(sandbox: Path) -> None:
+    out_file(sandbox).parent.mkdir(parents=True)
+    out_file(sandbox).write_text("an older build")
     (sandbox / "package.json").write_text('{"name": "x"}\n')
-    result = run_entrypoint(sandbox, release(tmp_path))
+    result = run_entrypoint(sandbox)
     assert result.returncode == 1
-    assert "no moonlightSteamSync pin in package.json" in result.stderr
+    assert "no version in package.json" in result.stderr
     assert not out_file(sandbox).exists()
 
 
-def test_the_real_package_json_carries_the_pin() -> None:
-    text = (ROOT / "package.json").read_text()
-    assert '"moonlightSteamSync": "0.4.0"' in text
+def test_a_missing_cli_source_fails(sandbox: Path) -> None:
+    shutil.rmtree(sandbox / "cli")
+    result = run_entrypoint(sandbox)
+    assert result.returncode == 1
+    assert "could not build the CLI" in result.stderr
+    assert not out_file(sandbox).exists()
+
+
+def test_the_cli_shares_the_plugins_version() -> None:
+    # One version for both: a plugin release is a CLI release.
+    assert build_cli.cli_version(ROOT) == plugin_version()
+    assert build_cli.plugin_version(ROOT) == plugin_version()
+    assert (ROOT / INIT).exists()

@@ -1,4 +1,7 @@
-# Dev-only tools for the plugin backend (CI's `backend` job installs these).
-# The backend itself uses the standard library only.
+# Dev-only tools for the plugin backend and the CLI (CI's `backend` and `cli`
+# jobs install these). Both use the standard library only at run time.
 pytest==9.0.2
 ruff==0.16.0
+# The CLI's test oracle for its hand-rolled binary VDF codec (cli/AGENTS.md);
+# never imported by the shipped CLI.
+vdf==3.4

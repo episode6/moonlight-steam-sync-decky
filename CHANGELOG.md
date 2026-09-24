@@ -6,7 +6,38 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **The moonlight-steam-sync CLI now lives in this repo**, under `cli/`,
+  moved from [episode6/moonlight-steam-sync](https://github.com/episode6/moonlight-steam-sync)
+  (to be archived) with its tests, docs and history file. Each release now
+  builds the CLI from the same commit, bundles it into the plugin zip and
+  also attaches it on its own as `moonlight-steam-sync.pyz` (+ `.sha256`),
+  and the CLI takes the plugin's version: it jumps from `0.4.0` to the
+  plugin's number at this release, with no change in behaviour. To install
+  the CLI alone, without the plugin:
+  `curl -fsSL https://raw.githubusercontent.com/episode6/moonlight-steam-sync-decky/main/cli/install.sh | sh`
+  (the README's "Command-line tool only"). The old repo's releases, up to
+  `v0.4.0`, stay where they are.
+- The repo takes the CLI's project icon (`project-icon.svg`).
+
 ### Changed
+
+- The plugin no longer pins a separate CLI release: `package.json`'s
+  `"moonlightSteamSync"` is gone, `backend/entrypoint.sh` builds the CLI
+  from `cli/src` (through the new `scripts/build_cli.py`) instead of
+  downloading it, and Settings → About drops its *Pinned CLI release* row.
+  CI gains a `cli` job (its test suite and a zipapp smoke run on Python
+  3.11 and 3.13.5), ruff lints `cli/` too, and packaging is strict on
+  every run now that there is no release to wait for; a release tag must
+  match `package.json`'s version.
+- The CLI's `--version` (and every `--json` `start` event) is now always
+  its own `__version__`, no longer the installed package's metadata when
+  one is installed: a stale editable install or a stray pip install beside
+  the zipapp could otherwise report a different number than the code
+  running, and the plugin compares that number to decide whether to
+  upgrade the installed CLI. `cli/install.sh` says which download failed,
+  and why, when a release has no CLI attached.
 
 - **The plugin no longer asks the host anything on its own** (spec
   Decision 66). Moonlight's command line sends a Wake-on-LAN packet on

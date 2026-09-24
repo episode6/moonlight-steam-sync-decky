@@ -49,7 +49,7 @@ export function cliStatus(info: Pick<CliVersion, "installed" | "minimum" | "too_
 /** About's "bundled CLI" line (spec 3.6.1). */
 export function bundledLine(info: Pick<CliVersion, "bundled" | "minimum">): string {
   if (!info.bundled) {
-    return "none (built before the CLI release); install it with the CLI's install.sh";
+    return "none (this zip was packaged without the CLI); install it with cli/install.sh";
   }
   return info.bundled;
 }

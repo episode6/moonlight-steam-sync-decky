@@ -330,7 +330,6 @@ export interface CliVersion {
   too_old: boolean;
   installed_path: string;
   bundled_path: string;
-  pinned: string | null;
   plugin_version: string | null;
   log_path: string;
   install_error: string | null;

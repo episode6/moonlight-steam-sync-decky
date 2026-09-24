@@ -155,7 +155,7 @@ def make_backend_with_shim(tmp_path, install_env) -> Backend:
 
 def test_startup_installs_the_bundle_and_about_shows_both(tmp_path, install_env) -> None:
     install_env.bundled("moonlight-steam-sync.pyz 0.4.0")
-    (install_env.plugin_dir / "package.json").write_text('{"moonlightSteamSync": "0.4.0"}\n')
+    (install_env.plugin_dir / "package.json").write_text('{"version": "0.4.0"}\n')
     backend = make_backend_with_shim(tmp_path, install_env)
     run(backend.startup())
     assert install_env.installed_path.exists()
@@ -163,7 +163,6 @@ def test_startup_installs_the_bundle_and_about_shows_both(tmp_path, install_env)
     assert info["ok"] is True
     assert info["installed"] == "0.4.0"
     assert info["bundled"] == "0.4.0"
-    assert info["pinned"] == "0.4.0"
     assert info["minimum"] == "0.4.0"
     assert info["too_old"] is False
     assert info["install_error"] is None

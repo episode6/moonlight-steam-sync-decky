@@ -739,7 +739,6 @@ class Backend:
         if self.cli_ok and (self._capabilities is None or not was_ok):
             self._capabilities = None
             await self.cli_capabilities()
-        pinned = self._pinned()
         installed = install.format_version(self.installed_version)
         return {
             "ok": True,
@@ -749,7 +748,6 @@ class Backend:
             "too_old": self.installed_version is not None and not self.cli_ok,
             "installed_path": self.installed_cli,
             "bundled_path": self.bundled_cli,
-            "pinned": pinned,
             "plugin_version": self.plugin_version or self._package_field("version"),
             "log_path": self.log_path,
             "install_error": self.install_error,
@@ -763,9 +761,6 @@ class Backend:
         except (OSError, ValueError, AttributeError):
             return None
         return value if isinstance(value, str) else None
-
-    def _pinned(self) -> str | None:
-        return self._package_field("moonlightSteamSync")
 
     @guarded
     async def cli_capabilities(self) -> Result:

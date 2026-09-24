@@ -61,7 +61,6 @@ function fakeBackend(calls: Calls, answers: Partial<Record<keyof Backend, unknow
       too_old: false,
       installed_path: "~/.local/bin/moonlight-steam-sync",
       bundled_path: "",
-      pinned: "0.4.0",
       plugin_version: "0.1.0",
       log_path: "",
       install_error: null,

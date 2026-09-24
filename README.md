@@ -1,8 +1,8 @@
 # Moonlight Sync
 
 A [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) plugin
-that runs [moonlight-steam-sync](https://github.com/episode6/moonlight-steam-sync)
-from Game Mode. One press of **Sync now** in the Quick Access menu lists
+that runs [moonlight-steam-sync](cli/README.md), the command-line tool that
+lives in this repo's [`cli/`](cli/), from Game Mode. One press of **Sync now** in the Quick Access menu lists
 what your Moonlight host publishes, adds a dressed Steam shortcut (with
 artwork from Steam's CDN and SteamGridDB) for each title, and restarts Steam
 once so the library shows them. Games your Deck's Steam account already owns
@@ -14,10 +14,11 @@ Nothing runs on the gaming PC: the plugin needs only a stock
 Sunshine / Apollo / GeForce host that the Deck's Moonlight client is paired
 with.
 
-**Status:** released through `v0.7.0`. Its first device run (a generic
+**Status:** released through `v0.9.0`. Its first device run (a generic
 SteamOS machine) produced the `v0.1.1` fixes; it has **not been run on a
-Steam Deck yet** (`DEVICE-CHECKLIST.md`). It bundles moonlight-steam-sync
-**0.4.0** and needs 0.4.0 or newer.
+Steam Deck yet** (`DEVICE-CHECKLIST.md`). Each release bundles the
+moonlight-steam-sync CLI built from the same commit, at the same version,
+and needs CLI 0.4.0 or newer.
 
 ## Requirements
 
@@ -79,8 +80,9 @@ This removes only the plugin. It never touches the CLI it bundled
 (`~/.local/bin/moonlight-steam-sync`), your Steam shortcuts, or anything
 under the Steam directory (the CLI is the only writer there, see "Hard
 rules" in `AGENTS.md`); uninstall the CLI separately if you want it gone
-too — see [episode6/moonlight-steam-sync](https://github.com/episode6/moonlight-steam-sync)
-for how it was installed and how to remove it.
+too: `rm ~/.local/bin/moonlight-steam-sync`, plus its config, cache and
+state directories if you want those gone as well (see
+[`cli/README.md`](cli/README.md), "What it touches on disk").
 
 None of this has been run on a real Steam Deck yet; see
 [`DEVICE-CHECKLIST.md`](DEVICE-CHECKLIST.md) for the full list of on-device
@@ -88,8 +90,9 @@ checks to run once you have one.
 
 ## The bundled CLI
 
-The zip carries `bin/moonlight-steam-sync.pyz`, the CLI release pinned in
-`package.json` (`"moonlightSteamSync"`). Every time the plugin loads it
+The zip carries `bin/moonlight-steam-sync.pyz`, the CLI built from this
+repo's [`cli/`](cli/) in the same commit as the plugin; the two share one
+version (`package.json`'s `"version"`). Every time the plugin loads it
 compares that copy with `~/.local/bin/moonlight-steam-sync`:
 
 - missing there, or older → the bundled one is copied into place
@@ -98,14 +101,15 @@ compares that copy with `~/.local/bin/moonlight-steam-sync`:
 
 The plugin always runs the copy in `~/.local/bin`, through `python3`, so a
 shortcut made from Game Mode and one made from a terminal belong to the same
-tool. Settings → **About** shows both versions, the pinned release, the
-minimum the plugin needs (0.4.0) and any install error. If the installed CLI
+tool. Settings → **About** shows both versions, the minimum the plugin
+needs (0.4.0) and any install error. If the installed CLI
 is missing or older than 0.4.0 the panel shows a single row, "CLI not
 installed — see About" or "CLI too old (0.2.0, needs 0.4.0) — see About",
 and every CLI action is disabled; the settings pages that only touch the
-plugin's own files keep working. A zip packaged before the CLI release
-existed has no bundle; About then says "bundled CLI: none (built before the
-CLI release)" and you can install the CLI with its own `install.sh`.
+plugin's own files keep working. A zip packaged by hand without building
+the CLI first has no bundle; About then says "bundled CLI: none (this zip
+was packaged without the CLI)" and you can install the CLI on its own (see
+"Command-line tool only" below).
 
 ## The Quick Access panel
 
@@ -616,22 +620,48 @@ CLI's own entries and the fallback *Streaming* collection (above), because
 no file the CLI could write does either; the *Streaming* tab is drawn, not
 stored.
 
+## Command-line tool only
+
+The plugin is the recommended way to use this on a Deck, and it installs
+the CLI for you. To use the CLI on its own instead (from Desktop Mode, over
+SSH, or on a Linux machine without Decky), install just the CLI from the
+latest release:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/episode6/moonlight-steam-sync-decky/main/cli/install.sh | sh
+```
+
+It downloads the release's `moonlight-steam-sync.pyz` and its `.sha256`,
+verifies it and installs it as `~/.local/bin/moonlight-steam-sync` (no
+root; Python 3.11+, which SteamOS ships). See
+[`cli/README.md`](cli/README.md) for its options, configuration and every
+subcommand. The CLI used to live in its own repo,
+[episode6/moonlight-steam-sync](https://github.com/episode6/moonlight-steam-sync),
+now archived; its releases up to `v0.4.0` stay there, and from the first
+release after the move it is released here, with the plugin's version.
+
 ## Developing
 
-Needs Node 20+ with pnpm 9, and Python 3.13 (what SteamOS ships). No Docker:
-the plugin zip is built by `scripts/package.py`, which reproduces the Decky
-CLI's layout.
+Needs Node 20+ with pnpm 9, and Python 3.13 (what SteamOS ships; the CLI
+also supports 3.11). No Docker: the CLI zipapp is built from `cli/src` by
+`scripts/build_cli.py` and the plugin zip by `scripts/package.py`, which
+reproduces the Decky CLI's layout.
 
 ```sh
 pnpm install
 pnpm run build                 # dist/index.js
-backend/entrypoint.sh          # the pinned CLI -> backend/out/ (strict: fails if the pinned release does not exist)
+backend/entrypoint.sh          # cli/src -> backend/out/moonlight-steam-sync.pyz (strict)
 python3 scripts/package.py     # out/Moonlight-Sync.zip (warns and skips bin/ without the CLI)
 
 pnpm run typecheck && pnpm run lint && pnpm run test
 python3 -m pip install -r requirements-dev.txt
-ruff check . && python3 -m pytest
+python3 -m pip install --no-deps -e ./cli
+ruff check . && python3 -m pytest && python3 -m pytest cli
 ```
+
+`scripts/build_cli.py` refuses to build when the CLI's `__version__`
+(`cli/src/moonlight_steam_sync/__init__.py`) is not `package.json`'s
+`"version"`: the two are bumped together.
 
 Then copy `out/Moonlight-Sync.zip` to the Deck and install it as above.
 `decky plugin build` (Docker) still works through `backend/Dockerfile` and

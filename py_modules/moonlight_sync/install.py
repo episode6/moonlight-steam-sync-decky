@@ -123,8 +123,9 @@ def ensure_installed(
         else None
     )
     if not os.path.exists(bundled_path):
-        # Packaged before the CLI release existed (spec 3.6.2): nothing to
-        # install, and not an error either -- About explains it.
+        # Packaged without building the CLI (a developer's
+        # `scripts/package.py` with no backend/out/): nothing to install,
+        # and not an error either -- About explains it.
         return InstallReport(bundled=None, installed=installed, action="none")
 
     if not os.access(bundled_path, os.R_OK):

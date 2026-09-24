@@ -40,6 +40,8 @@ dist/
 # Python
 __pycache__/
 *.pyc
+*.egg-info/
+build/
 .venv/
 .pytest_cache/
 .ruff_cache/
@@ -47,16 +49,17 @@ __pycache__/
 /.yalc
 yalc.lock
 
-# The downloaded CLI (backend/entrypoint.sh) -- never committed
+# The built CLI (backend/entrypoint.sh, scripts/build_cli.py) -- never committed
 backend/out
+*.pyz
 bin/
 
 # The loader's decky module, if a developer copies it in for completion
 decky_plugin.py
 
-# Packaging output (scripts/package.py, the Decky CLI)
+# Packaging output (scripts/package.py, the Decky CLI). The Decky template
+# ignores all of cli/, where its tool downloads the `decky` binary; here cli/
+# is the moonlight-steam-sync source, so only that binary is ignored.
 out
 out/*
-cli/
-cli/*
-cli/decky
+/cli/decky

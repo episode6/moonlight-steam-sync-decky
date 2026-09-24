@@ -32,9 +32,10 @@
 # have never set one, run `passwd` in a Desktop Mode terminal first.
 #
 # This installs the plugin only. moonlight-steam-sync, the CLI it drives
-# (https://github.com/episode6/moonlight-steam-sync), has its own
-# install.sh; the plugin bundles and installs a pinned copy of it the first
-# time it loads, so there is nothing else to install by hand.
+# (cli/ in this repo), has its own installer, cli/install.sh, for using it
+# without the plugin; the plugin bundles the CLI built from the same commit
+# and installs it the first time it loads, so there is nothing else to
+# install by hand.
 
 set -eu
 
@@ -69,7 +70,7 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 
 echo "Downloading ${ASSET} (${VERSION}) from ${REPO}..."
 # curl exits 22 on a 404, which with -f prints nothing useful. Say which
-# URL failed and the likeliest reason, as backend/entrypoint.sh does.
+# URL failed and the likeliest reason, as cli/install.sh does.
 for asset in "${ASSET}" "${ASSET}.sha256"; do
     if ! curl -fsSL "${BASE_URL}/${asset}" -o "${TMP_DIR}/${asset}"; then
         echo "install.sh: could not download ${BASE_URL}/${asset} (is ${VERSION} released?)" >&2
