@@ -697,8 +697,8 @@ Run long commands through `tee` to a log file, never `tail`.
   (`ERROR packages field missing or empty`).
 - `ruff.toml` `extend-exclude = ["probes", …]`; `pyproject.toml`
   `testpaths = ["tests"]` and `norecursedirs` include `probes`.
-- CI's `probes` job runs `pytest probes/tests` only when that directory
-  exists (`hashFiles`), so it is green on a tree without the kit.
+- `ci.yml` has no probes job: the kit's tests, plugin build and runner
+  smoke test run only in `probe.yml`, path-filtered to `probes/**`.
 
 ## The test harness (off-device)
 
@@ -807,7 +807,7 @@ On-device checks are not merge criteria; they are collected in
   `shellcheck` (`sh -n` on `install.sh` and `backend/entrypoint.sh`, then
   `ludeeus/action-shellcheck` over the whole tree), `frontend` (pnpm 9, Node
   20: typecheck, lint, vitest, build, upload `dist`), `backend` (Python
-  3.13.5: ruff, pytest), `probes` (guarded), `package` (HEAD-checks the
+  3.13.5: ruff, pytest), `package` (HEAD-checks the
   pinned CLI's `.sha256` asset: absent → a
   `::warning title=CLI v<pin> not released::` and no `bin/`; present →
   `backend/entrypoint.sh` strict; then `scripts/package.py` and the
