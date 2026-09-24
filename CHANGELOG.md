@@ -6,6 +6,17 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- The CI, Release and Claude workflows moved every action to its current
+  Node 24 major (`actions/checkout@v7`, `actions/setup-node@v7`,
+  `actions/setup-python@v7`, `actions/upload-artifact@v7`,
+  `actions/download-artifact@v8`, `pnpm/action-setup@v6`), since GitHub is
+  retiring the Node 20 runtime, and pinned `runs-on` to `ubuntu-24.04`, so
+  the move of `ubuntu-latest` to Ubuntu 26 (from 2026-10-19) happens as a
+  deliberate bump rather than under a release. `probe.yml`, the probe
+  kit's own workflow, is unchanged.
+
 ## [0.9.0] - 2026-09-23
 
 ### Added
