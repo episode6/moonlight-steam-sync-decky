@@ -970,6 +970,12 @@ spec §3.20, *Get key from SteamGridDB…* (the key fetch from the Game Mode
 browser), and Advanced's *Reset match cache*, plus the fix that brings back
 the gear menu's *Use as Moonlight Sync default layout*; same CLI pin and
 minimum.
+Plugin `v0.10.0` (the user asked for it on 2026-09-24) is a minor release
+for the CLI's move into `cli/` (the first release that builds and attaches
+the CLI itself, so "same CLI pin" stops applying here: the CLI takes the
+plugin's number, `0.10.0`, and the minimum stays `0.4.0`) and for Decision
+66, no Moonlight command unasked (the host row's *Check* button). Its
+bump went through a PR, since `main` only accepts changes that way.
 
 Once everything intended for the release has merged to `main`
 (substitute the version being cut for `X.Y.Z`):
