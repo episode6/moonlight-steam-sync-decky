@@ -1,6 +1,6 @@
 import { DialogButton, Field, Focusable, Menu, MenuItem, Spinner, showContextMenu, showModal } from "@decky/ui";
 import { toaster } from "@decky/api";
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
 
 import { controller } from "../instance";
 import { errorText, isFailure, type PinnedEvent } from "../lib/cli";
@@ -66,6 +66,7 @@ function Row({
   canSetDefault,
   onChangeMatch,
   onIgnore,
+  rowRef,
 }: {
   row: TitleRow;
   /** A run is going: both edits are held until it finishes. */
@@ -77,6 +78,8 @@ function Row({
   canSetDefault: boolean;
   onChangeMatch(): void;
   onIgnore(): void;
+  /** Set on the last row shown, which *Show more* focuses before it grows the page. */
+  rowRef?: RefObject<HTMLDivElement | null>;
 }) {
   const chooseLayout = row.layoutTarget && canChooseLayout ? row.layoutTarget : null;
   const useAsDefaultSource = canSetDefault ? row.layoutSource : null;
@@ -99,6 +102,7 @@ function Row({
     );
   return (
     <Focusable
+      ref={rowRef}
       flow-children="horizontal"
       style={{
         display: "flex",
@@ -194,6 +198,7 @@ export function TitlesPage() {
   const active = state.hosts?.active ?? null;
   const running = !!state.run?.running;
   const loadId = useRef(0);
+  const lastRowRef = useRef<HTMLDivElement>(null);
 
   const refresh = useCallback(async () => {
     const id = ++loadId.current;
@@ -229,6 +234,18 @@ export function TitlesPage() {
   const shown = useMemo(() => filterRows(rows, filter, showParked), [rows, filter, showParked]);
   const counts = useMemo(() => filterCounts(rows, showParked), [rows, showParked]);
   const page = pageOf(shown, pages);
+
+  // Gamepad focus stays on the button that was pressed, and the button moves
+  // down past the new rows, so the user would land below them. Focus the last
+  // row already shown first, then grow the page: the next press of down steps
+  // into the first new row. Disabled controls are skipped: focus() on one is a
+  // no-op (*Change match* while a run is going, *Ignored in config.toml*).
+  const showMore = () => {
+    const row = lastRowRef.current;
+    const target = row?.querySelector<HTMLElement>("button:not(:disabled), [tabindex]") ?? row;
+    target?.focus();
+    requestAnimationFrame(() => setPages((current) => current + 1));
+  };
 
   const choose = (next: TitleFilter) => {
     setFilter(next);
@@ -341,9 +358,10 @@ export function TitlesPage() {
       </Focusable>
       {note ? <div style={{ fontSize: 12, color: "#ff9a9a", marginBottom: 6 }}>{note}</div> : null}
       <Focusable style={{ display: "flex", flexDirection: "column" }}>
-        {page.rows.map((row) => (
+        {page.rows.map((row, index) => (
           <Row
             key={row.name}
+            rowRef={index === page.rows.length - 1 ? lastRowRef : undefined}
             row={row}
             locked={running}
             ignoring={ignoring === row.name}
@@ -354,7 +372,7 @@ export function TitlesPage() {
           />
         ))}
         {page.hasMore ? (
-          <DialogButton style={{ marginTop: 8 }} onClick={() => setPages(pages + 1)}>
+          <DialogButton style={{ marginTop: 8 }} onClick={showMore}>
             {loadMoreLabel(page)}
           </DialogButton>
         ) : null}

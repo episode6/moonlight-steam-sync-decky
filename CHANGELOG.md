@@ -51,6 +51,13 @@ project uses [semantic versioning](https://semver.org/).
   prefix before taking the quotes off. Found on a device on 2026-09-23 with
   a MAC starting `2c` (a comma); the exact line shape is now a test.
 
+### Fixed
+
+- Pressing *Show 50 more* on the Titles page no longer drops gamepad
+  focus below the new rows: focus moves to the last row already shown
+  before the page grows, so the next press of down steps into the first
+  new row.
+
 ## [0.9.0] - 2026-09-23
 
 ### Added
