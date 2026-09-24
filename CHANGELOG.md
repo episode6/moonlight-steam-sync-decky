@@ -6,6 +6,13 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Pressing *Show 50 more* on the Titles page no longer drops gamepad
+  focus below the new rows: focus moves to the last row already shown
+  before the page grows, so the next press of down steps into the first
+  new row.
+
 ### Changed
 
 - The CI, Release and Claude workflows moved every action to its current

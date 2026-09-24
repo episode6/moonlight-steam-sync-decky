@@ -228,6 +228,10 @@ to `~/homebrew/logs/steam-input-probe/steam-input-probe.log` (the loader's
       write attempts.
 - [ ] **Paging.** With 300+ rows, page through with the D-pad; expect pages
       of 50 and correct navigation at both ends.
+- [ ] **Show more keeps your place.** Press *Show 50 more* with the D-pad.
+      Expect focus on the last row that was already shown (not on the
+      button, now 50 rows further down), and one press of down to land on
+      the first new row.
 
 ## 4. PR-7: Stream button and controller layouts
 
