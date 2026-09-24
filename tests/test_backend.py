@@ -127,7 +127,7 @@ def test_capabilities_without_art_commit(backend) -> None:
 def test_cli_version_shape(backend, tmp_path) -> None:
     plugin = Path(backend.plugin_dir)
     plugin.mkdir(parents=True, exist_ok=True)
-    (plugin / "package.json").write_text('{"version": "0.1.0", "moonlightSteamSync": "0.4.0"}')
+    (plugin / "package.json").write_text('{"version": "0.1.0"}')
     info = run(backend.cli_version())
     assert info == {
         "ok": True,
@@ -137,7 +137,6 @@ def test_cli_version_shape(backend, tmp_path) -> None:
         "too_old": False,
         "installed_path": str(Path(backend.home) / ".local" / "bin" / "moonlight-steam-sync"),
         "bundled_path": str(plugin / "bin" / "moonlight-steam-sync.pyz"),
-        "pinned": "0.4.0",
         "plugin_version": "0.1.0",
         "log_path": str(tmp_path / "logs" / "moonlight-sync.log"),
         "install_error": None,

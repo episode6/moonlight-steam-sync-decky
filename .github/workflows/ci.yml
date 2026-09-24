@@ -1,7 +1,8 @@
-# CI for the Moonlight Sync plugin (spec 3.6.2). No Docker and no Decky CLI:
-# the zip is built by scripts/package.py, which reproduces the Decky CLI's
-# layout. The plugin PRs are stacked on feature branches, so pull_request
-# carries no branch filter.
+# CI for the Moonlight Sync plugin (spec 3.6.2) and the moonlight-steam-sync
+# CLI under cli/. No Docker and no Decky CLI: the CLI zipapp is built from
+# cli/src by backend/entrypoint.sh (scripts/build_cli.py) and the zip by
+# scripts/package.py, which reproduces the Decky CLI's layout. The plugin PRs
+# are stacked on feature branches, so pull_request carries no branch filter.
 #
 # probes/ (the PR-0 device-probe kit) is left entirely to its own workflow
 # (probe.yml, path-filtered to probes/**): the root pnpm project, tsconfig,
@@ -24,6 +25,7 @@ jobs:
       - uses: actions/checkout@v7
       - run: sh -n install.sh
       - run: sh -n backend/entrypoint.sh
+      - run: sh -n cli/install.sh
       - uses: ludeeus/action-shellcheck@2.0.0
         with:
           scandir: .
@@ -53,7 +55,7 @@ jobs:
           if-no-files-found: error
 
   backend:
-    name: Backend (ruff, pytest on Python 3.13.5)
+    name: Backend (ruff over the repo, pytest on Python 3.13.5)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -70,9 +72,37 @@ jobs:
       - run: ruff check .
       - run: python -m pytest tests/ -v
 
+  cli:
+    name: CLI (pytest, zipapp smoke) on Python ${{ matrix.python-version }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        # The 3.11 floor cli/pyproject.toml declares, plus the exact Python a
+        # stock SteamOS ships (3.13.5, verified on a fresh install 2026-09-17)
+        # -- the version the CLI actually has to run on. When SteamOS moves,
+        # change 3.13.5 here, in the backend job and in release.yml.
+        python-version: ["3.11", "3.13.5"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -r requirements-dev.txt
+      - run: pip install --no-deps -e ./cli
+      - run: python -m pytest cli -v
+      - name: Build the zipapp
+        run: python scripts/build_cli.py --out build/moonlight-steam-sync.pyz
+      - name: Smoke test -- --version
+        run: python build/moonlight-steam-sync.pyz --version
+      - name: Smoke test -- doctor
+        # `doctor` always exits 0 (it reports what it finds, it does not
+        # require a Steam install or a moonlight binary to run in CI).
+        run: python build/moonlight-steam-sync.pyz doctor
+
   package:
     name: Package Moonlight-Sync.zip
-    needs: [frontend, backend]
+    needs: [frontend, backend, cli]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -83,18 +113,9 @@ jobs:
         with:
           name: dist
           path: dist/
-      - name: Fetch the pinned CLI (skipped with a warning until it is released)
-        # Only "the release does not exist" is lenient. When it exists,
-        # entrypoint.sh runs strict: a bad download or checksum fails the job.
-        run: |
-          pin=$(python3 -c 'import json; print(json.load(open("package.json"))["moonlightSteamSync"])')
-          url="https://github.com/episode6/moonlight-steam-sync/releases/download/v$pin/moonlight-steam-sync.pyz.sha256"
-          if curl -fsSLI -o /dev/null "$url"; then
-            backend/entrypoint.sh
-          else
-            echo "::warning title=CLI v$pin not released::moonlight-steam-sync v$pin has no GitHub release yet; packaging without bin/moonlight-steam-sync.pyz"
-          fi
-      - run: python3 scripts/package.py --list
+      - name: Build the CLI from cli/src
+        run: backend/entrypoint.sh
+      - run: python3 scripts/package.py --require-cli --list
       - uses: actions/upload-artifact@v7
         with:
           name: Moonlight-Sync

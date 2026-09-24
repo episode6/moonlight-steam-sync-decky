@@ -16,7 +16,8 @@ section 5), not decided here.
    run build && backend/entrypoint.sh && python3 scripts/package.py`, or
    take the `Moonlight-Sync` artifact from a CI run, and install it by
    hand — `README.md`'s "Manual install". Either way Settings → About
-   should show the bundled and installed CLI both at `0.4.0`; the plugin
+   should show the bundled and installed CLI both at the plugin's version
+   (the CLI is built from `cli/` with it; `0.4.0` before the move); the plugin
    installs or upgrades `~/.local/bin/moonlight-steam-sync` on first load.
 2. SSH into the Deck while it sits in Game Mode (`passwd` once in Desktop
    Mode, then `sudo systemctl enable --now sshd`; see `probes/PROBES.md`
@@ -111,7 +112,8 @@ to `~/homebrew/logs/steam-input-probe/steam-input-probe.log` (the loader's
 - [ ] **First load installs the bundled CLI.** With no `~/.local/bin/moonlight-steam-sync`
       present, load the plugin. Expect it to appear in `~/.local/bin` after
       load, and Settings → About to show both the bundled and installed
-      versions matching the pin.
+      versions matching the plugin's own version (About's *Plugin
+      version*): the CLI is built from `cli/` at the same version.
 - [ ] **Counters, Sync now, the restart modal.** Press *Sync now*. Expect
       progress lines, then either the restart modal (writes pending) or
       "nothing to do"; the four counters and *Last sync* update after.

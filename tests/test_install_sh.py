@@ -1,11 +1,10 @@
 """install.sh: the end-user installer (spec section 4 PR-8).
 
-Modelled on test_entrypoint.py: the script runs from a copy of the repo
-root under tmp_path (so the real ~/homebrew/plugins is never touched), with
+The real script runs unmodified from the repo root, with
 MOONLIGHT_SYNC_BASE_URL pointing at a file:// directory of fixtures and
 PLUGIN_DIR redirected into tmp_path so nothing needs sudo. install.sh reads
-MOONLIGHT_SYNC_BASE_URL itself (the same seam as backend/entrypoint.sh's
-MSY_CLI_BASE_URL) to override the release base URL entirely, so the real
+MOONLIGHT_SYNC_BASE_URL itself (the same seam as cli/install.sh's
+MOONLIGHT_STEAM_SYNC_BASE_URL) to override the release base URL, so the real
 `curl` runs unmodified against the file:// fixture. `sudo` is still stubbed
 on PATH with a wrapper that just execs its argument list (mkdir, unzip,
 systemctl -- none of which need real root against a tmp_path target), so

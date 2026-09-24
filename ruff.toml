@@ -1,10 +1,11 @@
-# Mirrors the CLI repo's ruff.toml (episode6/moonlight-steam-sync), with the
-# plugin's layout: the backend package lives in py_modules/, and the PR-0
-# probe kit under probes/ is linted by nobody here (it is throwaway tooling
-# with its own CI job).
+# One config for the whole repo: the plugin backend (py_modules/), its tests
+# and scripts, and the moonlight-steam-sync CLI under cli/ (which had this
+# same config in its own repo before it moved here). The PR-0 probe kit under
+# probes/ is linted by nobody here (it is throwaway tooling with its own CI
+# job).
 target-version = "py311"
 line-length = 100
-src = ["py_modules", "tests", "scripts"]
+src = ["py_modules", "tests", "scripts", "cli/src", "cli/tests"]
 extend-exclude = ["probes", "node_modules", "dist", "out"]
 
 [lint]
@@ -12,5 +13,14 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 ignore = []
 
 [lint.isort]
-known-first-party = ["moonlight_sync"]
+known-first-party = ["moonlight_sync", "moonlight_steam_sync"]
 known-third-party = ["decky"]
+
+[lint.per-file-ignores]
+# The CLI's pytest fixtures (`world`, `fresh_world`, ...) imported from another
+# test module to reuse their setup are then used as same-named test-function
+# parameters, which pyflakes reads as a redefinition. A per-line
+# `# noqa: F811` on the import cannot replace this: ruff anchors F811 at each
+# *use* site (every test function whose parameter shadows the fixture name),
+# not at the import.
+"cli/tests/*.py" = ["F811"]

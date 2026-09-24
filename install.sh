@@ -32,9 +32,10 @@
 # have never set one, run `passwd` in a Desktop Mode terminal first.
 #
 # This installs the plugin only. moonlight-steam-sync, the CLI it drives
-# (https://github.com/episode6/moonlight-steam-sync), has its own
-# install.sh; the plugin bundles and installs a pinned copy of it the first
-# time it loads, so there is nothing else to install by hand.
+# (cli/ in this repo), has its own installer, cli/install.sh, for using it
+# without the plugin; the plugin bundles the CLI built from the same commit
+# and installs it the first time it loads, so there is nothing else to
+# install by hand.
 
 set -eu
 

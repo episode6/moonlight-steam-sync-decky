@@ -1,7 +1,9 @@
 # Only pytest's settings live here: the plugin backend is not a Python
 # package to install (decky-loader imports main.py and py_modules/ directly).
 # testpaths keeps the root `pytest` run to tests/ -- the PR-0 probe kit's own
-# tests under probes/tests run in their own workflow (probe.yml).
+# tests under probes/tests run in their own workflow (probe.yml), and the
+# CLI's under cli/tests with cli/pyproject.toml's settings (`python -m pytest
+# cli`, CI's `cli` job).
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-norecursedirs = ["probes", "node_modules", "dist", "out", ".git"]
+norecursedirs = ["probes", "cli", "node_modules", "dist", "out", ".git"]

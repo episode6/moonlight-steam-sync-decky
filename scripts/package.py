@@ -10,9 +10,11 @@ five root files, ``dist/`` (mandatory), ``py_modules/`` (0755, no
 
     python3 scripts/package.py [--root DIR] [--out PATH] [--require-cli] [--list]
 
-Without ``backend/out/moonlight-steam-sync.pyz`` it warns and packages
-anyway (the plugin's About page then says the bundle is missing);
-``--require-cli`` makes that an error, which is what a release uses.
+``backend/out/moonlight-steam-sync.pyz`` is built from ``cli/src`` by
+``backend/entrypoint.sh`` (``scripts/build_cli.py``). Without it this warns
+and packages anyway (the plugin's About page then says the bundle is
+missing); ``--require-cli`` makes that an error, which is what CI and a
+release use.
 Standard library only.
 """
 

@@ -41,9 +41,9 @@ describe("cliStatus (spec 3.6.1)", () => {
     expect(cliStatus({ installed: "1.0.0", minimum: "0.4.0", too_old: false }).text).toBe("");
   });
 
-  it("explains a zip built before the CLI release", () => {
+  it("explains a zip packaged without the CLI", () => {
     expect(bundledLine({ bundled: null, minimum: "0.4.0" })).toBe(
-      "none (built before the CLI release); install it with the CLI's install.sh",
+      "none (this zip was packaged without the CLI); install it with cli/install.sh",
     );
     expect(bundledLine({ bundled: "0.4.0", minimum: "0.4.0" })).toBe("0.4.0");
   });
