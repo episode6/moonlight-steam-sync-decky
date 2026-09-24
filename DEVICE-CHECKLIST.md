@@ -143,9 +143,20 @@ to `~/homebrew/logs/steam-input-probe/steam-input-probe.log` (the loader's
       Expect a Retry row carrying the backend's message instead of an
       endless "Loading your library…" spinner; restore, press Retry, expect
       the panel to fill in without a plugin reload.
-- [ ] **Unreachable host row.** With the active host unreachable, expect a
-      red dot, the CLI's error message, and "last seen <relative time>"
-      ("never synced" when there is no cache).
+- [ ] **The host is never asked on its own** (Decision 66). Open the panel,
+      close it, reopen it, toggle the plugin off and on, open Settings →
+      Titles: `moonlight-sync.log` shows no `--json list --host` without
+      `--cached` for any of it, and the host row reads "N apps · listed
+      <relative time>" with **Check** and (when a MAC is known) **Wake**
+      under it. A shut-down PC stays down through all of it.
+- [ ] **Check asks once.** Press Check: "Checking <host>…", then a green
+      dot and "N apps"; the log shows one live `--json list --host`. A
+      second press within 10 s is answered from the memo (no new spawn).
+- [ ] **Unreachable host row.** With the active host unreachable, press
+      Check: expect a red dot, the CLI's error message, and "last seen
+      <relative time>" ("never synced" when there is no cache). A *Sync
+      now* that fails with exit 3 paints the row the same way, and one
+      that lists paints it green, with no `check_host` spawned for either.
 - [ ] **In-game guard.** While a game is running, expect no restart
       countdown and the text "A game is running. Restart Steam when you're
       done."
@@ -195,20 +206,23 @@ to `~/homebrew/logs/steam-input-probe/steam-input-probe.log` (the loader's
       header's list button. Expect "N published by MY-GAMING-PC · sorted by name"
       and rows with capsules, badges and chips.
 - [ ] **Titles page mid-sync.** Start *Sync now*, then open Settings →
-      Titles while it runs. Expect "N titles cached[ from <relative
-      time>] · refreshes when the sync finishes", the note "A sync is
-      running; this list refreshes and matches can be changed when it
-      finishes", and *Change match* disabled on every row.
-- [ ] **`list --cached` during the run, never live `list`.** While that
-      sync is running, check the log: only `--json list --cached --host
-      MY-GAMING-PC` was spawned, never a live `--json list --host MY-GAMING-PC`.
+      Titles while it runs. Expect "N published by MY-GAMING-PC[ · listed
+      <relative time>] · refreshes when the sync finishes", the note "A
+      sync is running; this list refreshes and matches can be changed when
+      it finishes", and *Change match* disabled on every row.
+- [ ] **`list --cached` always, never live `list`** (Decision 66). Whether
+      or not a sync is running, opening Titles spawns only `--json list
+      --cached --host MY-GAMING-PC`, never a live `--json list --host
+      MY-GAMING-PC`; the log proves it.
 - [ ] **Refresh after the sync.** Let it finish (restart when prompted),
-      reopen Titles: it re-lists live, the headline returns to "N published
-      by MY-GAMING-PC · sorted by name", *Change match* is enabled again.
-- [ ] **Never-synced host.** On a host that has never been synced, start a
-      sync and open Titles mid-run. Expect "MY-GAMING-PC was never synced; this
-      list fills in when the sync finishes" with a Retry button, filling in
-      after the run ends.
+      reopen Titles: it re-lists from the cache the sync just wrote, the
+      headline returns to "N published by MY-GAMING-PC · listed just now ·
+      sorted by name", *Change match* is enabled again.
+- [ ] **Never-synced host.** On a host that has never been synced, open
+      Titles: "MY-GAMING-PC was never synced; Sync now lists its titles".
+      Start a sync and open Titles mid-run: "MY-GAMING-PC was never synced;
+      this list fills in when the sync finishes" with a Retry button,
+      filling in after the run ends.
 - [ ] **Change match races a sync.** Open *Change match* on a title; before
       pressing *Use this*, start a sync from the panel; then press *Use
       this*. Expect "A sync is already running", no pin written
@@ -662,27 +676,37 @@ measurements.
 
 ## 11. Wake-on-LAN (spec 3.18)
 
-Nothing here has run on a device. The MAC source and the packet were
-tested off-device against a hand-written `Moonlight.conf` and a recording
-socket (`tests/test_wake.py`); the Deck's own file, the network and the
-PC's firmware are what these check.
+The MAC source and the packet were tested off-device against a
+hand-written `Moonlight.conf` and a recording socket (`tests/test_wake.py`);
+the Deck's own file, the network and the PC's firmware are what these
+check. Two things ran on the SteamOS box on 2026-09-23: its `Moonlight.conf`
+carried the MAC as a *quoted* `@ByteArray` (a raw byte of the MAC was a
+comma), which the parser then read as unknown (fixed, with that line's
+shape as a test); and a packet capture on the same LAN showed Moonlight's
+own `list` sending a magic packet with the PC's MAC, which is what
+Decision 66 answers.
 
 - [ ] **Moonlight's MAC is read.** With the host paired in the Flathub
       Moonlight, Settings → Host shows under it "<mac> from Moonlight's
       host list". If it reads "Not known" instead, open
       `~/.var/app/com.moonlight_stream.Moonlight/config/Moonlight Game
       Streaming Project/Moonlight.conf` and note the host's `mac=` line:
-      `@ByteArray()` means Moonlight has none (a Sunshine host that
-      reports no MAC; enter it by hand); anything else that still reads
-      as unknown is a parser gap: paste the line's shape (hex masked)
-      into an issue.
+      `@ByteArray()` (quoted or not) means Moonlight has none (a Sunshine
+      host that reports no MAC; enter it by hand); anything else that
+      still reads as unknown is a parser gap: paste the line's shape (hex
+      masked) into an issue.
 - [ ] **Wake appears and sends.** Shut the PC down (a sleep state
-      Wake-on-LAN is enabled for). Open the panel: the host row goes red
-      and shows **Retry** and **Wake** side by side. Press Wake: a toast
-      "Wake-on-LAN packet sent to <host>. Give it a minute, then Retry."
-      and, in `moonlight-sync.log`, `wake_host <host>: N packets sent
-      (moonlight MAC)` with N = (1 + the host's addresses) × 8. The PC
-      wakes; Retry after a minute goes green.
+      Wake-on-LAN is enabled for). Open the panel: the host row shows the
+      cached count with **Check** and **Wake** side by side (the PC stays
+      down: nothing was asked). Press Wake: a toast "Wake-on-LAN packet
+      sent to <host>. Give it a minute, then Check." and, in
+      `moonlight-sync.log`, `wake_host <host>: N packets sent (moonlight
+      MAC)` with N = (1 + the host's addresses) × 8. The PC wakes; Check
+      after a minute goes green.
+- [ ] **Check wakes it too.** Shut the PC down again; press Check instead:
+      Moonlight's own `list` sends the packet, so the row goes red first
+      (the 30 s seek times out) and the PC comes up anyway; Check again
+      after a minute goes green.
 - [ ] **An entered MAC overrides.** Type a MAC in the field, Save: a
       toast "<host> wakes with aa:bb:cc:dd:ee:ff", the description reads
       "Entered here; clear the field to go back to Moonlight's own", the
@@ -692,8 +716,8 @@ PC's firmware are what these check.
       aa:bb:cc:dd:ee:ff") and nothing is stored.
 - [ ] **Forget drops it.** Forget a host with an entered MAC; re-add it:
       the field is empty (or Moonlight's again).
-- [ ] **No MAC anywhere:** the unreachable row shows Retry alone, and
-      Settings → Host says where to enter one.
+- [ ] **No MAC anywhere:** the row shows Check alone, and Settings → Host
+      says where to enter one.
 
 ## 12. The on/off toggle (spec 3.19)
 

@@ -118,15 +118,19 @@ CLI release)" and you can install the CLI with its own `install.sh`.
   as the last status and your settings say, and runs a controller-layout
   walk that fell due meanwhile. The toggle is unavailable while a sync
   runs; the run finishes on its own.
-- **Host**: a dropdown of your known hosts with the active one selected. A
-  green dot and "N apps" when `moonlight list` answered; a red dot, the
-  error, and "last seen <when>" from the last successful listing when it did
-  not (checked each time the menu opens, at most every 10 s; **Retry**
-  checks again). Next to Retry, **Wake** sends the PC a Wake-on-LAN magic
-  packet when its MAC address is known (see "Hosts" below); it toasts
-  "Give it a minute, then Retry", since sending proves nothing about the
-  PC. Choosing another host asks first ("Switch to OFFICE-PC?
-  MY-GAMING-PC's tiles are parked, not removed"), then switches and syncs.
+- **Host**: a dropdown of your known hosts with the active one selected.
+  The plugin never asks the PC anything on its own: every `moonlight list`
+  wakes it (Moonlight's client sends a Wake-on-LAN packet before it even
+  looks, see "Hosts" below), so the row shows what the last listing cached
+  ("N apps · listed <when>") until you press **Check**, add a host or sync.
+  After a check, a green dot and "N apps" when `moonlight list` answered; a
+  red dot, the error, and "last seen <when>" from the last successful
+  listing when it did not. A sync counts as a check too. Next to Check,
+  **Wake** sends the PC a Wake-on-LAN magic packet when its MAC address is
+  known; it toasts "Give it a minute, then Check", since sending proves
+  nothing about the PC. Choosing another host asks first ("Switch to
+  OFFICE-PC? MY-GAMING-PC's tiles are parked, not removed"), then switches
+  and syncs.
 - **Sync now**: the full sync. While it runs the panel shows a progress bar
   over the titles, the last five titles and where their images came from,
   the plan, and **Stop** (everything done so far is kept; sync again to
@@ -304,6 +308,14 @@ count and when it was last seen, the active one marked:
   Wake-on-LAN (and the Deck has to be on the same network for a broadcast
   to reach it).
 
+  One thing to know: Moonlight's command line sends that same packet by
+  itself, on every `list` and `stream`, before it even looks whether the
+  PC is up (found on a device on 2026-09-23 with a packet capture). So a
+  PC that Moonlight knows the MAC of is woken by **Check**, by adding a
+  host, by **Sync now** and by a Stream button, and by nothing else: the
+  plugin runs no Moonlight command on its own, not when the panel opens,
+  not at load, not when the Titles page opens.
+
 ## The Titles page
 
 The list button in the panel's header (or Settings → **Titles**) opens
@@ -340,11 +352,12 @@ game under a different name; align the names on the host side or pin one),
 and **art refreshes on next sync** (after a pin). The filters are *All*,
 *Stream buttons*, *Shortcuts*, *Unmatched* and *Ignored*; rows render 50 at
 a time with a "Show 50 more" row at the end, so a 500-title host stays
-quick to scroll with the D-pad. When the host is unreachable the page shows
-the last listing it cached ("titles cached from <when>"), or says it was
-never synced. While a sync is running it shows that cached listing too
-("refreshes when the sync finishes") instead of asking the host again in
-the middle of the run, and re-lists on its own as soon as the run ends.
+quick to scroll with the D-pad. The page reads the listing the last sync
+cached ("N published by MY-GAMING-PC · listed <when>"), never the host
+itself (a live `moonlight list` would wake the PC); **Sync now** is what
+refreshes it, and a host that was never synced says so. While a sync is
+running it shows the same cached listing ("refreshes when the sync
+finishes") and re-lists on its own as soon as the run ends.
 
 **Change match** searches Steam's store and SteamGridDB (prefilled with
 the title's name; edit it and **Search** again) and shows the results as

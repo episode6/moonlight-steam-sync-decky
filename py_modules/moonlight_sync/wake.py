@@ -121,7 +121,16 @@ def _unescape_ini(value: str) -> str:
 
 
 def _byte_array(value: str) -> bytes | None:
-    """The bytes of a ``@ByteArray(...)`` value; ``None`` when it is not one."""
+    """The bytes of a ``@ByteArray(...)`` value; ``None`` when it is not one.
+
+    QSettings quotes the whole value (``"@ByteArray(,\\xf0]\\xdd\\x13\\xe)"``)
+    when a raw byte of the MAC is a character it must protect, such as a
+    comma or a bracket, so the quotes come off before the prefix is looked
+    for. Found on a device 2026-09-23: a MAC starting ``2c`` (a comma) read
+    as unknown until then.
+    """
+    if len(value) >= 2 and value[0] == '"' and value[-1] == '"':
+        value = value[1:-1]
     if not value.startswith("@ByteArray(") or not value.endswith(")"):
         return None
     inner = _unescape_ini(value[len("@ByteArray(") : -1])
