@@ -3,10 +3,9 @@
 # layout. The plugin PRs are stacked on feature branches, so pull_request
 # carries no branch filter.
 #
-# probes/ (the PR-0 device-probe kit) is left to its own workflow
-# (probe.yml) except for the `probes` job below, which only runs its tests:
-# the root pnpm project, tsconfig, eslint, vitest, ruff and pytest all
-# ignore probes/ explicitly.
+# probes/ (the PR-0 device-probe kit) is left entirely to its own workflow
+# (probe.yml, path-filtered to probes/**): the root pnpm project, tsconfig,
+# eslint, vitest, ruff and pytest all ignore probes/ explicitly.
 name: CI
 
 on:
@@ -70,24 +69,6 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: ruff check .
       - run: python -m pytest tests/ -v
-
-  probes:
-    name: Probe kit tests (probes/tests)
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        if: hashFiles('probes/tests/**') != ''
-        with:
-          python-version: "3.13.5"
-      - name: pytest probes/tests
-        if: hashFiles('probes/tests/**') != ''
-        run: |
-          pip install pytest
-          python -m pytest probes/tests -v
-      - name: No probe kit on this tree
-        if: hashFiles('probes/tests/**') == ''
-        run: echo "probes/tests does not exist here; nothing to run"
 
   package:
     name: Package Moonlight-Sync.zip

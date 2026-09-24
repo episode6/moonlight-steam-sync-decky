@@ -16,6 +16,8 @@ project uses [semantic versioning](https://semver.org/).
   the move of `ubuntu-latest` to Ubuntu 26 (from 2026-10-19) happens as a
   deliberate bump rather than under a release. `probe.yml`, the probe
   kit's own workflow, is unchanged.
+- CI no longer runs the PR-0 probe kit's tests on every PR; `probe.yml`,
+  path-filtered to `probes/**`, was already the kit's complete check.
 
 ## [0.9.0] - 2026-09-23
 
