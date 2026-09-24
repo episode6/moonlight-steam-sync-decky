@@ -1,4 +1,5 @@
 import { ButtonItem, Field, PanelSection, PanelSectionRow, ProgressBarWithInfo } from "@decky/ui";
+import type { ComponentProps, FC } from "react";
 
 import type { TitleEvent } from "../lib/cli";
 import { progressFraction, type RunProgress } from "../lib/state";
@@ -23,6 +24,19 @@ export function slotSummary(title: TitleEvent): string {
   if (missing.length) parts.push(`no ${missing.join(", ")}`);
   return parts.join(", ");
 }
+
+/**
+ * ProgressBarWithInfo is a Field whose child column is `childrenContainerWidth:
+ * "fixed"` unless told otherwise, and in the Quick Access menu the client's
+ * stylesheet gives that fixed column a 270 px minimum beside an empty label
+ * column, wider than the panel's 268 px of content, so the bar and its label
+ * ran off the panel's right edge (measured on a Deck 2026-09-23). "max" grows
+ * the column across the row instead; the client's component forwards the prop
+ * to the Field, @decky/ui's props just do not declare it.
+ */
+const ProgressBarRow = ProgressBarWithInfo as FC<
+  ComponentProps<typeof ProgressBarWithInfo> & { childrenContainerWidth?: "min" | "max" | "fixed" }
+>;
 
 function titleMark(title: TitleEvent): string {
   return Object.values(title.slots).some((v) => v === "missing" || v === "cached-miss") ? "–" : "✓";
@@ -58,7 +72,8 @@ export function SyncProgress({ run, onStop }: Props) {
   return (
     <PanelSection title={RUN_TITLES[run.kind]}>
       <PanelSectionRow>
-        <ProgressBarWithInfo
+        <ProgressBarRow
+          childrenContainerWidth="max"
           nProgress={fraction === null ? undefined : Math.round(fraction * 100)}
           indeterminate={fraction === null || run.awaiting}
           sOperationText={operation}
