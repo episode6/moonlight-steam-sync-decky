@@ -115,6 +115,9 @@ to `~/homebrew/logs/steam-input-probe/steam-input-probe.log` (the loader's
 - [ ] **Counters, Sync now, the restart modal.** Press *Sync now*. Expect
       progress lines, then either the restart modal (writes pending) or
       "nothing to do"; the four counters and *Last sync* update after.
+      The progress bar and its "ARTWORK: TITLE N OF M" label stay inside
+      the panel, the bar as wide as the *Stop* button under it (before
+      2026-09-23 the bar's fixed-width column overflowed the panel).
 - [ ] **Stop right after Sync.** Press *Sync now*, then *Stop* within about
       a second (before the first progress line). Expect the panel to leave
       the progress view reporting a stopped run (not a run that keeps

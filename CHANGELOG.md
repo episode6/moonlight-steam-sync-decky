@@ -17,6 +17,14 @@ project uses [semantic versioning](https://semver.org/).
   deliberate bump rather than under a release. `probe.yml`, the probe
   kit's own workflow, is unchanged.
 
+### Fixed
+
+- The progress bar and its "Artwork: title N of M" label no longer run off
+  the panel's right edge while a run is going. The bar is a Steam Field
+  whose child column is fixed-width unless told otherwise, and in the Quick
+  Access menu the client gives that column a 270 px minimum beside an empty
+  label column, wider than the panel; the column now grows across the row.
+
 ## [0.9.0] - 2026-09-23
 
 ### Added
