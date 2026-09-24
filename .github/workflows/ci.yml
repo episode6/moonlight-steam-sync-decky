@@ -20,9 +20,9 @@ permissions:
 jobs:
   shellcheck:
     name: Lint shell scripts
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: sh -n install.sh
       - run: sh -n backend/entrypoint.sh
       - uses: ludeeus/action-shellcheck@2.0.0
@@ -31,13 +31,13 @@ jobs:
 
   frontend:
     name: Frontend (typecheck, lint, vitest, build)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
         with:
           version: 9
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: pnpm
@@ -47,7 +47,7 @@ jobs:
       - run: pnpm run lint
       - run: pnpm run test
       - run: pnpm run build
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
@@ -55,10 +55,10 @@ jobs:
 
   backend:
     name: Backend (ruff, pytest on Python 3.13.5)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           # decky-loader is a PyInstaller bundle and brings its own
           # interpreter, so this is not the version the backend itself runs
@@ -73,10 +73,10 @@ jobs:
 
   probes:
     name: Probe kit tests (probes/tests)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         if: hashFiles('probes/tests/**') != ''
         with:
           python-version: "3.13.5"
@@ -92,13 +92,13 @@ jobs:
   package:
     name: Package Moonlight-Sync.zip
     needs: [frontend, backend]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13.5"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist/
@@ -114,7 +114,7 @@ jobs:
             echo "::warning title=CLI v$pin not released::moonlight-steam-sync v$pin has no GitHub release yet; packaging without bin/moonlight-steam-sync.pyz"
           fi
       - run: python3 scripts/package.py --list
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Moonlight-Sync
           path: out/Moonlight-Sync.zip
