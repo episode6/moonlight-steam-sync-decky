@@ -8,12 +8,15 @@ import {
   applyRunDone,
   applyRunEvent,
   clientAppid,
+  clientLayoutCaption,
   countersFromStatus,
   hostAppsFromStatus,
   ignoredCounter,
   initialState,
   keyFetchOffered,
   keyFetchText,
+  launchButtons,
+  launchCaption,
   newRun,
   otherHostsLine,
   progressFraction,
@@ -105,6 +108,58 @@ describe("stream map and client", () => {
     expect(hostAppsFromStatus([{ ...desktop, parked: true, published: false }]).desktop).toBeNull();
     // Only the Moonlight name counts, not what the shortcut is called.
     expect(hostAppsFromStatus([{ ...tunic, app_name: "Desktop" }]).desktop).toBeNull();
+  });
+});
+
+describe("the panel's launch and layout rows (Decision 67)", () => {
+  const client = 2400000001;
+  const both = { desktop: 3000000101, bigPicture: 3000000102 };
+
+  it("puts Moonlight first, then each host app the host publishes", () => {
+    const buttons = launchButtons({ clientAppid: client, hostApps: both });
+    expect(buttons.map((b) => [b.key, b.label, b.disabled])).toEqual([
+      ["moonlight", "Open Moonlight", false],
+      ["desktop", "Desktop", false],
+      ["bigPicture", "Steam Big Picture", false],
+    ]);
+    expect(buttons[0].description).toBe("Launch the client without picking a game");
+    // A host app the host does not publish drops out; the others widen.
+    const noDesktop = launchButtons({ clientAppid: client, hostApps: { ...both, desktop: null } });
+    expect(noDesktop.map((b) => b.key)).toEqual(["moonlight", "bigPicture"]);
+  });
+
+  it("keeps a disabled Moonlight button until a sync made the client shortcut", () => {
+    const buttons = launchButtons({ clientAppid: null, hostApps: { desktop: null, bigPicture: null } });
+    expect(buttons).toEqual([
+      { key: "moonlight", label: "Open Moonlight", description: "Sync once to enable", disabled: true },
+    ]);
+  });
+
+  it("captions the focused button, else Moonlight's", () => {
+    const buttons = launchButtons({ clientAppid: client, hostApps: both });
+    expect(launchCaption(buttons, null).label).toBe("Open Moonlight");
+    expect(launchCaption(buttons, "desktop").description).toBe("Stream the host's desktop");
+    // A focused host app that has since gone falls back to Moonlight.
+    const noDesktop = launchButtons({ clientAppid: client, hostApps: { ...both, desktop: null } });
+    expect(launchCaption(noDesktop, "desktop").key).toBe("moonlight");
+  });
+
+  it("names the default layout under the layout row", () => {
+    const def = { url: "workshop://2810081311", title: "Gamepad with camera controls", when: "2026-09-25T10:00:00Z" };
+    expect(clientLayoutCaption({ clientAppid: null, settings: { default_layout: def } })).toBe("Sync once to enable");
+    expect(clientLayoutCaption({ clientAppid: client, settings: { default_layout: def } })).toBe(
+      "Moonlight's layout · default for streams: Gamepad with camera controls",
+    );
+    expect(clientLayoutCaption({ clientAppid: client, settings: { default_layout: null } })).toBe(
+      "Moonlight's layout · no default for streams yet",
+    );
+    expect(clientLayoutCaption({ clientAppid: client, settings: null })).toBe(
+      "Moonlight's layout · no default for streams yet",
+    );
+    // Under `picker` there is no default to name.
+    expect(
+      clientLayoutCaption({ clientAppid: client, settings: { default_layout: def, layout_strategy: "picker" } }),
+    ).toBe("Moonlight's controller layout");
   });
 });
 

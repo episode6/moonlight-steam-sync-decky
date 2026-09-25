@@ -1021,8 +1021,9 @@ export class Controller {
    * hidden shortcut, recorded as `picker` (under either strategy; under
    * `picker` it is the only layout affordance). `false` when the client has
    * no such method, in which case the pages hide the action. `realAppid`
-   * is `null` for a default host app (the panel's layout buttons and its
-   * Titles row, spec 3.14.1): there is no game behind it, only the picker.
+   * is `null` for a default host app (its Titles row, spec 3.14.1) and the
+   * client (the panel's *Layout*, Decision 67): no game behind it, only the
+   * picker.
    */
   async chooseLayout(shortcutAppid: number, realAppid: number | null): Promise<boolean> {
     if (!this.steam.showControllerConfigurator(shortcutAppid)) return false;
@@ -1031,13 +1032,14 @@ export class Controller {
   }
 
   /**
-   * The panel's layout button beside *Desktop* / *Steam Big Picture* (spec
-   * 3.14.1, Decision 39): a hidden entry has no library page, so this is the
-   * way to its controller configurator. Like the launch beside it, it is
-   * not held back while a game runs (Decision 57).
+   * The panel's *Layout* button (Decision 67): the controller configurator
+   * for the Moonlight client shortcut, picker only (no game behind it).
+   * Desktop and Steam Big Picture reach theirs from the Titles page. Like
+   * the launch row above it, it is not held back while a game runs
+   * (Decision 57).
    */
-  chooseHostAppLayout(key: HostAppKey): Promise<boolean> {
-    const appid = this.state.hostApps[key];
+  chooseClientLayout(): Promise<boolean> {
+    const appid = this.state.clientAppid;
     return appid === null ? Promise.resolve(false) : this.chooseLayout(appid, null);
   }
 

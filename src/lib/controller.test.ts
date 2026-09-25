@@ -1179,29 +1179,25 @@ describe("the Stream button and the default controller layout (spec 3.9, 3.10, 3
     expect(recorded()).toHaveLength(1);
   });
 
-  it("the panel's layout buttons open the hidden host app's picker, even while a game runs", async () => {
+  it("the panel's Layout button opens the Moonlight shortcut's picker, even while a game runs", async () => {
     const controller = await loaded();
-    expect(controller.state.hostApps).toEqual({ desktop: 3000000101, bigPicture: 3000000102 });
+    expect(controller.state.clientAppid).toBe(2400000001);
     controller.setInGame(true); // neither the launch nor the configurator is held back
-    expect(await controller.chooseHostAppLayout("desktop")).toBe(true);
-    expect(await controller.chooseHostAppLayout("bigPicture")).toBe(true);
-    expect(steam.configuratorOpened).toEqual([3000000101, 3000000102]);
+    expect(await controller.chooseClientLayout()).toBe(true);
+    expect(steam.configuratorOpened).toEqual([2400000001]);
     // picker only: no game behind it, and Steam Input is never touched
-    expect(recorded()).toEqual([
-      [3000000101, null, "picker", null],
-      [3000000102, null, "picker", null],
-    ]);
-    expect(controller.state.layouts["3000000101"]).toMatchObject({ real_appid: null, result: "picker" });
+    expect(recorded()).toEqual([[2400000001, null, "picker", null]]);
+    expect(controller.state.layouts["2400000001"]).toMatchObject({ real_appid: null, result: "picker" });
     expect(steam.launched).toEqual([]);
     steam.configurator = false;
-    expect(await controller.chooseHostAppLayout("desktop")).toBe(false);
-    expect(recorded()).toHaveLength(2);
+    expect(await controller.chooseClientLayout()).toBe(false);
+    expect(recorded()).toHaveLength(1);
   });
 
-  it("a host app the host does not publish has no layout button to press", async () => {
-    const entries = eventsOf(loadFixture("common/status.ndjson"), "entry").filter((e) => !e.host_app);
+  it("before a sync made the Moonlight shortcut, Layout has nothing to open", async () => {
+    const entries = eventsOf(loadFixture("common/status.ndjson"), "entry").filter((e) => !e.client);
     const controller = await loaded({ status: { ok: true, entries, notes: [] } });
-    expect(await controller.chooseHostAppLayout("desktop")).toBe(false);
+    expect(await controller.chooseClientLayout()).toBe(false);
     expect(steam.configuratorOpened).toEqual([]);
     expect(names()).not.toContain("record_layout");
   });

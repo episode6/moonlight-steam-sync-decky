@@ -6,6 +6,23 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **A tidier Quick Access panel.** *Open Moonlight*, *Desktop* and *Steam
+  Big Picture* are now icon buttons (a moon, a monitor, the Steam logo)
+  on one line. The line under them names the button that has focus. Below
+  them, one layout row belongs to the Moonlight entry: **Layout** opens
+  Steam's controller configurator for it, and **Make default** makes its
+  layout the default for every streaming entry, with the same confirm and
+  refusals as the Titles page's *Use as the default layout*. The line
+  under the row names the current default. Desktop and Steam Big Picture
+  no longer have their own layout buttons on the panel: set theirs from
+  the Titles page (**Layout** → *Choose layout…*), and they still take
+  the default.
+- The toggle at the top of the panel reads **Enable Sync** and has no
+  description. The settings route still explains what off means while
+  the plugin is off. *Sync now* has no description either.
+
 ## [0.10.0] - 2026-09-24
 
 ### Added

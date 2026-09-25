@@ -58,7 +58,7 @@ export function pluginEnabled(settings: Pick<Settings, "enabled"> | null | undef
   return settings?.enabled !== false;
 }
 
-/** The text under the panel's and the settings route's toggle while the plugin is off (spec 3.19). */
+/** The text under the settings route's toggle while the plugin is off (spec 3.19; the panel's has none, Decision 67). */
 export const DISABLED_TEXT =
   "Off: every Moonlight shortcut is hidden and the library gets no Stream buttons or Streaming tab. Nothing syncs and the settings are locked until it is on again.";
 

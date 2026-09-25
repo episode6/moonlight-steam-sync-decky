@@ -101,7 +101,8 @@ cli/                        the moonlight-steam-sync CLI (its own AGENTS.md, REA
                             MOONLIGHT_STEAM_SYNC_BASE_URL test seam)
 DEVICE-CHECKLIST.md         every on-device check (PR-0 probes, PR-5/6/7/8 items, §3.14,
                             §3.15 and the §3.16 default layout's [verify] items, then
-                            §3.17-§3.20; the key fetch is §14), in order
+                            §3.17-§3.20; the key fetch is §14, the panel's launch and
+                            layout rows §15), in order
 main.py                     thin decky Plugin: builds Backend, one line per callable;
                             no __init__ and `_backend` / `_startup` as class attributes, with
                             `_get` / `_ready` as classmethods, so it is correct whether the
@@ -209,7 +210,13 @@ src/lib/                    pure modules (vitest)
                             *last seen*, the Titles page's stamp),
                             HOST_APPS / hostAppsFromStatus() (the panel's Desktop and
                             Steam Big Picture buttons, by Moonlight name, blind to
-                            `hidden`); an `entry.host_app` entry counts toward none of
+                            `hidden`), launchButtons() / launchCaption() (the panel's
+                            icon launch row, Decision 67: Moonlight always, disabled
+                            until the client shortcut exists, then each published host
+                            app; the line under it names the focused one, else
+                            Moonlight), clientLayoutCaption() (the line under the
+                            layout row: whose layout, and the default's title);
+                            an `entry.host_app` entry counts toward none of
                             stream / shortcuts / unmatched and is never in the stream
                             map (spec §3.14.1); the layout walk reads `entries`, not
                             the map, so the host apps and the client are walked too
@@ -248,9 +255,10 @@ src/lib/                    pure modules (vitest)
                             Decision 57, the user's 2026-09-22: Moonlight's UI handles a
                             stream already going; applyDefault when a default is set,
                             record, run; never an unset), chooseLayout() (a `null`
-                            real appid = a host app: picker only), chooseHostAppLayout()
-                            (the panel's layout buttons; not held back by inGame, and
-                            neither is openHostApp()),
+                            real appid = a host app or the client: picker only),
+                            chooseClientLayout() (the panel's *Layout*, Decision 67:
+                            the Moonlight shortcut's configurator; not held back by
+                            inGame, and neither is openHostApp()),
                             inspectLayout() (one getConfig: url + title, or
                             no-controller / unselected / not-shareable),
                             setDefaultLayout(url, title) (spec 3.16.4: serialised on
@@ -333,7 +341,8 @@ src/lib/                    pure modules (vitest)
                             what unparks it; a third argument, `enabled`, false hides
                             every entry, spec 3.19), pluginEnabled() / DISABLED_TEXT
                             (the on/off toggle, spec 3.19: the `enabled` key, absent
-                            reads on; streamingTabEnabled() is false while off),
+                            reads on; streamingTabEnabled() is false while off;
+                            DISABLED_TEXT is under the settings route's toggle only),
                             collectionDiff(wanted, current, removable)
                             (removes only removable members)
   contextMenu.ts            spec 3.16.5, the gear menu's lookup, pure: MODULE_MARKER
@@ -436,10 +445,17 @@ src/routes/libraryContextMenu.tsx  the library gear menu patch (spec 3.16.5, Dec
 src/routes/tree.ts          Overview / TreeNode / isOverview, shared by the three
                             route patches
 src/components/             adoptDefault (inspectLayout -> refusal toasts -> ConfirmModal
-                            -> setDefaultLayout, shared by the Titles row and the gear
-                            menu; the walk-running refusal), QuickAccess (HostAppRow: the launch button plus the icon-only
-                            layout button, plain ButtonItem when the client has no
-                            configurator; the host row: the cached "N apps · listed
+                            -> setDefaultLayout, shared by the Titles row, the gear
+                            menu and the panel's *Make default*, each with its own
+                            "no layout chosen yet" hint; the walk-running refusal),
+                            QuickAccess (Decision 67: LaunchRow, the Moonlight /
+                            Desktop / Steam Big Picture icon buttons on one line, the
+                            caption under it following `onGamepadFocus`;
+                            ClientLayoutRow, *Layout* (chooseClientLayout, hidden
+                            when the client has no configurator) and *Make default*
+                            (adoptAsDefault on the client, hidden under `picker`),
+                            with clientLayoutCaption under it; *Sync now* has no
+                            description; the host row: the cached "N apps · listed
                             <when>" until a check, then *Check* + *Wake* whenever the
                             host is not known reachable, the latter only when
                             `wakeInfoOf` finds a MAC), SyncProgress,
@@ -473,10 +489,11 @@ src/components/             adoptDefault (inspectLayout -> refusal toasts -> Con
                             disabled, the tab needs no client call), *Reset match
                             cache* (a ConfirmModal, then resetMatchCache(); disabled
                             while a run is going), AboutPage,
-                            EnabledToggle (spec 3.19: the *Moonlight Sync* on/off
+                            EnabledToggle (spec 3.19: the *Enable Sync* on/off
                             ToggleField, at the top of the panel in every state
-                            and, while off, the whole settings route; disabled
-                            while a run is going)
+                            and, while off, the whole settings route; no
+                            description on the panel, DISABLED_TEXT on the route
+                            while off (`explainOff`); disabled while a run is going)
 src/test/fixtures.ts        loads tests/fixtures for vitest
 tests/                      pytest: fake_cli.py, fixtures/, conftest.py, test_*.py,
                             test_install_sh.py (install.sh end to end via
