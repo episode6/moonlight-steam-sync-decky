@@ -31,6 +31,7 @@ import type {
   TitleEvent,
   WakeInfo,
 } from "./cli";
+import { defaultLayoutOf, layoutStrategy } from "./layouts";
 import { cliStatus, type CliStatus } from "./version";
 
 // ---------------------------------------------------------------------------
@@ -102,6 +103,70 @@ export const HOST_APPS = [
 ] as const;
 
 export type HostAppKey = (typeof HOST_APPS)[number]["key"];
+
+/** A button of the panel's launch row: *Open Moonlight*, then each host app. */
+export type LaunchKey = "moonlight" | HostAppKey;
+
+export interface LaunchButton {
+  key: LaunchKey;
+  label: string;
+  description: string;
+  disabled: boolean;
+}
+
+/**
+ * The panel's launch row (spec 3.8, Decision 67): icon buttons on one line,
+ * *Open Moonlight* always (disabled until a sync made the client shortcut),
+ * then each host app the active host publishes. A host app it does not
+ * publish drops out and the others widen, as its row used to go away.
+ */
+export function launchButtons(state: Pick<AppState, "clientAppid" | "hostApps">): LaunchButton[] {
+  const buttons: LaunchButton[] = [
+    {
+      key: "moonlight",
+      label: "Open Moonlight",
+      description: state.clientAppid === null ? "Sync once to enable" : "Launch the client without picking a game",
+      disabled: state.clientAppid === null,
+    },
+  ];
+  for (const app of HOST_APPS) {
+    if (state.hostApps[app.key] !== null) {
+      buttons.push({
+        key: app.key,
+        label: app.name,
+        description: app.description,
+        disabled: false,
+      });
+    }
+  }
+  return buttons;
+}
+
+/**
+ * The line under the launch row: the icons carry no text, so it names the
+ * button with gamepad focus, else the first one (Moonlight's).
+ */
+export function launchCaption(buttons: readonly LaunchButton[], focused: LaunchKey | null): LaunchButton {
+  return buttons.find((button) => button.key === focused) ?? buttons[0];
+}
+
+/**
+ * The line under the panel's layout row (Decision 67): its buttons are the
+ * Moonlight shortcut's, and *Make default* sets the default for every
+ * streaming entry, so the line says whose layout it is and which default
+ * is set. Under the `picker` strategy there is no default to name.
+ */
+export function clientLayoutCaption(state: {
+  clientAppid: number | null;
+  settings: Pick<Settings, "layout_strategy" | "default_layout"> | null;
+}): string {
+  if (state.clientAppid === null) return "Sync once to enable";
+  if (layoutStrategy(state.settings) !== "copy") return "Moonlight's controller layout";
+  const def = defaultLayoutOf(state.settings);
+  return def
+    ? `Moonlight's layout · default for streams: ${def.title}`
+    : "Moonlight's layout · no default for streams yet";
+}
 
 /**
  * The shortcut appid per default host app, or `null` when the active host

@@ -7,9 +7,16 @@ import type { LayoutInspection } from "../lib/controller";
 /**
  * Where *Use as the default layout* was pressed, for the "no layout chosen
  * yet" hint: a Titles row points at *Choose layout*, the library gear menu
- * at the same menu's *Controller settings*.
+ * at the same menu's *Controller settings*, the panel's *Make default* at
+ * the *Layout* button beside it (Decision 67).
  */
-export type AdoptFrom = "titles" | "gear-menu";
+export type AdoptFrom = "titles" | "gear-menu" | "panel";
+
+const UNSELECTED_HINT: Record<AdoptFrom, string> = {
+  titles: "Use Choose layout first.",
+  "gear-menu": "Pick one under Controller settings first.",
+  panel: "Use Layout first.",
+};
 
 /** The toast for a title *Use as the default layout* cannot adopt from (spec 3.16.5), the texts exactly. */
 export function inspectionToast(
@@ -21,9 +28,7 @@ export function inspectionToast(
     case "no-controller":
       return "Connect a controller first";
     case "unselected":
-      return from === "gear-menu"
-        ? `“${name}” has no layout chosen yet. Pick one under Controller settings first.`
-        : `“${name}” has no layout chosen yet. Use Choose layout first.`;
+      return `“${name}” has no layout chosen yet. ${UNSELECTED_HINT[from]}`;
     case "not-shareable":
       return (
         `This layout was edited in place and only exists for “${name}”. ` +
@@ -44,8 +49,9 @@ export const WALK_RUNNING_TOAST = "A layout walk is still running. Try again whe
  * *Use as the default layout* (spec 3.16.5, Decision 43): read the
  * selection `appid` has for the controller in use, refuse what cannot be
  * shared, and confirm before every entry gets it. Shared by the Titles
- * row's *Layout* menu (`appid` is the entry) and the library gear menu
- * (Decision 56: `appid` is the game itself, or the entry on its own page).
+ * row's *Layout* menu (`appid` is the entry), the library gear menu
+ * (Decision 56: `appid` is the game itself, or the entry on its own page)
+ * and the panel's *Make default* (Decision 67: `appid` is the client).
  */
 export async function adoptAsDefault(appid: number, name: string, from: AdoptFrom): Promise<void> {
   if (controller.state.walking) {

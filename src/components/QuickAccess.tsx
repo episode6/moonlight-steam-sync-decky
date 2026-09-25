@@ -9,23 +9,27 @@ import {
   PanelSectionRow,
   Spinner,
 } from "@decky/ui";
-import { useEffect, type ReactNode } from "react";
-import { FaGamepad } from "react-icons/fa";
+import { useEffect, useState, type ReactNode } from "react";
+import { FaDesktop, FaGamepad, FaMoon, FaStar, FaSteam } from "react-icons/fa";
 
 import { SETTINGS_ROUTE, controller } from "../instance";
 import { lastSyncLine, relativeTime } from "../lib/format";
+import { layoutStrategy } from "../lib/layouts";
 import {
-  HOST_APPS,
   actionsReady,
   cachedHostOf,
+  clientLayoutCaption,
   ignoredCounter,
+  launchButtons,
+  launchCaption,
   otherHostsLine,
   restartRowView,
   wakeInfoOf,
   type AppState,
-  type HostAppKey,
+  type LaunchKey,
 } from "../lib/state";
 import { pluginEnabled } from "../lib/library";
+import { adoptAsDefault } from "./adoptDefault";
 import { confirmSwitch } from "./confirmSwitch";
 import { EnabledToggle } from "./EnabledToggle";
 import { SyncProgress } from "./SyncProgress";
@@ -49,61 +53,119 @@ function openSettings(page?: string) {
   Navigation.CloseSideMenus();
 }
 
+const ICON_BUTTON = {
+  flex: 1,
+  minWidth: 0,
+  height: 44,
+  padding: 0,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+} as const;
+
+const LAYOUT_BUTTON = {
+  flex: 1,
+  minWidth: 0,
+  padding: "0 8px",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 8,
+  whiteSpace: "nowrap",
+} as const;
+
+const LAUNCH_ICONS: Record<LaunchKey, ReactNode> = {
+  moonlight: <FaMoon size={22} />,
+  desktop: <FaDesktop size={22} />,
+  bigPicture: <FaSteam size={22} />,
+};
+
 /**
- * A default host app's row (spec 3.8, 3.14.1): the launch button and, when
- * the client can open the controller configurator, an icon-only *Choose
- * layout* button beside it -- the hidden entry has no library page to reach
- * it from. Neither button is held back while a game runs: Moonlight's own
- * UI handles a stream that is already going.
+ * The launch row (spec 3.8, Decision 67): *Open Moonlight*, *Desktop* and
+ * *Steam Big Picture* as icon buttons on one line. An icon has no label
+ * under gamepad focus, so the line under the row names the focused button
+ * (and the footer's A legend says it too), and Moonlight's once focus has
+ * left the row. A blur clears only its own key, so the result does not hang
+ * on whether the old button's blur or the new one's focus comes first.
+ * None is held back while a game
+ * runs: Moonlight's own UI handles a stream that is already going.
  */
-function HostAppRow({
-  app,
-  canChooseLayout,
-}: {
-  app: { key: HostAppKey; name: string; description: string };
-  canChooseLayout: boolean;
-}) {
-  if (!canChooseLayout) {
-    return (
-      <ButtonItem
-        layout="below"
-        description={app.description}
-        onClick={() => controller.openHostApp(app.key)}
-      >
-        {app.name}
-      </ButtonItem>
-    );
-  }
+function LaunchRow({ state }: { state: AppState }) {
+  const [focused, setFocused] = useState<LaunchKey | null>(null);
+  const buttons = launchButtons(state);
+  const caption = launchCaption(buttons, focused);
   return (
     <div style={{ padding: "10px 0" }}>
       <Focusable flow-children="horizontal" style={{ display: "flex", gap: 8 }}>
-        <DialogButton
-          style={{ flex: 1, minWidth: 0 }}
-          onClick={() => controller.openHostApp(app.key)}
-        >
-          {app.name}
-        </DialogButton>
-        <DialogButton
-          aria-label={`Choose controller layout for ${app.name}`}
-          style={{
-            flex: "0 0 40px",
-            width: 40,
-            minWidth: 0,
-            padding: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-          onClick={() => {
-            Navigation.CloseSideMenus();
-            void controller.chooseHostAppLayout(app.key);
-          }}
-        >
-          <FaGamepad />
-        </DialogButton>
+        {buttons.map((button) => (
+          <DialogButton
+            key={button.key}
+            aria-label={button.label}
+            style={ICON_BUTTON}
+            disabled={button.disabled}
+            onOKActionDescription={button.label}
+            onGamepadFocus={() => setFocused(button.key)}
+            onGamepadBlur={() => setFocused((current) => (current === button.key ? null : current))}
+            onClick={() =>
+              button.key === "moonlight" ? controller.openMoonlight() : controller.openHostApp(button.key)
+            }
+          >
+            {LAUNCH_ICONS[button.key]}
+          </DialogButton>
+        ))}
       </Focusable>
-      <div style={{ fontSize: 12, opacity: 0.7, marginTop: 6 }}>{app.description}</div>
+      <div style={{ fontSize: 12, opacity: 0.7, marginTop: 6 }}>
+        <span style={{ fontWeight: 600 }}>{caption.label}</span> · {caption.description}
+      </div>
     </div>
+  );
+}
+
+/**
+ * The layout row (Decision 67): *Layout* opens the controller configurator
+ * for the Moonlight shortcut (hidden when the client cannot), *Make
+ * default* adopts that shortcut's layout as the default for every
+ * streaming entry through the Titles row's flow (hidden under the `picker`
+ * strategy, which has no default). Desktop and Steam Big Picture keep their
+ * *Choose layout* on the Titles page. Not held back while a game runs.
+ */
+function ClientLayoutRow({ state, canChooseLayout }: { state: AppState; canChooseLayout: boolean }) {
+  const canAdopt = layoutStrategy(state.settings) === "copy";
+  if (!canChooseLayout && !canAdopt) return null;
+  const appid = state.clientAppid;
+  return (
+    <PanelSectionRow>
+      <div style={{ padding: "10px 0" }}>
+        <Focusable flow-children="horizontal" style={{ display: "flex", gap: 8 }}>
+          {canChooseLayout ? (
+            <DialogButton
+              style={LAYOUT_BUTTON}
+              disabled={appid === null}
+              onClick={() => {
+                Navigation.CloseSideMenus();
+                void controller.chooseClientLayout();
+              }}
+            >
+              <FaGamepad size={18} />
+              Layout
+            </DialogButton>
+          ) : null}
+          {canAdopt ? (
+            <DialogButton
+              style={LAYOUT_BUTTON}
+              disabled={appid === null}
+              onClick={() => {
+                if (appid !== null) void adoptAsDefault(appid, "Moonlight", "panel");
+              }}
+            >
+              <FaStar size={15} />
+              Make default
+            </DialogButton>
+          ) : null}
+        </Focusable>
+        <div style={{ fontSize: 12, opacity: 0.7, marginTop: 6 }}>{clientLayoutCaption(state)}</div>
+      </div>
+    </PanelSectionRow>
   );
 }
 
@@ -334,34 +396,14 @@ export function QuickAccess() {
       <HostRow state={state} />
       <RestartRow state={state} />
       <PanelSectionRow>
-        <ButtonItem
-          layout="below"
-          description="Refresh the host list, add art, restart Steam if needed"
-          disabled={!ready || !state.hosts?.active}
-          onClick={() => void controller.sync()}
-        >
+        <ButtonItem layout="below" disabled={!ready || !state.hosts?.active} onClick={() => void controller.sync()}>
           Sync now
         </ButtonItem>
       </PanelSectionRow>
       <PanelSectionRow>
-        <ButtonItem
-          layout="below"
-          description={
-            state.clientAppid === null ? "Sync once to enable" : "Launch the client without picking a game"
-          }
-          disabled={state.clientAppid === null}
-          onClick={() => controller.openMoonlight()}
-        >
-          Open Moonlight
-        </ButtonItem>
+        <LaunchRow state={state} />
       </PanelSectionRow>
-      {HOST_APPS.map((app) =>
-        state.hostApps[app.key] === null ? null : (
-          <PanelSectionRow key={app.key}>
-            <HostAppRow app={app} canChooseLayout={canChooseLayout} />
-          </PanelSectionRow>
-        ),
-      )}
+      <ClientLayoutRow state={state} canChooseLayout={canChooseLayout} />
       {state.message ? (
         <PanelSectionRow>
           <Field description={state.message} focusable={false} />

@@ -30,7 +30,7 @@ export function SettingsPage() {
         <PanelSection title="Moonlight Sync">
           <PanelSectionRow>
             {state.loaded ? (
-              <EnabledToggle state={state} />
+              <EnabledToggle state={state} explainOff />
             ) : (
               <Field label="Loading…" focusable={false}>
                 <Spinner style={{ width: 20, height: 20 }} />

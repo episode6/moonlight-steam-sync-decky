@@ -113,7 +113,7 @@ was packaged without the CLI)" and you can install the CLI on its own (see
 
 ## The Quick Access panel
 
-- **Moonlight Sync**, the on/off toggle at the top. Turn it off when the
+- **Enable Sync**, the on/off toggle at the top. Turn it off when the
   Deck travels away from its host: every Moonlight shortcut is hidden in
   the library (the visible ones and the Moonlight client entry too), the
   Stream buttons, the *Streaming* tab and the gear-menu item disappear,
@@ -139,10 +139,13 @@ was packaged without the CLI)" and you can install the CLI on its own (see
   over the titles, the last five titles and where their images came from,
   the plan, and **Stop** (everything done so far is kept; sync again to
   resume).
-- **Open Moonlight**: starts the Moonlight client itself, through a hidden
-  "Moonlight" shortcut the first sync creates (until then it reads "Sync
-  once to enable").
-- **Desktop** and **Steam Big Picture**: the two entries every Sunshine /
+- **The launch row**: three icon buttons on one line. The line under them
+  names the button that has focus and says what it does.
+- **Open Moonlight** (the moon): starts the Moonlight client itself,
+  through a hidden "Moonlight" shortcut the first sync creates (until then
+  it is disabled and the line reads "Sync once to enable").
+- **Desktop** (the monitor) and **Steam Big Picture** (the Steam logo): the
+  two entries every Sunshine /
   Apollo host publishes by default get a button each, which launches that
   entry's synced shortcut. **These buttons replace the two library tiles:**
   every sync the plugin runs passes `--hide-host-apps`, so the CLI keeps the
@@ -150,14 +153,13 @@ was packaged without the CLI)" and you can install the CLI on its own (see
   them hidden. On an existing install the first sync hides the two tiles in
   place: same appid, so their artwork and any controller layout you chose
   are untouched. A button only shows when the active host publishes the
-  entry and it is not ignored (an ignored entry has no shortcut to launch).
+  entry and it is not ignored (an ignored entry has no shortcut to launch);
+  without one, the other icons widen to fill the row.
   Like the Stream button, they work while a game is already running too:
-  Moonlight's own UI handles a stream that is already going.
-  - The small **gamepad button** beside each one (*Choose controller layout
-    for Desktop* / *… Steam Big Picture*) opens Steam's controller
-    configurator for that hidden entry, which has no library page to reach
-    it from. It is left out on a Steam client that cannot open the
-    configurator.
+  Moonlight's own UI handles a stream that is already going. Their
+  controller layouts are set from the Titles page (**Layout** → *Choose
+  layout…* on the `Desktop` / `Steam Big Picture` row), and they take the
+  default layout like every other entry.
   - **Getting the tiles back.** There is no plugin setting for this. From a
     terminal (Desktop Mode or SSH), run the plugin's own sync without
     `--hide-host-apps`:
@@ -179,6 +181,15 @@ was packaged without the CLI)" and you can install the CLI on its own (see
     this only lasts if you sync from the terminal from then on. A host whose
     two entries were renamed is not affected: only the names `Desktop` and
     `Steam Big Picture` (any case) are host apps.
+- **The layout row**, for the Moonlight entry. **Layout** opens Steam's
+  controller configurator for the hidden Moonlight shortcut (left out on a
+  Steam client that cannot open it). **Make default** makes that layout the
+  default for every streaming entry, the same as *Use as the default
+  layout* (see "Controller layouts"): it asks you to confirm first. The
+  line under the row names the current default ("Moonlight's layout ·
+  default for streams: …", or "no default for streams yet"). Both buttons
+  are disabled until the first sync creates the shortcut, and work while a
+  game is running.
 - Four counters from the last status: **Stream buttons** (hidden entries for
   games you own), **Shortcuts**, **Unmatched**, **Ignored**; and **Last
   sync** ("Today 14:02 · 2 added, 1 removed"). The two host apps count
@@ -257,7 +268,7 @@ only what differs:
 Right after a sync's restart both wait (up to 90 s) for the client to load
 its shortcut list; anything still missing then is picked up the next time.
 On a client without these calls the two toggles are disabled and say so.
-With the panel's *Moonlight Sync* toggle off, every entry is hidden
+With the panel's *Enable Sync* toggle off, every entry is hidden
 whatever the settings say, the tab is gone and the shortcut collection is
 emptied of this device's entries (and deleted once empty), until it is on
 again.
@@ -419,7 +430,9 @@ entry it manages starts on, and each title stays customisable on its own.
   stream and on the plugin's own visible entries. The same action is on the
   Titles page as **Layout** → *Use as the default layout*, which reads the
   layout the title's own entry has, hidden or visible (a hidden one is set
-  with **Layout** → *Choose layout…*). Either way the plugin reads the layout for the controller in
+  with **Layout** → *Choose layout…*). The quickest place is the Quick
+  Access panel: **Layout** sets the Moonlight entry's layout and **Make
+  default** adopts it. Every way, the plugin reads the layout for the controller in
   use, asks you to confirm, and
   puts it on every entry that has no layout of its own: Stream buttons'
   hidden shortcuts, visible shortcuts, `Desktop` / `Steam Big Picture` and

@@ -375,22 +375,21 @@ first (`moonlight-steam-sync --json status`).
 - [ ] **Both panel buttons launch.** *Desktop* and *Steam Big Picture* each
       start their stream from the Quick Access panel; Recent Games and the
       in-game overlay show the entry with its artwork.
-- [ ] **Each layout button opens the configurator.** The gamepad button
-      beside *Desktop* opens Steam's controller configurator for Desktop
-      (the Quick Access menu closes and the configurator is in front), and
-      likewise for *Steam Big Picture*. Check what a screen reader / the
-      focus ring says: "Choose controller layout for Desktop". D-pad right
-      from the launch button reaches it, and D-pad up/down still walks the
-      panel's rows.
+- [ ] ~~**Each layout button opens the configurator.**~~ Removed: the
+      panel has no layout button per host app any more (spec Decision
+      67). The Titles page's `Desktop` / `Steam Big Picture` rows have
+      **Layout → Choose layout…**, which opens Steam's configurator for
+      that entry; the panel's one *Layout* button is the Moonlight
+      entry's (§15).
 - [ ] **A layout chosen before the upgrade is still selected** when the
-      configurator opens (same appid), and it applies in the stream.
-- [ ] **While a game runs** the two launch buttons and the two layout
-      buttons all still work: a launch press runs the host app's shortcut
-      as usual.
+      configurator opens from the Titles row (same appid), and it applies
+      in the stream.
+- [ ] **While a game runs** the two launch buttons still work: a press
+      runs the host app's shortcut as usual.
 - [ ] **On a client without `SteamClient.Apps.ShowControllerConfigurator`**
-      (if one turns up) the rows fall back to the plain full-width launch
-      buttons and the Titles rows' *Layout* menus have no *Choose
-      layout…* (only *Use as the default layout*).
+      (if one turns up) the panel's layout row has *Make default* alone and
+      the Titles rows' *Layout* menus have no *Choose layout…* (only *Use
+      as the default layout*).
 - [ ] **Counters.** Do this one *before* the first sync: `status` carries
       the flag from the upgrade on, so the two still-visible tiles already
       read `host_app: true`. Right after the upgrade *Shortcuts* is two
@@ -737,7 +736,7 @@ are what these check. Start with the plugin on, synced, with *Hide
 Stream shortcuts* **off** (so there are visible shortcuts and a
 *Streaming* collection to watch).
 
-- [ ] **Off hides everything.** Panel → *Moonlight Sync* off. The panel
+- [ ] **Off hides everything.** Panel → *Enable Sync* off. The panel
       shows the toggle alone. In the library: no Moonlight shortcut under
       *Non-Steam* (the visible ones and the "Moonlight" client entry are
       gone too), no *Streaming* tab in the bar, and the *Streaming*
@@ -874,3 +873,44 @@ plugin_loader's environment), and keep an SSH session tailing
       from the browser", never the key.
 - [ ] **Off.** With the plugin toggled off the Artwork page is not
       reachable (§12); nothing to press.
+
+## 15. The panel's launch and layout rows (spec Decision 67)
+
+The panel's launch buttons are icons on one line, and its one layout
+button is the Moonlight entry's. Needs a synced host that publishes
+`Desktop` and `Steam Big Picture`.
+
+- [ ] **The toggle.** The top row reads *Enable Sync* with no text under
+      it, on or off. Settings, opened while off, shows the same toggle
+      with the "Off: every Moonlight shortcut is hidden…" line under it.
+- [ ] **Sync now** has no text under it.
+- [ ] **One launch row.** The moon, the monitor and the Steam logo share
+      one row, in that order, equal widths, nothing clipped or overflowing
+      the 268 px column. The moon opens Moonlight; the monitor streams
+      *Desktop*; the Steam logo streams *Steam Big Picture*.
+- [ ] **The caption follows focus.** **[verify]** (`onGamepadFocus` on a
+      `DialogButton`, unmeasured) D-pad onto each icon: the line under the
+      row changes to "Open Moonlight · Launch the client…", "Desktop ·
+      Stream the host's desktop", "Steam Big Picture · Stream the host's
+      Steam in Big Picture", and the footer's A legend names the same
+      button. D-pad down to the layout row: the line goes back to *Open
+      Moonlight*'s (`onGamepadBlur`). If the line never changes, report it
+      (the icons are then unlabelled on the Deck).
+- [ ] **A host app the host does not publish.** Ignore `Desktop` on the
+      Titles page and sync: the monitor goes and the other two icons widen.
+- [ ] **Layout.** *Layout* closes the Quick Access menu and opens Steam's
+      controller configurator for the Moonlight entry. Pick a layout there.
+- [ ] **Make default.** *Make default* asks "Use “<layout>” as the default
+      layout?"; confirm, and the toast counts the titles that took it. The
+      line under the row now reads "Moonlight's layout · default for
+      streams: <layout>", and Settings → Advanced shows the same default.
+      A Stream press on another game puts that layout on its shortcut.
+- [ ] **Make default with nothing chosen.** On a Moonlight entry whose
+      layout was never picked, *Make default* toasts "“Moonlight” has no
+      layout chosen yet. Use Layout first." and changes nothing. An
+      edited-in-place layout gets the *Export* toast instead.
+- [ ] **Before the first sync** (no Moonlight shortcut yet): the moon and
+      both layout buttons are disabled; the launch line reads "Open
+      Moonlight · Sync once to enable" and the layout line "Sync once to
+      enable".
+- [ ] **While a game runs** every icon and both layout buttons still work.
