@@ -450,7 +450,9 @@ src/components/             adoptDefault (inspectLayout -> refusal toasts -> Con
                             "no layout chosen yet" hint; the walk-running refusal),
                             QuickAccess (Decision 67: LaunchRow, the Moonlight /
                             Desktop / Steam Big Picture icon buttons on one line, the
-                            caption under it following `onGamepadFocus`;
+                            caption under it following `onGamepadFocus` and back to
+                            Moonlight's on `onGamepadBlur` (a blur clears only its
+                            own key);
                             ClientLayoutRow, *Layout* (chooseClientLayout, hidden
                             when the client has no configurator) and *Make default*
                             (adoptAsDefault on the client, hidden under `picker`),

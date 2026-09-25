@@ -84,7 +84,10 @@ const LAUNCH_ICONS: Record<LaunchKey, ReactNode> = {
  * The launch row (spec 3.8, Decision 67): *Open Moonlight*, *Desktop* and
  * *Steam Big Picture* as icon buttons on one line. An icon has no label
  * under gamepad focus, so the line under the row names the focused button
- * (and the footer's A legend says it too). None is held back while a game
+ * (and the footer's A legend says it too), and Moonlight's once focus has
+ * left the row. A blur clears only its own key, so the result does not hang
+ * on whether the old button's blur or the new one's focus comes first.
+ * None is held back while a game
  * runs: Moonlight's own UI handles a stream that is already going.
  */
 function LaunchRow({ state }: { state: AppState }) {
@@ -102,6 +105,7 @@ function LaunchRow({ state }: { state: AppState }) {
             disabled={button.disabled}
             onOKActionDescription={button.label}
             onGamepadFocus={() => setFocused(button.key)}
+            onGamepadBlur={() => setFocused((current) => (current === button.key ? null : current))}
             onClick={() =>
               button.key === "moonlight" ? controller.openMoonlight() : controller.openHostApp(button.key)
             }

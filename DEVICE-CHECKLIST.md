@@ -893,8 +893,9 @@ button is the Moonlight entry's. Needs a synced host that publishes
       row changes to "Open Moonlight · Launch the client…", "Desktop ·
       Stream the host's desktop", "Steam Big Picture · Stream the host's
       Steam in Big Picture", and the footer's A legend names the same
-      button. If the line never changes, report it (the icons are then
-      unlabelled on the Deck).
+      button. D-pad down to the layout row: the line goes back to *Open
+      Moonlight*'s (`onGamepadBlur`). If the line never changes, report it
+      (the icons are then unlabelled on the Deck).
 - [ ] **A host app the host does not publish.** Ignore `Desktop` on the
       Titles page and sync: the monitor goes and the other two icons widen.
 - [ ] **Layout.** *Layout* closes the Quick Access menu and opens Steam's
@@ -909,6 +910,7 @@ button is the Moonlight entry's. Needs a synced host that publishes
       layout chosen yet. Use Layout first." and changes nothing. An
       edited-in-place layout gets the *Export* toast instead.
 - [ ] **Before the first sync** (no Moonlight shortcut yet): the moon and
-      both layout buttons are disabled, and both lines read "Sync once to
+      both layout buttons are disabled; the launch line reads "Open
+      Moonlight · Sync once to enable" and the layout line "Sync once to
       enable".
 - [ ] **While a game runs** every icon and both layout buttons still work.
