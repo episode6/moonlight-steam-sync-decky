@@ -734,13 +734,6 @@ export class Controller {
     return result;
   }
 
-  /** The Host page's MAC field (spec 3.18); `null` or empty drops it. */
-  async setWakeMac(name: string, mac: string | null): Promise<Result<{ mac: string | null }>> {
-    const result = await this.backend.set_wake_mac(name, mac);
-    if (!isFailure(result)) await this.refreshHosts();
-    return result;
-  }
-
   // -------------------------------------------------------------------------
   // the Titles page (spec 3.8)
 

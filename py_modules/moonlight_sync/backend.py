@@ -1001,19 +1001,19 @@ class Backend:
     def _wake_info(
         self, name: str, entries: list[dict[str, Any]] | None = None
     ) -> dict[str, Any] | None:
-        """``{mac, source, addresses}`` for ``name``: the setting first, else Moonlight's list.
+        """``{mac, source, addresses}`` for ``name`` from Moonlight's own host list, else ``None``.
 
-        ``entries`` is ``wake.moonlight_entries`` already read, for a caller
-        resolving several names; ``None`` reads it here.
+        ``source`` is always ``"moonlight"``: since 2026-09-26 the plugin
+        keeps no MAC of its own (the Host page's field went away), so a
+        host Moonlight learned no MAC for has no *Wake*. ``entries`` is
+        ``wake.moonlight_entries`` already read, for a caller resolving
+        several names; ``None`` reads it here.
         """
         if entries is None:
             entries = wake.moonlight_entries(self.home)
         entry = wake.find_host(entries, name)
-        addresses = list(entry["addresses"]) if entry is not None else []  # type: ignore[arg-type]
-        stored = self.store.wake_mac(name)
-        if stored is not None:
-            return {"mac": stored, "source": "settings", "addresses": addresses}
         if entry is not None and isinstance(entry.get("mac"), str):
+            addresses = list(entry["addresses"])  # type: ignore[arg-type]
             return {"mac": entry["mac"], "source": "moonlight", "addresses": addresses}
         return None
 
@@ -1021,8 +1021,8 @@ class Backend:
     async def wake_host(self, name: str) -> Result:
         """Send a Wake-on-LAN magic packet to ``name`` (spec 3.18). No CLI, no busy guard.
 
-        The MAC is the Host page's setting when one is stored, else the one
-        in Moonlight's own host list; with neither the answer is ``no-mac``.
+        The MAC is the one in Moonlight's own host list; without one the
+        answer is ``no-mac``.
         The packet goes to the broadcast address and to every address
         Moonlight knows for the host, in a worker thread (a hostname among
         them resolves with a blocking ``getaddrinfo``); only when not one
@@ -1035,11 +1035,7 @@ class Backend:
         name = name.strip()
         info = self._wake_info(name)
         if info is None:
-            return failure(
-                "no-mac",
-                f"No MAC address known for {name}: Moonlight has none for it; "
-                "enter one on the Host page",
-            )
+            return failure("no-mac", f"No MAC address known for {name}: Moonlight has none for it")
         # Off the loop: a hostname in Moonlight's address list (a manualaddress
         # or DDNS name) resolves with a blocking getaddrinfo, and a stale one
         # can take seconds per port, which must not stall a run's relay.
@@ -1060,18 +1056,6 @@ class Backend:
             "source": info["source"],
             "sent": sent,
         }
-
-    @guarded
-    async def set_wake_mac(self, name: str, mac: Any = None) -> Result:
-        """Store or drop (``mac`` ``None`` / empty) one known host's Wake-on-LAN MAC."""
-        if not isinstance(name, str) or not name.strip():
-            return failure("bad-request", "a host name is required")
-        name = name.strip()
-        known = self._known_match(name)
-        if known is None:
-            return failure("bad-request", f"{name} is not a known host; add it first")
-        stored = self.store.set_wake_mac(known, mac)
-        return {"ok": True, "host": known, "mac": stored, "wake": self._wake_info(known)}
 
     def _known_match(self, name: str) -> str | None:
         for known in self.store.settings()["hosts"]:

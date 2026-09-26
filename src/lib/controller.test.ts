@@ -1987,8 +1987,8 @@ describe("Wake-on-LAN (spec 3.18)", () => {
     expect(ui.bodies).toEqual(["Wake-on-LAN packet sent to MY-GAMING-PC. Give it a minute, then Check."]);
   });
 
-  it("a host with no MAC is a toast pointing at the Host page", async () => {
-    const message = "No MAC address known for MY-GAMING-PC: Moonlight has none for it; enter one on the Host page";
+  it("a host with no MAC is a toast", async () => {
+    const message = "No MAC address known for MY-GAMING-PC: Moonlight has none for it";
     const controller = await loaded({ wake_host: { ok: false, error: "no-mac", message } });
     const result = await controller.wakeHost();
     expect(result).toMatchObject({ ok: false, error: "no-mac" });
@@ -2002,24 +2002,6 @@ describe("Wake-on-LAN (spec 3.18)", () => {
     expect(await controller.wakeHost()).toBeNull();
     expect(names()).not.toContain("wake_host");
     expect(ui.bodies).toEqual([]);
-  });
-
-  it("the Host page's MAC field stores through set_wake_mac and refreshes hosts", async () => {
-    const controller = await loaded({
-      set_wake_mac: { ok: true, host: "OFFICE-PC", mac: "11:22:33:44:55:66", wake: null },
-    });
-    const result = await controller.setWakeMac("OFFICE-PC", "11-22-33-44-55-66");
-    expect(result).toMatchObject({ ok: true, mac: "11:22:33:44:55:66" });
-    expect(names()).toEqual(["set_wake_mac", "hosts"]);
-    expect(calls[0][1]).toEqual(["OFFICE-PC", "11-22-33-44-55-66"]);
-  });
-
-  it("a refused MAC skips the refresh", async () => {
-    const controller = await loaded({
-      set_wake_mac: { ok: false, error: "bad-request", message: "a MAC address looks like aa:bb:cc:dd:ee:ff" },
-    });
-    expect(await controller.setWakeMac("OFFICE-PC", "nope")).toMatchObject({ ok: false, error: "bad-request" });
-    expect(names()).toEqual(["set_wake_mac"]);
   });
 });
 

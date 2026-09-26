@@ -226,7 +226,7 @@ src/lib/                    pure modules (vitest)
                             the map, so the host apps and the client are walked too
   controller.ts             load order, runs, restart flow, hosts, settings actions,
                             wakeHost() (spec 3.18: `wake_host` on the active host, a
-                            toast either way, never held back), setWakeMac(),
+                            toast either way, never held back),
                             refreshSgdbKey(), fetchSgdbKey() (spec 3.20.4:
                             `start_sgdb_key_fetch` first, a refusal toasted with
                             nothing opened, then navigateToExternalWeb(SGDB_API_PAGE);
@@ -471,8 +471,9 @@ src/components/             adoptDefault (inspectLayout -> refusal toasts -> Con
                             <when>" until a check, then *Check* + *Wake* whenever the
                             host is not known reachable, the latter only when
                             `wakeInfoOf` finds a MAC), SyncProgress,
-                            RestartModal, SettingsPage, HostPage (+ WakeMacRow per host:
-                            the entered MAC, or Moonlight's shown), TitlesPage (layout text; the *Layout* menu:
+                            RestartModal, SettingsPage, HostPage (no MAC field since
+                            2026-09-26: Moonlight's list is the one Wake source),
+                            TitlesPage (layout text; the *Layout* menu:
                             *Choose layout…* and *Use as the default layout*, which
                             inspects, toasts the refusal texts or confirms), ChangeMatchModal,
                             Pill, StreamButton (renders only when streamMap has the
@@ -736,19 +737,20 @@ before any toast, and follows a success with `sgdb_key_state()` and
 `test_sgdb_key()`.
 Wake-on-LAN (spec 3.18) needs no CLI and no busy guard: `hosts()` carries
 an additive `wake` map (`{<host>: {mac, source, addresses}}` over the known
-hosts plus the active one when it is not among them, the Host page's
-`wake_macs` setting first, else Moonlight's own `Moonlight.conf` entry,
-read once per call; a host with neither is absent, and the panel shows no
-*Wake* for it); `wake_host(name)` sends the magic packet to the broadcast
+hosts plus the active one when it is not among them, from Moonlight's own
+`Moonlight.conf` entry, read once per call, `source` always `"moonlight"`;
+a host Moonlight has no MAC for is absent, and the panel shows no *Wake*
+for it); `wake_host(name)` sends the magic packet to the broadcast
 address and every address Moonlight knows for the host on `WAKE_PORTS`, in
 a worker thread (a hostname among them resolves with a blocking
-`getaddrinfo`), answers `{host, mac, source, sent}`, `no-mac` when nothing knows a MAC,
-`io` only when not one datagram went out, and drops the `check_host` memo
-so the next *Check* asks; `set_wake_mac(name, mac)` stores a known host's
-MAC normalised (`None` / empty drops it; `set_settings` refuses the
-`wake_macs` key) and `forget_host` drops the forgotten host's. Sending
-proves nothing about the PC, so the frontend's toast says to Check in a
-minute rather than polling.
+`getaddrinfo`), answers `{host, mac, source, sent}`, `no-mac` when
+Moonlight knows no MAC, `io` only when not one datagram went out, and
+drops the `check_host` memo so the next *Check* asks. The Host page's MAC
+field, `set_wake_mac` and the `wake_macs` setting went on 2026-09-26 (the
+user's decision: rely on Moonlight's settings alone); `wake_macs` is a
+retired key (`settings.RETIRED_SETTINGS`): left in an older file, never
+reported, refused by `set_settings`. Sending proves nothing about the PC,
+so the frontend's toast says to Check in a minute rather than polling.
 **No Moonlight command runs unasked (Decision 66, the user's
 2026-09-23).** Moonlight's command line sends a magic packet on every
 `list` and `stream` (its ComputerSeeker wakes the matching host before it
