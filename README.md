@@ -308,20 +308,18 @@ count and when it was last seen, the active one marked:
   listing, no downloads and one restart.
 - **Forget**: removes a host from the list (not the active one). Its parked
   tiles stay until you remove everything.
-- **Wake-on-LAN MAC**: under each host, the MAC address the panel's
-  **Wake** button sends its magic packet to. Moonlight's own host list
-  (the Flatpak's `Moonlight.conf`, read, never written) supplies it when
-  the client learned one while pairing, and the field says so; a Sunshine
-  host that reports none leaves the field empty, so type the PC's MAC
-  (`aa:bb:cc:dd:ee:ff`, any usual spelling) and press **Save**. An entered
-  MAC overrides Moonlight's; clearing the field goes back to it. Without
-  either, the panel has no Wake button. Moonlight itself has *Wake PC* in
-  a host's menu but no command-line action for it, so the plugin sends the
-  packet itself: to the broadcast address and to every address Moonlight
-  knows for the host, on the usual Wake-on-LAN ports and the GameStream
-  ones. The PC's firmware and network adapter still have to allow
-  Wake-on-LAN (and the Deck has to be on the same network for a broadcast
-  to reach it).
+- **Wake-on-LAN**: the panel's **Wake** button sends its magic packet to
+  the MAC address in Moonlight's own host list (the Flatpak's
+  `Moonlight.conf`, read, never written), which the client learned while
+  pairing. There is nothing to enter here: a host Moonlight has no MAC for
+  (a Sunshine host that reports none) has no Wake button; pair it again
+  once the host reports one. Moonlight itself has *Wake PC* in a host's
+  menu but no command-line action for it, so the plugin sends the packet
+  itself: to the broadcast address and to every address Moonlight knows
+  for the host, on the usual Wake-on-LAN ports and the GameStream ones.
+  The PC's firmware and network adapter still have to allow Wake-on-LAN
+  (and the Deck has to be on the same network for a broadcast to reach
+  it).
 
   One thing to know: Moonlight's command line sends that same packet by
   itself, on every `list` and `stream`, before it even looks whether the
@@ -615,9 +613,10 @@ which has no UI: it is the hand-editable switch described under
 toggle: the key kept its name), the two Advanced toggles above; and
 `default_layout` (`null`, or `{"url", "title", "when"}`, the
 adopted default controller layout), which the plugin changes only through
-its own `set_default_layout` call, never through the other settings; and
-`wake_macs` (`{"<host>": "aa:bb:cc:dd:ee:ff"}`, the Host page's entered
-Wake-on-LAN MACs, changed only through `set_wake_mac`).
+its own `set_default_layout` call, never through the other settings. A
+`wake_macs` key from before 0.11.0 (the Host page's entered Wake-on-LAN
+MACs) is left in place and read by nothing: Moonlight's host list is the
+one MAC source now.
 
 A pin from the Titles page is written by the CLI itself (`moonlight-steam-sync
 match … --defer-art`) into its own match cache,

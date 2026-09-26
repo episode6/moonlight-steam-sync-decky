@@ -269,9 +269,8 @@ function HostRow({ state }: { state: AppState }) {
             >
               Check
             </DialogButton>
-            {/* Wake-on-LAN (spec 3.18): only when a MAC is known for the host,
-                from the Host page or Moonlight's own list; otherwise the Host
-                page is where to enter one, so the button is not shown dead. */}
+            {/* Wake-on-LAN (spec 3.18): only when Moonlight's own host list
+                knows the host's MAC; a dead button would not say why. */}
             {wakeInfoOf(hosts, hosts.active) ? (
               <DialogButton style={{ minWidth: 0, flex: 1 }} onClick={() => void controller.wakeHost()}>
                 Wake

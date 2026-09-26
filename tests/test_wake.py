@@ -1,4 +1,4 @@
-"""Wake-on-LAN (spec 3.18): the MAC sources, the packet, ``wake_host`` and ``set_wake_mac``."""
+"""Wake-on-LAN (spec 3.18): Moonlight's MAC, the packet and ``wake_host``."""
 
 from __future__ import annotations
 
@@ -292,8 +292,7 @@ def test_wake_host_without_a_mac_is_no_mac(backend, fake_socket: type[FakeSocket
     result = run(backend.wake_host("OFFICE-PC"))
     assert result["ok"] is False
     assert result["error"] == "no-mac"
-    assert "OFFICE-PC" in result["message"]
-    assert "Host page" in result["message"]
+    assert result["message"] == "No MAC address known for OFFICE-PC: Moonlight has none for it"
     assert fake_socket.sent == []
     # no Moonlight.conf at all: the same answer
     assert run(backend.wake_host("NOWHERE"))["error"] == "no-mac"
@@ -325,71 +324,31 @@ def test_wake_host_drops_the_check_host_memo(backend, fake_socket: type[FakeSock
     assert len(backend.harness.argv()) == 1
 
 
-def test_set_wake_mac_overrides_moonlight_and_survives_forget_of_another(
-    backend, fake_socket: type[FakeSocket]
-) -> None:
+def test_a_retired_wake_macs_key_is_ignored(backend, fake_socket: type[FakeSocket]) -> None:
+    """Until 2026-09-26 the Host page stored an entered MAC as ``wake_macs``.
+
+    An older settings.json still carrying the key keeps reading: the key is
+    not reported, nothing wakes with it (Moonlight's list is the one
+    source), ``set_settings`` refuses it and the file keeps it untouched.
+    """
     write_moonlight_conf(home_of(backend))
-    stored = run(backend.set_wake_mac("office-pc", "11-22-33-44-55-66"))
-    assert stored == {
-        "ok": True,
-        "host": "OFFICE-PC",
-        "mac": "11:22:33:44:55:66",
-        "wake": {"mac": "11:22:33:44:55:66", "source": "settings", "addresses": ["192.168.1.30"]},
-    }
-    settings = json.loads((Path(backend.settings_dir) / "settings.json").read_text())
-    assert settings["wake_macs"] == {"OFFICE-PC": "11:22:33:44:55:66"}
-    assert run(backend.get_settings())["settings"]["wake_macs"] == {
-        "OFFICE-PC": "11:22:33:44:55:66"
-    }
-    # the setting wins over Moonlight's own
-    run(backend.set_wake_mac("MY-GAMING-PC", "AABBCCDDEE01"))
-    shown = run(backend.hosts())["wake"]
-    assert shown["MY-GAMING-PC"] == {
-        "mac": "aa:bb:cc:dd:ee:01",
-        "source": "settings",
-        "addresses": ["192.168.1.20", "203.0.113.9"],
-    }
-    woken = run(backend.wake_host("OFFICE-PC"))
-    assert woken["ok"] is True
-    assert woken["source"] == "settings"
-    assert {host for host, _, _ in fake_socket.sent} == {"255.255.255.255", "192.168.1.30"}
-    # clearing goes back to Moonlight's, or to nothing
-    cleared = run(backend.set_wake_mac("MY-GAMING-PC", ""))
-    assert cleared["mac"] is None
-    assert cleared["wake"]["source"] == "moonlight"
-    assert run(backend.set_wake_mac("OFFICE-PC", None))["wake"] is None
-    assert run(backend.get_settings())["settings"]["wake_macs"] == {}
-
-
-def test_set_wake_mac_validates(backend) -> None:
-    for bad in ("aa:bb", "not a mac", 12):
-        result = run(backend.set_wake_mac("OFFICE-PC", bad))
-        assert result["ok"] is False
-        assert result["error"] == "bad-request"
-        assert result["message"] == "a MAC address looks like aa:bb:cc:dd:ee:ff"
-    unknown = run(backend.set_wake_mac("NOWHERE", MAC))
-    assert unknown["error"] == "bad-request"
-    assert unknown["message"] == "NOWHERE is not a known host; add it first"
-    assert run(backend.set_wake_mac("", MAC))["error"] == "bad-request"
-    # and never through set_settings
-    refused = run(backend.set_settings({"wake_macs": {"OFFICE-PC": MAC}}))
-    assert refused["error"] == "bad-request"
-    assert refused["message"] == "wake_macs is changed with set_wake_mac"
-
-
-def test_forget_host_drops_its_mac(backend) -> None:
-    run(backend.set_wake_mac("OFFICE-PC", MAC))
-    assert run(backend.forget_host("office-pc"))["known"] == ["MY-GAMING-PC"]
-    assert run(backend.get_settings())["settings"]["wake_macs"] == {}
-
-
-def test_a_hand_broken_wake_macs_reads_as_empty(backend) -> None:
     path = Path(backend.settings_dir) / "settings.json"
     raw = json.loads(path.read_text())
-    raw["wake_macs"] = ["not", "a", "map"]
+    raw["wake_macs"] = {"OFFICE-PC": "11:22:33:44:55:66", "MY-GAMING-PC": "aa:bb:cc:dd:ee:01"}
     path.write_text(json.dumps(raw))
-    assert run(backend.get_settings())["settings"]["wake_macs"] == {}
+    settings = run(backend.get_settings())["settings"]
+    assert "wake_macs" not in settings
+    shown = run(backend.hosts())["wake"]
+    assert "OFFICE-PC" not in shown
+    assert shown["MY-GAMING-PC"] == {
+        "mac": MAC,
+        "source": "moonlight",
+        "addresses": ["192.168.1.20", "203.0.113.9"],
+    }
     assert run(backend.wake_host("OFFICE-PC"))["error"] == "no-mac"
-    raw["wake_macs"] = {"OFFICE-PC": "garbage"}
-    path.write_text(json.dumps(raw))
-    assert run(backend.wake_host("OFFICE-PC"))["error"] == "no-mac"
+    assert fake_socket.sent == []
+    refused = run(backend.set_settings({"wake_macs": {"OFFICE-PC": MAC}}))
+    assert refused["error"] == "bad-request"
+    assert refused["message"] == "wake_macs is no longer a setting"
+    run(backend.set_settings({"retry_missing": True}))
+    assert json.loads(path.read_text())["wake_macs"] == raw["wake_macs"]

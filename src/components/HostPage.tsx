@@ -3,9 +3,9 @@ import { toaster } from "@decky/api";
 import { useState } from "react";
 
 import { controller } from "../instance";
-import { errorText, isFailure, type WakeInfo } from "../lib/cli";
+import { errorText, isFailure } from "../lib/cli";
 import { relativeTime } from "../lib/format";
-import { actionsReady, wakeInfoOf } from "../lib/state";
+import { actionsReady } from "../lib/state";
 import { confirmSwitch } from "./confirmSwitch";
 import { useStore } from "./useStore";
 
@@ -26,58 +26,11 @@ function confirmForget(name: string, onError: (message: string) => void) {
 }
 
 /**
- * One host's Wake-on-LAN MAC (spec 3.18): what the panel's *Wake* sends to.
- * Moonlight's own list supplies it when the client learned one (shown, not
- * editable away: an entered MAC overrides it); otherwise the field is where
- * to type it. Saving an empty field drops the entered MAC.
- */
-function WakeMacRow({ name, wake, onError }: { name: string; wake: WakeInfo | null; onError: (m: string) => void }) {
-  const stored = wake?.source === "settings" ? wake.mac : "";
-  const [draft, setDraft] = useState(stored);
-  const [saving, setSaving] = useState(false);
-  const description =
-    wake === null
-      ? "Not known: enter the PC's MAC address (aa:bb:cc:dd:ee:ff) to enable Wake in the panel"
-      : wake.source === "moonlight"
-        ? `${wake.mac} from Moonlight's host list; enter one here to override it`
-        : "Entered here; clear the field to go back to Moonlight's own";
-  const save = async () => {
-    setSaving(true);
-    const result = await controller.setWakeMac(name, draft.trim() || null);
-    setSaving(false);
-    if (isFailure(result)) {
-      onError(errorText(result));
-      return;
-    }
-    setDraft(result.mac ?? "");
-    toaster.toast({
-      title: "Moonlight Sync",
-      body: result.mac ? `${name} wakes with ${result.mac}` : `Cleared the entered MAC for ${name}`,
-    });
-  };
-  return (
-    <Field label={`${name}: Wake-on-LAN MAC`} description={description} childrenLayout="below">
-      <Focusable style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <div style={{ flex: 1 }}>
-          <TextField value={draft} disabled={saving} onChange={(e) => setDraft(e.target.value)} />
-        </div>
-        <DialogButton
-          style={{ minWidth: 0, padding: "8px 14px" }}
-          disabled={saving || draft.trim() === stored}
-          onClick={() => void save()}
-        >
-          Save
-        </DialogButton>
-      </Focusable>
-    </Field>
-  );
-}
-
-/**
  * Settings → Host (spec 3.8): the known hosts with their cached title count
  * and *last seen*, *Switch*, *Forget*, and *Add host* (`list --host NAME` is
- * the pairing check; there is nothing on the PC to ask). Under each host,
- * its Wake-on-LAN MAC (spec 3.18).
+ * the pairing check; there is nothing on the PC to ask). The panel's *Wake*
+ * (spec 3.18) sends to the MAC in Moonlight's own host list; nothing about
+ * it is entered here.
  */
 export function HostPage() {
   const state = useStore(controller.store);
@@ -141,7 +94,6 @@ export function HostPage() {
                 </DialogButton>
               </Focusable>
             </Field>
-            <WakeMacRow name={name} wake={wakeInfoOf(hosts, name)} onError={setError} />
           </div>
         );
       })}
