@@ -251,7 +251,7 @@ export type ErrorCode =
   | "owned-apps-empty"
   | "bad-request"
   | "io"
-  /** `wake_host`: neither the Host page nor Moonlight's own list has a MAC for the host (spec 3.18). */
+  /** `wake_host`: Moonlight's own host list has no MAC for the host (spec 3.18). */
   | "no-mac"
   /** The key fetch (spec 3.20.3): Steam's debugger port is not reachable. */
   | "no-debugger"
@@ -336,11 +336,11 @@ export interface CliVersion {
   capabilities: { art_commit: boolean };
 }
 
-/** Where a host's Wake-on-LAN MAC comes from (spec 3.18). */
+/** A host's Wake-on-LAN MAC (spec 3.18), from Moonlight's own host list. */
 export interface WakeInfo {
   mac: string;
-  /** `settings`: entered on the Host page; `moonlight`: Moonlight's own host list. */
-  source: "settings" | "moonlight";
+  /** Always `moonlight`: Moonlight's own host list is the one source. */
+  source: "moonlight";
   /** The addresses Moonlight knows for the host; the packet is also sent to each. */
   addresses: string[];
 }
@@ -539,11 +539,6 @@ export interface Backend {
   forget_host(name: string): Promise<Result<{ known: string[] }>>;
   /** Send a Wake-on-LAN magic packet to a host (spec 3.18); `no-mac` when none is known. */
   wake_host(name: string): Promise<Result<WakeResult>>;
-  /** Store (any usual spelling) or drop (`null` / empty) a known host's MAC for `wake_host`. */
-  set_wake_mac(
-    name: string,
-    mac: string | null,
-  ): Promise<Result<{ host: string; mac: string | null; wake: WakeInfo | null }>>;
   get_settings(): Promise<Result<{ settings: Settings }>>;
   set_settings(patch: SettingsPatch): Promise<Result<{ settings: Settings }>>;
   /** Store (`url` starting with a `DEFAULT_LAYOUT_SCHEMES` prefix) or clear (`null`) the default layout (spec 3.16.2). */
@@ -617,7 +612,6 @@ const CALLABLES = [
   "add_host",
   "forget_host",
   "wake_host",
-  "set_wake_mac",
   "get_settings",
   "set_settings",
   "set_default_layout",
@@ -696,7 +690,7 @@ export function errorText(failure: Failure): string {
     case "owned-apps-empty":
       return "Steam library not loaded";
     case "no-mac":
-      return failure.message || "No MAC address known for this host — enter one under Settings → Host";
+      return failure.message || "No MAC address known for this host: Moonlight has none for it";
     // The key fetch's own failures (spec 3.20.3): the backend's texts verbatim.
     case "no-debugger":
     case "cancelled":

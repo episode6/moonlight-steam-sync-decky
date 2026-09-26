@@ -6,6 +6,15 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Removed
+
+- The *Wake-on-LAN MAC* field under each host on Settings → Host. The
+  panel's **Wake** now sends to the MAC in Moonlight's own host list
+  alone; a host Moonlight has no MAC for has no Wake button. The
+  `set_wake_mac` callable is gone and `wake_macs` in `settings.json` is
+  read by nothing (an older file keeps it; changing it through the
+  settings is refused).
+
 ### Changed
 
 - **A tidier Quick Access panel.** *Open Moonlight*, *Desktop* and *Steam

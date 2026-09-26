@@ -29,7 +29,7 @@ describe("errorText (spec 3.8 error strings)", () => {
     expect(errorText(fail("io"))).toBe("backend text");
     expect(errorText(fail("no-mac"))).toBe("backend text");
     expect(errorText(fail("no-mac", { message: "" }))).toBe(
-      "No MAC address known for this host — enter one under Settings → Host",
+      "No MAC address known for this host: Moonlight has none for it",
     );
   });
 

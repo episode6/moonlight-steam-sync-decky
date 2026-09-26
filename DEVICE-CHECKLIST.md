@@ -697,14 +697,14 @@ own `list` sending a magic packet with the PC's MAC, which is what
 Decision 66 answers.
 
 - [ ] **Moonlight's MAC is read.** With the host paired in the Flathub
-      Moonlight, Settings → Host shows under it "<mac> from Moonlight's
-      host list". If it reads "Not known" instead, open
+      Moonlight, the panel's host row shows **Wake** beside **Check**
+      while the host is not known reachable. If there is no Wake, open
       `~/.var/app/com.moonlight_stream.Moonlight/config/Moonlight Game
       Streaming Project/Moonlight.conf` and note the host's `mac=` line:
       `@ByteArray()` (quoted or not) means Moonlight has none (a Sunshine
-      host that reports no MAC; enter it by hand); anything else that
-      still reads as unknown is a parser gap: paste the line's shape (hex
-      masked) into an issue.
+      host that reports no MAC; there is no field to enter one since
+      2026-09-26); anything else that still gives no Wake is a parser gap:
+      paste the line's shape (hex masked) into an issue.
 - [ ] **Wake appears and sends.** Shut the PC down (a sleep state
       Wake-on-LAN is enabled for). Open the panel: the host row shows the
       cached count with **Check** and **Wake** side by side (the PC stays
@@ -717,17 +717,10 @@ Decision 66 answers.
       Moonlight's own `list` sends the packet, so the row goes red first
       (the 30 s seek times out) and the PC comes up anyway; Check again
       after a minute goes green.
-- [ ] **An entered MAC overrides.** Type a MAC in the field, Save: a
-      toast "<host> wakes with aa:bb:cc:dd:ee:ff", the description reads
-      "Entered here; clear the field to go back to Moonlight's own", the
-      log says `(settings MAC)` on the next Wake. Clear and Save: back
-      to Moonlight's, or to "Not known" and no Wake button.
-- [ ] **A bad MAC is refused** in place ("a MAC address looks like
-      aa:bb:cc:dd:ee:ff") and nothing is stored.
-- [ ] **Forget drops it.** Forget a host with an entered MAC; re-add it:
-      the field is empty (or Moonlight's again).
-- [ ] **No MAC anywhere:** the row shows Check alone, and Settings → Host
-      says where to enter one.
+- [ ] **No MAC in Moonlight:** the row shows Check alone, and Settings →
+      Host has no MAC field (removed 2026-09-26). A `wake_macs` key left
+      in `settings.json` by an older build changes nothing: no Wake, no
+      `(settings MAC)` in the log.
 
 ## 12. The on/off toggle (spec 3.19)
 

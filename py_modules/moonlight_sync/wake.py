@@ -3,15 +3,12 @@
 Moonlight's own client has *Wake PC* in a host's context menu but no
 command-line action for it (``moonlight --help`` lists ``list``, ``quit``,
 ``stream`` and ``pair`` only), so the plugin sends the packet itself. The
-MAC comes from one of two places, the setting first:
-
-- ``settings.json``'s ``wake_macs`` (``{<host name>: "aa:bb:cc:dd:ee:ff"}``),
-  entered on the Host page, for a host whose MAC Moonlight never learned
-  (Sunshine on some setups reports none, and the entry is then
-  ``@ByteArray()``, empty);
-- Moonlight's own host list, ``Moonlight.conf``'s ``[hosts]`` group, where
-  every paired host has a ``mac`` alongside its addresses. It is read, never
-  written.
+MAC comes from Moonlight's own host list, ``Moonlight.conf``'s ``[hosts]``
+group, where every paired host has a ``mac`` alongside its addresses (or
+``@ByteArray()``, empty, when the client learned none, as Sunshine on some
+setups reports none: no *Wake* then). It is read, never written. Until
+2026-09-26 an entered MAC in ``settings.json`` (``wake_macs``) came first;
+that field is gone and the key is retired.
 
 Nothing here runs on the gaming PC (hard rule 6) and nothing is written
 anywhere: a magic packet is six ``0xff`` bytes and the MAC sixteen times,
