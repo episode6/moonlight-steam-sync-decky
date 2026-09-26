@@ -856,7 +856,7 @@ plugin_loader's environment), and keep an SSH session tailing
       *Cancel mid-way*), then press *Get key from SteamGridDB…* again:
       it succeeds. The log shows "sgdb key fetch: reset the browser's
       tab (was on www.steamgriddb.com)" (or steamcommunity.com) right
-      after "started" (Decision 70), then `waiting` and the fresh page;
+      before "started" (Decision 70), then `waiting` and the fresh page;
       never "failed (sgdb-page): no key and no generate button" within a
       second of "started". A device's 2026-09-25 had exactly that until
       Steam was restarted. Should the log say "could not reset the

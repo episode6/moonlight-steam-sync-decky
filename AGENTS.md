@@ -189,8 +189,10 @@ py_modules/moonlight_sync/  the backend (imports nothing from decky)
                             the page target on either host, the tab a previous
                             fetch left, gets a Page.navigate to RESET_URL
                             (about:blank; no script evaluated), and the listing is
-                            re-read every RESET_POLL_S up to RESET_WAIT_S until
-                            it is off both hosts; answers the host it was on
+                            re-read every RESET_POLL_S, RESET_POLLS times at most
+                            (RESET_WAIT_S as a count), until it is off both hosts;
+                            answers the host it was on -- also when a listing read
+                            after the navigate fails, since the tab was blanked
 backend/entrypoint.sh       the one CLI build step (strict): scripts/build_cli.py into
                             backend/out/, then a --version smoke run; also the Decky
                             store hook (/plugin/cli/src inside its container)

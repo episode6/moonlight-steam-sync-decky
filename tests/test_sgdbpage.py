@@ -716,7 +716,8 @@ def test_reset_tab_waits_for_the_listing_then_gives_up() -> None:
     host, slept = reset(browser)
     assert host == sgdbpage.SGDB_HOST
     assert browser.commands == [("Page.navigate", BROWSER_WS, sgdbpage.RESET_URL)]
-    assert slept == [sgdbpage.RESET_POLL_S] * round(sgdbpage.RESET_WAIT_S / sgdbpage.RESET_POLL_S)
+    assert slept == [sgdbpage.RESET_POLL_S] * sgdbpage.RESET_POLLS
+    assert pytest.approx(sgdbpage.RESET_WAIT_S) == sgdbpage.RESET_POLLS * sgdbpage.RESET_POLL_S
 
 
 def test_reset_tab_raises_debugger_unavailable_through() -> None:
@@ -726,6 +727,22 @@ def test_reset_tab_raises_debugger_unavailable_through() -> None:
     browser.unavailable = True
     with pytest.raises(cdp.DebuggerUnavailable):
         sgdbpage.reset_tab(listed, browser.targets, browser.connect, lambda _s: None)
+
+
+def test_reset_tab_still_answers_when_the_listing_fails_after_the_navigate() -> None:
+    """The tab was blanked; a listing that then stops answering only
+    loses the confirmation, so the backend does not log a failed reset."""
+    browser = FakeBrowser(signed_in=True)
+    browser.open_page()
+    listed = browser.targets()
+
+    def failing_targets() -> list[cdp.Target]:
+        raise cdp.DebuggerUnavailable("connection refused")
+
+    slept: list[float] = []
+    host = sgdbpage.reset_tab(listed, failing_targets, browser.connect, slept.append)
+    assert host == sgdbpage.SGDB_HOST
+    assert browser.url == sgdbpage.RESET_URL and slept == []
 
 
 # ---------------------------------------------------------------------------

@@ -106,6 +106,8 @@ GENERATE_WAIT_S = 15.0
 #: it is read (a device showed it at once, 2026-09-26).
 RESET_WAIT_S = 2.0
 RESET_POLL_S = 0.1
+#: The wait as a count, so it never depends on float sums coming out even.
+RESET_POLLS = round(RESET_WAIT_S / RESET_POLL_S)
 RESET_URL = "about:blank"
 #: How long a complete document at the API URL may lack the API page's own
 #: body before it is reloaded, and again before the fetch gives up.
@@ -445,9 +447,12 @@ def reset_tab(
     there was none.
 
     ``listed`` is the port probe's own listing; ``targets`` re-reads it
-    until the tab is gone from the two hosts, up to ``RESET_WAIT_S``.
-    Raises :class:`cdp.DebuggerUnavailable` as the seams do; the caller
-    logs it and lets the fetch start anyway.
+    until the tab is gone from the two hosts, ``RESET_POLLS`` times at
+    most. Raises :class:`cdp.DebuggerUnavailable` from the connect and
+    the navigate, as the seams do; the caller logs it and lets the fetch
+    start anyway. A listing read that fails *after* the navigate ends the
+    wait and still answers the host: the tab was blanked, only the
+    confirmation is missing, and the fetch retries the port itself.
     """
     target = find_target(listed)
     if target is None:
@@ -457,10 +462,13 @@ def reset_tab(
         session.navigate(RESET_URL)
     finally:
         session.close()
-    waited = 0.0
-    while find_target(targets()) is not None and waited < RESET_WAIT_S:
+    for _ in range(RESET_POLLS):
+        try:
+            if find_target(targets()) is None:
+                break
+        except cdp.DebuggerUnavailable:
+            break
         sleep(RESET_POLL_S)
-        waited += RESET_POLL_S
     return host_of(target.get("url", ""))
 
 
