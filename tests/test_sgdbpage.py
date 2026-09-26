@@ -334,10 +334,72 @@ def test_reading_fails_no_key_rather_than_replace_a_key(fixture: str) -> None:
     assert browser.revoked is False
 
 
+def test_reading_waits_for_the_api_page_body_then_reloads_once_then_fails() -> None:
+    """Decision 69: a complete document at the API URL without the page's
+    body is not judged; it is polled, reloaded once, polled again."""
+    browser = FakeBrowser(signed_in=True, api_fixture="api-unrendered.html")
+    browser.open_page()
+    clock = Clock()
+    key, failure, states = fetch(browser, clock)
+    assert key is None
+    assert (failure.code, failure.message) == ("sgdb-page", sgdbpage.TEXT_API_NOT_LOADED)
+    assert failure.detail == "no API page body, even after a reload"
+    assert states == ["reading"]
+    # one reload, after the first grace; the failure after the second
+    assert browser.navigations == [sgdbpage.SGDB_API_PAGE, sgdbpage.SGDB_API_PAGE]
+    assert clock.now >= 2 * sgdbpage.API_PAGE_GRACE_S
+    assert browser.clicks == [] and browser.revoked is False
+    body_polls = [js for _, js in browser.evaluated if js == sgdbpage.JS_API_BODY]
+    assert len(body_polls) >= 2
+
+
+def test_reading_reads_the_key_once_the_page_left_by_an_earlier_attempt_is_replaced() -> None:
+    """The stale tab (a device's 2026-09-25): the fetch's first polls see
+    the page a failed attempt left at the API URL; the frontend's
+    navigation lands during the grace and the key is read from it."""
+    browser = FakeBrowser(signed_in=True, api_fixture=["api-unrendered.html", "api.html"])
+    browser.open_page()  # the stale tab, as the fetch's first poll sees it
+
+    def on_poll(b: FakeBrowser) -> None:
+        if b.polls == 4:
+            b.open_page()  # the frontend's NavigateToExternalWeb lands
+
+    browser.on_poll = on_poll
+    clock = Clock()
+    key, failure, states = fetch(browser, clock)
+    assert failure is None and key == KEY
+    assert states == ["reading", "done"]
+    assert browser.navigations == [sgdbpage.SGDB_API_PAGE, sgdbpage.SGDB_API_PAGE]
+    assert clock.now < sgdbpage.API_PAGE_GRACE_S  # no reload of the fetch's own
+
+
+def test_reading_reads_the_key_after_its_own_reload() -> None:
+    browser = FakeBrowser(signed_in=True, api_fixture=["api-unrendered.html", "api.html"])
+    browser.open_page()
+    clock = Clock()
+    key, failure, _ = fetch(browser, clock)
+    assert failure is None and key == KEY
+    assert browser.navigations == [sgdbpage.SGDB_API_PAGE, sgdbpage.SGDB_API_PAGE]
+    assert sgdbpage.API_PAGE_GRACE_S <= clock.now < 2 * sgdbpage.API_PAGE_GRACE_S
+
+
+def test_reading_generates_on_a_page_that_rendered_after_the_grace() -> None:
+    browser = FakeBrowser(
+        signed_in=True, api_fixture=["api-unrendered.html", "api-no-key.html", "api.html"]
+    )
+    browser.open_page()
+    key, failure, _ = fetch(browser, Clock())
+    assert failure is None and key == KEY
+    assert browser.clicks == ["Generate API Key"]
+
+
 def test_reading_fails_no_key_when_there_is_no_generate_button() -> None:
     browser = FakeBrowser(signed_in=True, api_fixture="api-revoke-only.html")
     browser.open_page()
-    _, failure, _ = fetch(browser)
+    clock = Clock()
+    _, failure, _ = fetch(browser, clock)
+    assert clock.now == 0.0  # a rendered page is judged at once (Decision 63, not 69)
+    assert browser.navigations == [sgdbpage.SGDB_API_PAGE]
     assert (failure.code, failure.message) == ("sgdb-page", sgdbpage.TEXT_NO_KEY)
     assert browser.clicks == []
     assert browser.revoked is False

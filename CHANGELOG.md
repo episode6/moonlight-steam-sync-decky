@@ -14,6 +14,14 @@ project uses [semantic versioning](https://semver.org/).
   button after it, though the badge is drawn above the button. The Stream
   row is now placed directly above the page's own play section, behind
   whatever another plugin adds under the header.
+- **Get key from SteamGridDB…** no longer fails at once on a page that is
+  not the API page. A failed fetch used to leave its last page in Steam's
+  browser, and every later attempt read that stale page in the instant
+  before the browser loaded the API page afresh, failing with "no key"
+  until Steam was restarted. The plugin now gives a page at the API URL
+  that has not rendered ten seconds, reloads it once, waits ten more, and
+  only then reports "SteamGridDB's API page did not load; try again or
+  enter the key by hand".
 
 ### Removed
 

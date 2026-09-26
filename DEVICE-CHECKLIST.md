@@ -851,6 +851,14 @@ plugin_loader's environment), and keep an SSH session tailing
       key; generate one on its API page, then try again". *Revoke API
       Key* is never pressed in any run (the key you had still works:
       *Test*).
+- [ ] **A second attempt after a failure, no Steam restart.** Make a
+      fetch fail (the *Left behind, then timed out* item below, or
+      *Cancel mid-way*), then press *Get key from SteamGridDB…* again:
+      it succeeds. The log shows the retry's first `reading` polls on
+      the page the failed attempt left in the browser (Decision 69) and
+      then the fresh page; never "failed (sgdb-page): no key and no
+      generate button" within a second of "started". A device's
+      2026-09-25 had exactly that until Steam was restarted.
 - [ ] **Cancel mid-way.** Start again, back out of the browser while
       Steam's sign-in page is up, press *Cancel*: within a second the
       toast says "The key fetch was cancelled", you stay on Settings →

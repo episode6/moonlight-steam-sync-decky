@@ -170,7 +170,13 @@ py_modules/moonlight_sync/  the backend (imports nothing from decky)
                             navigate to the API page per URL, JS_KEY once complete,
                             JS_GENERATE once, Decision 61, and never while a code
                             element shows nor on a Regenerate / new key / Revoke
-                            control, Decision 63) -> done. A session per
+                            control, Decision 63; a complete document at the API
+                            URL without the page's body, JS_API_BODY, is not
+                            judged: polled API_PAGE_GRACE_S, reloaded once,
+                            polled again, then TEXT_API_NOT_LOADED, Decision 69
+                            -- the page a failed attempt leaves in the tab, which
+                            the frontend's open has not yet replaced when the
+                            fetch first polls) -> done. A session per
                             poll, closed after it; only a `page` target on one of
                             the two hosts is ever evaluated in; the stop event's
                             wait() is the 500 ms poll, so a cancel lands within one
@@ -891,11 +897,14 @@ There is no Steam Deck during development; everything else is tested.
   submit signs in and returns home, *Generate* gives the account a key,
   *Revoke* is recorded and must never happen; `answers` scripts one
   snippet's value or exception, `on_poll` changes the browser per poll,
-  `loading_polls` makes a fresh page read as loading first). The pages are
+  `loading_polls` makes a fresh page read as loading first, `api_fixture`
+  names the API page's fixture, or a list of them consumed one per load
+  with the last standing). The pages are
   `tests/fixtures/sgdb/*.html` (`login`, `openid`, `api`, `api-no-key`,
-  `api-revoke-only`, and Decision 63's `api-hidden-key` / `api-regenerate`,
-  hand-written from spec 3.20.1 with the placeholder
-  key), parsed by `tests/fakedom.py`: a minimal DOM (`querySelector` /
+  `api-revoke-only`, Decision 63's `api-hidden-key` / `api-regenerate`,
+  and Decision 69's `api-unrendered`, a complete document at the API URL
+  without the page's body, hand-written from spec 3.20.1 with the
+  placeholder key), parsed by `tests/fakedom.py`: a minimal DOM (`querySelector` /
   `querySelectorAll` over tag, class, id, `[attr=v]`, `[attr*=v]`,
   descendants and lists; `textContent`, `innerText`, `value`, `href`, a
   recording `click()`, `readyState`, `location.href`) and `evaluate(js,
