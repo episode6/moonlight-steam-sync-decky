@@ -4,7 +4,8 @@
   CLI's state file)
 - ``ignore.json``     the ``--ignore-file`` list, sorted
 - ``owned-apps.json`` the ``--owned-apps`` file (spec 3.4.1)
-- ``pending.json``    the restart/walk flags of spec 3.9
+- ``pending.json``    the restart/walk flags of spec 3.9, the *Last sync*
+  row and ``synced_hosts`` (every host a sync has planned for)
 - ``layouts.json``    per-shortcut layout results (PR-7)
 
 Every write is ``.tmp`` + ``os.replace``. None of these files is under the
@@ -91,9 +92,26 @@ DEFAULT_PENDING: dict[str, Any] = {
     "last_summary": None,
     "last_plan": None,
     "last_kind": None,
+    #: ``{<host>: <iso time>}``: every host a ``sync`` has listed and planned
+    #: for, in the plan's spelling. The Titles page lists nothing for a host
+    #: missing here: a *Check* or an add caches a host's list too.
+    "synced_hosts": {},
 }
 
 PENDING_KEYS = ("restart_needed", "layout_walk")
+
+
+def _legacy_synced_hosts(data: dict[str, Any]) -> dict[str, Any]:
+    """``synced_hosts`` for a ``pending.json`` from before the key: the host
+    of the last recorded plan (only a ``sync`` plans), stamped with ``since``,
+    so an upgrade does not blank the Titles page of the host being synced.
+    Any other host counts as synced from its next sync."""
+    plan = data.get("last_plan")
+    host = plan.get("host") if isinstance(plan, dict) else None
+    if not isinstance(host, str) or not host:
+        return {}
+    since = data.get("since")
+    return {host: since if isinstance(since, str) else None}
 
 
 class SettingsError(ValueError):
@@ -319,6 +337,10 @@ class Store:
             for key in merged:
                 if key in data:
                     merged[key] = data[key]
+            if "synced_hosts" not in data:
+                merged["synced_hosts"] = _legacy_synced_hosts(data)
+        if not isinstance(merged["synced_hosts"], dict):
+            merged["synced_hosts"] = {}
         return merged
 
     def write_pending(self, pending: dict[str, Any]) -> dict[str, Any]:

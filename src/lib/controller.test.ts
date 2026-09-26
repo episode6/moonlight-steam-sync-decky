@@ -34,6 +34,7 @@ const PENDING: Pending = {
   last_summary: null,
   last_plan: null,
   last_kind: null,
+  synced_hosts: { "MY-GAMING-PC": "2026-09-18T14:02:00Z" },
 };
 
 /** The plugin's default layout, once set (spec 3.16). */
@@ -960,6 +961,30 @@ describe("the Titles page (spec 3.8)", () => {
       neverSynced: true,
     });
     expect(names()).not.toContain("list_apps");
+  });
+
+  it("a host with a cache but no sync behind it lists nothing, and a sync's plan lists it", async () => {
+    // A *Check* or an add cached the host's list; no sync ever planned for it.
+    const controller = await loaded({ pending: { ok: true, ...PENDING, synced_hosts: { "OFFICE-PC": null } } });
+    expect(await controller.loadTitles()).toEqual({
+      ok: false,
+      message: "MY-GAMING-PC was never synced; Sync now lists its titles",
+      neverSynced: true,
+    });
+    expect(names()).toEqual([]);
+    await controller.sync();
+    expect(await controller.loadTitles()).toEqual({
+      ok: false,
+      message: "MY-GAMING-PC was never synced; this list fills in when the sync finishes",
+      neverSynced: true,
+    });
+    const events = loadFixture("full-sync/sync.ndjson");
+    // any case: the plan spells the host its own way
+    await controller.onSyncDone(done("sync", events, 0, { synced_hosts: { "my-gaming-pc": "2026-09-25T10:00:00Z" } }));
+    calls.length = 0;
+    const load = await controller.loadTitles();
+    expect(load.ok).toBe(true);
+    expect(names()).toContain("list_cached");
   });
 
   it("any other list failure is shown as is", async () => {

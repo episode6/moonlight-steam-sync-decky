@@ -40,6 +40,7 @@ describe("the Last sync row", () => {
       last_summary: summary,
       last_plan: null,
       last_kind: "sync",
+      synced_hosts: {},
     };
     expect(lastSyncLine(pending, now)).toBe("Today 14:02 · 2 added, 1 removed");
     expect(lastSyncLine(null, now)).toBe("Never");

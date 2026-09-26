@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { loadFixture } from "../test/fixtures";
-import type { EntryEvent, KeyState, SyncDonePayload } from "./cli";
+import type { EntryEvent, KeyState, Pending, SyncDonePayload } from "./cli";
 import { eventsOf } from "./events";
 import {
   actionsReady,
@@ -11,6 +11,7 @@ import {
   clientLayoutCaption,
   countersFromStatus,
   hostAppsFromStatus,
+  hostSynced,
   ignoredCounter,
   initialState,
   keyFetchOffered,
@@ -221,6 +222,7 @@ describe("run reducers", () => {
         last_summary: null,
         last_plan: null,
         last_kind: "sync",
+        synced_hosts: {},
       },
       summary: run.summary,
       commit: run.commit,
@@ -393,5 +395,27 @@ describe("Get key from SteamGridDB… (spec 3.20.4)", () => {
     expect(keyFetchText({ state: "steam-sign-in" })).toBe("Signing in with Steam…");
     expect(keyFetchText({ state: "steam-login" })).toBe("Steam is asking you to log in on the page");
     expect(keyFetchText({ state: "reading" })).toBe("Reading your key…");
+  });
+});
+
+describe("hostSynced", () => {
+  const pending = (synced_hosts: Pending["synced_hosts"]): Pending => ({
+    restart_needed: "none",
+    layout_walk: false,
+    since: null,
+    last_summary: null,
+    last_plan: null,
+    last_kind: null,
+    synced_hosts,
+  });
+
+  it("is a sync's plan having named the host, in any case", () => {
+    expect(hostSynced(pending({ "MY-GAMING-PC": null }), "my-gaming-pc")).toBe(true);
+    expect(hostSynced(pending({ "MY-GAMING-PC": null }), "OFFICE-PC")).toBe(false);
+    expect(hostSynced(pending({}), "OFFICE-PC")).toBe(false);
+  });
+
+  it("counts an unread pending as synced, so a failed read hides nothing", () => {
+    expect(hostSynced(null, "OFFICE-PC")).toBe(true);
   });
 });
