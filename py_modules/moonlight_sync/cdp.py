@@ -278,25 +278,15 @@ class Session:
 
     # -- the interface ---------------------------------------------------
 
-    def evaluate(self, js: str, *, timeout: float = EVALUATE_TIMEOUT_S) -> Any:
-        """``Runtime.evaluate`` ``js`` in the page and return its value.
-
-        ``returnByValue`` and ``awaitPromise`` are set, so the value is
-        JSON (``None`` for ``undefined`` / ``null``). A thrown exception is
-        :class:`EvaluateError`; a CDP ``error`` reply, a timeout and a closed
-        socket are :class:`DebuggerUnavailable`. Events the debugger sends
-        meanwhile are skipped.
-        """
+    def _call(self, method: str, params: dict[str, Any], deadline: float) -> dict[str, Any]:
+        """One CDP command: its ``result`` object. A CDP ``error`` reply, a
+        timeout and a closed socket are :class:`DebuggerUnavailable`. Events
+        the debugger sends meanwhile are skipped."""
         if self._closed:
             raise DebuggerUnavailable(f"{self.url}: session closed")
-        deadline = time.monotonic() + timeout
         self._next_id += 1
         call_id = self._next_id
-        request = {
-            "id": call_id,
-            "method": "Runtime.evaluate",
-            "params": {"expression": js, "returnByValue": True, "awaitPromise": True},
-        }
+        request = {"id": call_id, "method": method, "params": params}
         self._send_frame(_OP_TEXT, json.dumps(request).encode("utf-8"), deadline)
         while True:
             raw = self._recv_message(deadline)
@@ -312,15 +302,41 @@ class Session:
             result = message.get("result")
             if not isinstance(result, dict):
                 raise DebuggerUnavailable(f"{self.url}: reply without a result")
-            details = result.get("exceptionDetails")
-            if isinstance(details, dict):
-                exception = details.get("exception")
-                description = (
-                    exception.get("description") if isinstance(exception, dict) else None
-                ) or details.get("text", "exception")
-                raise EvaluateError(str(description))
-            value = result.get("result")
-            return value.get("value") if isinstance(value, dict) else None
+            return result
+
+    def navigate(self, url: str, *, timeout: float = EVALUATE_TIMEOUT_S) -> None:
+        """``Page.navigate`` the target to ``url``: a protocol command, no
+        script evaluated in the page (spec 3.20.3, Decision 70). A reply
+        with ``errorText`` (the navigation refused) is
+        :class:`DebuggerUnavailable`, like an ``error`` reply."""
+        result = self._call("Page.navigate", {"url": url}, time.monotonic() + timeout)
+        error = result.get("errorText")
+        if error:
+            raise DebuggerUnavailable(f"{self.url}: Page.navigate: {error}")
+
+    def evaluate(self, js: str, *, timeout: float = EVALUATE_TIMEOUT_S) -> Any:
+        """``Runtime.evaluate`` ``js`` in the page and return its value.
+
+        ``returnByValue`` and ``awaitPromise`` are set, so the value is
+        JSON (``None`` for ``undefined`` / ``null``). A thrown exception is
+        :class:`EvaluateError`; a CDP ``error`` reply, a timeout and a closed
+        socket are :class:`DebuggerUnavailable`. Events the debugger sends
+        meanwhile are skipped.
+        """
+        result = self._call(
+            "Runtime.evaluate",
+            {"expression": js, "returnByValue": True, "awaitPromise": True},
+            time.monotonic() + timeout,
+        )
+        details = result.get("exceptionDetails")
+        if isinstance(details, dict):
+            exception = details.get("exception")
+            description = (
+                exception.get("description") if isinstance(exception, dict) else None
+            ) or details.get("text", "exception")
+            raise EvaluateError(str(description))
+        value = result.get("result")
+        return value.get("value") if isinstance(value, dict) else None
 
     def close(self) -> None:
         """Send a close frame (best effort) and close the socket."""

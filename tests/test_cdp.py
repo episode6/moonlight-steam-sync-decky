@@ -388,6 +388,34 @@ def test_a_protocol_error_reply_is_unavailable(debugger) -> None:
     server.close()
 
 
+def test_navigate_is_a_page_navigate_command(debugger) -> None:
+    """``Session.navigate`` (the tab reset, Decision 70): ``Page.navigate``
+    with the url, no ``Runtime.evaluate``; a plain result is fine, an
+    ``errorText`` result and an error reply are unavailable."""
+
+    def script(server: FakeDebugger, conn: socket.socket, message: dict[str, Any]) -> bool:
+        bodies = {
+            1: {"id": 1, "result": {"frameId": "F", "loaderId": "L"}},
+            2: {"id": 2, "result": {"frameId": "F", "errorText": "net::ERR_ABORTED"}},
+            3: {"id": 3, "error": {"code": -32000, "message": "Cannot navigate"}},
+        }
+        conn.sendall(frame(0x1, json.dumps(bodies[message["id"]]).encode()))
+        return True
+
+    server = debugger(script)
+    session = cdp.Session(server.url)
+    assert session.navigate("about:blank") is None
+    with pytest.raises(cdp.DebuggerUnavailable, match="ERR_ABORTED"):
+        session.navigate("about:blank")
+    with pytest.raises(cdp.DebuggerUnavailable, match="Cannot navigate"):
+        session.navigate("about:blank")
+    session.close()
+    server.close()
+    assert server.error is None
+    assert [r["method"] for r in server.requests] == ["Page.navigate"] * 3
+    assert all(r["params"] == {"url": "about:blank"} for r in server.requests)
+
+
 def test_evaluate_times_out(debugger) -> None:
     def script(server: FakeDebugger, conn: socket.socket, message: dict[str, Any]) -> bool:
         read_frame(conn)  # wait for the client's close instead of answering

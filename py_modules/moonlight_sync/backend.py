@@ -1280,8 +1280,12 @@ class Backend:
         ``sgdb_key_event {state}`` on each state change and ``sgdb_key_done``
         at the end, and writes the key through ``keys.set_key`` -- the only
         place it goes. The port is probed first, so ``no-debugger`` comes
-        back here, before the browser opens. Not under the runs' busy guard
-        (Decision 62); a second fetch is ``busy`` with kind ``"key"``.
+        back here, before the browser opens; then the tab a previous fetch
+        left on SteamGridDB or Steam is reset to ``about:blank``
+        (``sgdbpage.reset_tab``, Decision 70), so the fetch's first page is
+        the one the frontend loads next and never a stale one. Not under
+        the runs' busy guard (Decision 62); a second fetch is ``busy`` with
+        kind ``"key"``.
         """
         fetch = self._key_fetch
         if fetch is not None and not fetch.done:
@@ -1289,7 +1293,7 @@ class Backend:
         fetch = KeyFetch(stop=threading.Event(), started=iso_now())
         self._key_fetch = fetch
         try:
-            await asyncio.to_thread(cdp.TARGETS)
+            listed = await asyncio.to_thread(cdp.TARGETS)
         except cdp.DebuggerUnavailable as exc:
             fetch.done = True
             self._log(f"sgdb key fetch: {self._redact(str(exc))}")
@@ -1298,6 +1302,19 @@ class Backend:
             # Anything else from the probe must not leave the guard at busy.
             fetch.done = True
             raise
+        try:
+            host = await asyncio.to_thread(sgdbpage.reset_tab, listed, cdp.TARGETS, cdp.CONNECT)
+        except cdp.DebuggerUnavailable as exc:
+            # The fetch retries the port itself; a reset that failed only
+            # means its first polls may see the old page (Decision 69).
+            why = self._redact(str(exc))
+            self._log(f"sgdb key fetch: could not reset the browser's tab: {why}")
+        except BaseException:
+            fetch.done = True
+            raise
+        else:
+            if host is not None:
+                self._log(f"sgdb key fetch: reset the browser's tab (was on {host})")
         fetch.task = asyncio.get_running_loop().create_task(self._drive_key_fetch(fetch))
         self._log("sgdb key fetch started")
         return {"ok": True, "started": fetch.started}

@@ -19,7 +19,7 @@ from typing import Any
 import pytest
 
 import fakedom
-from conftest import SGDB_HOME, SGDB_LOGIN, FakeBrowser, run
+from conftest import BROWSER_WS, SGDB_HOME, SGDB_LOGIN, FakeBrowser, run
 from moonlight_sync import cdp, sgdbpage
 from moonlight_sync.keys import key_file_path
 
@@ -659,6 +659,93 @@ def test_states_and_failures_never_carry_the_key() -> None:
 
 
 # ---------------------------------------------------------------------------
+# the tab reset before a fetch (Decision 70)
+
+
+def reset(browser: FakeBrowser) -> tuple[str | None, list[float]]:
+    slept: list[float] = []
+    host = sgdbpage.reset_tab(browser.targets(), browser.targets, browser.connect, slept.append)
+    return host, slept
+
+
+@pytest.mark.parametrize("stale", [sgdbpage.SGDB_API_PAGE, SGDB_HOME, SGDB_LOGIN])
+def test_reset_tab_blanks_a_tab_left_on_steamgriddb(stale: str) -> None:
+    browser = FakeBrowser(signed_in=True)
+    browser.open_page(stale)
+    host, slept = reset(browser)
+    assert host == sgdbpage.SGDB_HOST
+    assert browser.commands == [("Page.navigate", BROWSER_WS, sgdbpage.RESET_URL)]
+    assert browser.url == sgdbpage.RESET_URL
+    assert sgdbpage.find_target(browser.targets()) is None
+    assert slept == []  # the listing showed it gone at once
+    assert browser.evaluated == []  # a protocol command, no script in the page
+    assert browser.closed_sessions == len(browser.connected) == 1
+
+
+def test_reset_tab_blanks_a_tab_left_on_steam() -> None:
+    browser = FakeBrowser(steam_needs_password=True)
+    browser.open_page("https://steamcommunity.com/openid/login?openid.mode=checkid_setup")
+    assert sgdbpage.host_of(browser.url or "") == sgdbpage.STEAM_OPENID_HOST
+    host, _ = reset(browser)
+    assert host == sgdbpage.STEAM_OPENID_HOST
+    assert browser.url == sgdbpage.RESET_URL
+
+
+def test_reset_tab_leaves_no_tab_and_other_hosts_alone() -> None:
+    browser = FakeBrowser()
+    assert reset(browser) == (None, [])
+    assert browser.connected == [] and browser.commands == []
+    browser.open_page("https://example.invalid/somewhere")
+    assert reset(browser) == (None, [])
+    assert browser.connected == [] and browser.commands == []
+    assert browser.url == "https://example.invalid/somewhere"
+
+
+def test_reset_tab_waits_for_the_listing_then_gives_up() -> None:
+    """A listing that keeps showing the tab is read every RESET_POLL_S for
+    RESET_WAIT_S, then the reset is over anyway (the fetch copes: Decision 69)."""
+    browser = FakeBrowser(signed_in=True)
+    browser.open_page()
+    original = browser.navigate
+
+    def sticky(url: str) -> None:
+        if url != sgdbpage.RESET_URL:
+            original(url)
+
+    browser.navigate = sticky  # type: ignore[method-assign]
+    host, slept = reset(browser)
+    assert host == sgdbpage.SGDB_HOST
+    assert browser.commands == [("Page.navigate", BROWSER_WS, sgdbpage.RESET_URL)]
+    assert slept == [sgdbpage.RESET_POLL_S] * sgdbpage.RESET_POLLS
+    assert pytest.approx(sgdbpage.RESET_WAIT_S) == sgdbpage.RESET_POLLS * sgdbpage.RESET_POLL_S
+
+
+def test_reset_tab_raises_debugger_unavailable_through() -> None:
+    browser = FakeBrowser(signed_in=True)
+    browser.open_page()
+    listed = browser.targets()
+    browser.unavailable = True
+    with pytest.raises(cdp.DebuggerUnavailable):
+        sgdbpage.reset_tab(listed, browser.targets, browser.connect, lambda _s: None)
+
+
+def test_reset_tab_still_answers_when_the_listing_fails_after_the_navigate() -> None:
+    """The tab was blanked; a listing that then stops answering only
+    loses the confirmation, so the backend does not log a failed reset."""
+    browser = FakeBrowser(signed_in=True)
+    browser.open_page()
+    listed = browser.targets()
+
+    def failing_targets() -> list[cdp.Target]:
+        raise cdp.DebuggerUnavailable("connection refused")
+
+    slept: list[float] = []
+    host = sgdbpage.reset_tab(listed, failing_targets, browser.connect, slept.append)
+    assert host == sgdbpage.SGDB_HOST
+    assert browser.url == sgdbpage.RESET_URL and slept == []
+
+
+# ---------------------------------------------------------------------------
 # the backend: the thread, the events, the key file
 
 
@@ -703,6 +790,62 @@ def test_backend_fetches_and_writes_the_key_file(backend, fake_browser, fast_pol
     assert browser.revoked is False
     log = run(backend.log_tail(100))["lines"]
     assert any("sgdb key fetched from the browser" in line for line in log)
+
+
+def test_backend_resets_the_stale_tab_before_the_fetch_looks(
+    backend, fake_browser, fast_polls
+) -> None:
+    """The page a failed attempt left at the API URL (a device's 2026-09-25)
+    is blanked by start_sgdb_key_fetch itself, before it answers, so the
+    fetch's first poll waits for the frontend's page rather than judging
+    the old one (Decision 70)."""
+    browser = fake_browser(signed_in=True, api_fixture=["api-unrendered.html", "api.html"])
+    browser.open_page()  # the stale tab
+
+    async def scenario():
+        started = await backend.start_sgdb_key_fetch()
+        assert started["ok"] is True
+        assert browser.url == sgdbpage.RESET_URL  # blank before the answer
+        assert [c[0] for c in browser.commands] == ["Page.navigate"]
+        await asyncio.sleep(0.05)  # the fetch polls a blank tab: waiting
+        browser.open_page()  # the frontend's NavigateToExternalWeb
+        return await wait_done(backend)
+
+    done = run(scenario())
+    assert done == {"ok": True, "source": "file", "hint": KEY[-4:]}
+    events = [e["state"] for e in backend.emitted.of("sgdb_key_event")]
+    assert events == ["waiting", "reading", "done"]
+    # the stale page was never judged: no reload of the fetch's own
+    assert browser.navigations == [
+        sgdbpage.SGDB_API_PAGE,
+        sgdbpage.RESET_URL,
+        sgdbpage.SGDB_API_PAGE,
+    ]
+    log = run(backend.log_tail(100))["lines"]
+    assert any(f"reset the browser's tab (was on {sgdbpage.SGDB_HOST})" in line for line in log)
+    assert not any("could not reset" in line for line in log)
+
+
+def test_backend_a_failed_reset_still_starts_the_fetch(
+    backend, fake_browser, fast_polls, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    browser = fake_browser(signed_in=True)
+    browser.open_page()
+
+    def refuse(listed, targets, connect, sleep=None):
+        raise cdp.DebuggerUnavailable("Page.navigate: refused")
+
+    monkeypatch.setattr(sgdbpage, "reset_tab", refuse)
+
+    async def scenario():
+        started = await backend.start_sgdb_key_fetch()
+        assert started["ok"] is True
+        return await wait_done(backend)
+
+    done = run(scenario())
+    assert done["ok"] is True
+    log = run(backend.log_tail(100))["lines"]
+    assert any("could not reset the browser's tab" in line for line in log)
 
 
 def test_backend_busy_while_a_fetch_is_in_flight(backend, fake_browser, fast_polls) -> None:

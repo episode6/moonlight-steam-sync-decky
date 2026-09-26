@@ -854,11 +854,15 @@ plugin_loader's environment), and keep an SSH session tailing
 - [ ] **A second attempt after a failure, no Steam restart.** Make a
       fetch fail (the *Left behind, then timed out* item below, or
       *Cancel mid-way*), then press *Get key from SteamGridDB…* again:
-      it succeeds. The log shows the retry's first `reading` polls on
-      the page the failed attempt left in the browser (Decision 69) and
-      then the fresh page; never "failed (sgdb-page): no key and no
-      generate button" within a second of "started". A device's
-      2026-09-25 had exactly that until Steam was restarted.
+      it succeeds. The log shows "sgdb key fetch: reset the browser's
+      tab (was on www.steamgriddb.com)" (or steamcommunity.com) right
+      before "started" (Decision 70), then `waiting` and the fresh page;
+      never "failed (sgdb-page): no key and no generate button" within a
+      second of "started". A device's 2026-09-25 had exactly that until
+      Steam was restarted. Should the log say "could not reset the
+      browser's tab", report it with the rest of the line: the fetch
+      then reads the old page for its first polls (Decision 69) and
+      should still succeed.
 - [ ] **Cancel mid-way.** Start again, back out of the browser while
       Steam's sign-in page is up, press *Cancel*: within a second the
       toast says "The key fetch was cancelled", you stay on Settings →

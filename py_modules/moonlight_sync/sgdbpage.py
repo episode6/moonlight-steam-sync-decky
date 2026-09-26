@@ -56,6 +56,17 @@ so a SteamGridDB redesign is a one-file change. The rules, each a test:
   always ``SGDB_API_PAGE`` or the login link whose realm was checked.
 - **Cancellation.** The ``stop`` event is checked between polls, so a
   cancel is noticed within one ``POLL_INTERVAL_S``.
+- **The tab is reset before the fetch looks at it** (Decision 70).
+  :func:`reset_tab`, run by ``Backend.start_sgdb_key_fetch`` after the
+  port probe and before the frontend opens the browser, sends the one
+  ``page`` target on ``SGDB_HOST`` / ``STEAM_OPENID_HOST`` (the tab a
+  previous fetch left; it outlives ``NavigateBack``) a CDP
+  ``Page.navigate`` to ``about:blank`` -- a protocol command, no script
+  evaluated in it -- and waits up to ``RESET_WAIT_S`` for the listing to
+  show it gone. The fetch then starts in ``waiting`` and its first page
+  is the one the frontend loads. A target on any other host is never
+  touched: Steam's own surfaces are ``about:blank?…`` and
+  ``steamloopback.host`` targets.
 
 Pure: no decky import, no socket of its own (the seams are arguments), no
 thread of its own (``Backend`` runs it through ``asyncio.to_thread``).
@@ -90,6 +101,14 @@ SGDB_FETCH_TIMEOUT_S = 180.0
 DEBUGGER_RETRY_S = 10.0
 #: After ``JS_GENERATE`` clicked, how long the key is waited for.
 GENERATE_WAIT_S = 15.0
+#: After ``reset_tab``'s ``Page.navigate`` to ``about:blank``, how long the
+#: listing is given to show the tab gone from the two hosts, and how often
+#: it is read (a device showed it at once, 2026-09-26).
+RESET_WAIT_S = 2.0
+RESET_POLL_S = 0.1
+#: The wait as a count, so it never depends on float sums coming out even.
+RESET_POLLS = round(RESET_WAIT_S / RESET_POLL_S)
+RESET_URL = "about:blank"
 #: How long a complete document at the API URL may lack the API page's own
 #: body before it is reloaded, and again before the fetch gives up.
 API_PAGE_GRACE_S = 10.0
@@ -415,6 +434,42 @@ class _Fetch:
         raise FetchFailed(
             "sgdb-page", TEXT_API_NOT_LOADED, detail="no API page body, even after a reload"
         )
+
+
+def reset_tab(
+    listed: list[cdp.Target],
+    targets: Callable[[], list[cdp.Target]],
+    connect: Callable[[str], Any],
+    sleep: Callable[[float], Any] = time.sleep,
+) -> str | None:
+    """Navigate the page target a previous fetch left on either host to
+    ``about:blank`` (Decision 70); the host it was on, or ``None`` when
+    there was none.
+
+    ``listed`` is the port probe's own listing; ``targets`` re-reads it
+    until the tab is gone from the two hosts, ``RESET_POLLS`` times at
+    most. Raises :class:`cdp.DebuggerUnavailable` from the connect and
+    the navigate, as the seams do; the caller logs it and lets the fetch
+    start anyway. A listing read that fails *after* the navigate ends the
+    wait and still answers the host: the tab was blanked, only the
+    confirmation is missing, and the fetch retries the port itself.
+    """
+    target = find_target(listed)
+    if target is None:
+        return None
+    session = connect(target["webSocketDebuggerUrl"])
+    try:
+        session.navigate(RESET_URL)
+    finally:
+        session.close()
+    for _ in range(RESET_POLLS):
+        try:
+            if find_target(targets()) is None:
+                break
+        except cdp.DebuggerUnavailable:
+            break
+        sleep(RESET_POLL_S)
+    return host_of(target.get("url", ""))
 
 
 def fetch_key(
