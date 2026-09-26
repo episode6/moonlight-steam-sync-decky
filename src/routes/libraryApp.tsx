@@ -15,14 +15,14 @@
  * so the page is not remounted on every render), and there the button row
  * is spliced in between the header and the overview panel, directly before
  * the panel (`streamRowIndex`), so that it follows whatever another plugin
- * adds after the header: gamepad navigation goes by document order. A props
- * object is only ever wrapped
- * once (`afterPatch` stacks, and the row's key would hide a stack), should
- * the client hand the same element back across renders. Unloading removes
- * the route patch only: the patched type lives on per-render elements, so
- * the next render after an unload is clean. Anything unexpected in the tree
- * (another client version, a page still loading) leaves the page untouched;
- * the patch never throws into Steam's render.
+ * adds after the header: gamepad navigation goes by document order. A
+ * props object is only ever wrapped once (`afterPatch` stacks, and the
+ * row's key would hide a stack), should the client hand the same element
+ * back across renders. Unloading removes the route patch only: the patched
+ * type lives on per-render elements, so the next render after an unload is
+ * clean. Anything unexpected in the tree (another client version, a page
+ * still loading) leaves the page untouched; the patch never throws into
+ * Steam's render.
  */
 
 import { routerHook } from "@decky/api";
@@ -30,7 +30,7 @@ import { afterPatch, appDetailsClasses, createReactTreePatcher, findInReactTree 
 import type { ReactElement } from "react";
 
 import { StreamButton } from "../components/StreamButton";
-import { streamRowIndex } from "../lib/appPage";
+import { hasClass, streamRowIndex } from "../lib/appPage";
 import { SHORTCUT_APPID_FLOOR } from "../lib/steam";
 import { ensureLibraryContextMenuPatched } from "./libraryContextMenu";
 import { isOverview, type Overview, type TreeNode } from "./tree";
@@ -50,10 +50,9 @@ function overviewNodeOf(tree: unknown): TreeNode | null {
 function innerContainerOf(tree: unknown): (TreeNode & { props: { children: unknown[] } }) | null {
   const marker = appDetailsClasses.InnerContainer;
   if (!marker) return null;
-  const node = findInReactTree(
-    tree,
-    (n: TreeNode) => Array.isArray(n?.props?.children) && typeof n?.props?.className === "string" && n.props.className.includes(marker),
-  ) as (TreeNode & { props: { children: unknown[] } }) | undefined;
+  const node = findInReactTree(tree, (n: TreeNode) => Array.isArray(n?.props?.children) && hasClass(n, marker)) as
+    | (TreeNode & { props: { children: unknown[] } })
+    | undefined;
   return node ?? null;
 }
 

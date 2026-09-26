@@ -18,13 +18,14 @@
  * object with `props`, which is all this reads.
  */
 
-/** As much of a child element as the lookup reads. */
-interface ChildLike {
+/** As much of an element as the lookup reads. */
+interface ElementLike {
   props?: { className?: unknown } | null;
 }
 
-function hasClass(child: unknown, marker: string): boolean {
-  const className = (child as ChildLike | null | undefined)?.props?.className;
+/** Whether an element's `className` prop has `marker` as one whole class; anything that is not such an element has not. */
+export function hasClass(element: unknown, marker: string): boolean {
+  const className = (element as ElementLike | null | undefined)?.props?.className;
   return typeof className === "string" && className.split(/\s+/).includes(marker);
 }
 

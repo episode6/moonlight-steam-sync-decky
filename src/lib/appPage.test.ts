@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { streamRowIndex } from "./appPage";
+import { hasClass, streamRowIndex } from "./appPage";
 
 const PANEL = "_1_cYNJSvS6IXs9vLTEYjy5";
 
@@ -16,6 +16,23 @@ function insert(children: unknown[]): unknown[] {
   next.splice(streamRowIndex(next, PANEL), 0, row);
   return next;
 }
+
+describe("hasClass", () => {
+  it("matches one whole class among several", () => {
+    // The page column as the client renders it (the Deck's 2026-09-26).
+    const column = { props: { className: "_1SvpjsckP9cPRxO6gCBHrw Panel Focusable", children: [] } };
+    expect(hasClass(column, "_1SvpjsckP9cPRxO6gCBHrw")).toBe(true);
+    expect(hasClass(column, "Focusable")).toBe(true);
+    expect(hasClass(column, "_1SvpjsckP9cPRxO6gCBH")).toBe(false);
+    expect(hasClass(column, "Foc")).toBe(false);
+  });
+
+  it("is false for anything that is not an element with a class", () => {
+    for (const value of [null, undefined, "text", 3, [header], {}, { props: null }, { props: { className: 7 } }]) {
+      expect(hasClass(value, PANEL)).toBe(false);
+    }
+  });
+});
 
 describe("streamRowIndex", () => {
   it("is right before the overview panel on the client's own column", () => {

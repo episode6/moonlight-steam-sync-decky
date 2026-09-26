@@ -382,9 +382,12 @@ src/lib/                    pure modules (vitest)
                             measured on a Deck 2026-09-26), and other plugins splice
                             their own children in at index 1, some drawn over the
                             header (ProtonDB Badges), so a row at a fixed index 1 was
-                            focused in the wrong order whenever it patched last
+                            focused in the wrong order whenever it patched last;
+                            hasClass() (an element's `className` has the marker as one
+                            whole class: the panel here, the InnerContainer column in
+                            `libraryApp.tsx`)
   appPage.test.ts           the index with and without another plugin's child, before
-                            and after; the fallback
+                            and after; the fallback; hasClass
   join.ts                   the Titles page: list + status joined by name into rows
                             (badge, chips, match line, capsule), filters, Show parked,
                             pages of 50, applyPin; the Change match rows (candidateRows,
