@@ -6,6 +6,15 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The Stream button is focused in the order it is drawn, beside other
+  plugins' additions to the game page.** With ProtonDB Badges installed,
+  going up from *Play* reached the ProtonDB badge first and the Stream
+  button after it, though the badge is drawn above the button. The Stream
+  row is now placed directly above the page's own play section, behind
+  whatever another plugin adds under the header.
+
 ### Removed
 
 - The *Wake-on-LAN MAC* field under each host on Settings → Host. The
