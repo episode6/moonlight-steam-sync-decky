@@ -17,7 +17,11 @@ state                 the target's URL                what is done
 ``steam-login``       steamcommunity.com, no form     waits for the user to log in on the page
 ``reading``           SteamGridDB, any other path     ``JS_NAVIGATE`` to the API page (once per
                                                       URL); there, ``JS_KEY``, else
-                                                      ``JS_GENERATE`` once (Decisions 61, 63)
+                                                      ``JS_GENERATE`` once (Decisions 61, 63);
+                                                      a page without the API page's own body
+                                                      (``JS_API_BODY``) is polled for
+                                                      ``API_PAGE_GRACE_S``, reloaded once and
+                                                      polled that long again (Decision 69)
 ``done``                                              the key is returned to the caller
 ====================  ==============================  ===========================================
 
@@ -33,7 +37,19 @@ so a SteamGridDB redesign is a one-file change. The rules, each a test:
   ``code`` element (Decision 63).
 - **One click each.** ``JS_NAVIGATE`` from ``/login``, ``JS_OPENID_SUBMIT``
   and ``JS_GENERATE`` each fire at most once per fetch; a second visit to
-  the same state (a redirect loop) fails with ``sgdb-page`` instead.
+  the same state (a redirect loop) fails with ``sgdb-page`` instead. The
+  API page is reloaded at most once, and only after ``API_PAGE_GRACE_S``
+  of showing no API page body.
+- **A page that is not the API page's is not judged, and nothing on it
+  is clicked.** At the API URL, a complete document without the page's
+  own ``div.profile`` body (a page left in the tab by an earlier attempt,
+  which the frontend's navigation has not yet replaced; an interstitial;
+  a render that never came) is neither a missing key nor a missing
+  *Generate* button: ``JS_API_BODY`` is asked before ``JS_GENERATE``, so
+  no control on it is pressed, and it is polled,
+  reloaded once, polled again, and only then a failure (Decision 69, from
+  a device's 2026-09-25: every retry failed within milliseconds on the
+  page the previous attempt had left, until Steam was restarted).
 - **Only SteamGridDB's own targets.** Nothing is evaluated in a target
   whose host is not ``SGDB_HOST`` or ``STEAM_OPENID_HOST``, so never in
   ``SharedJSContext`` or the Big Picture target. ``JS_NAVIGATE``'s URL is
@@ -74,6 +90,9 @@ SGDB_FETCH_TIMEOUT_S = 180.0
 DEBUGGER_RETRY_S = 10.0
 #: After ``JS_GENERATE`` clicked, how long the key is waited for.
 GENERATE_WAIT_S = 15.0
+#: How long a complete document at the API URL may lack the API page's own
+#: body before it is reloaded, and again before the fetch gives up.
+API_PAGE_GRACE_S = 10.0
 
 JS_PAGE = "({href: location.href, ready: document.readyState})"
 JS_LOGIN_LINK = (
@@ -91,6 +110,9 @@ JS_KEY = (
     ".map(e => e.textContent.trim()).filter(t => /^[0-9a-f]{32}$/.test(t)); "
     "return c.length === 1 ? c[0] : null; })()"
 )
+#: The API page's own body (spec 3.20.1 item 5: ``div.container.profile``);
+#: a document at its URL without it is not the API page yet (Decision 69).
+JS_API_BODY = 'document.querySelector("div.profile") !== null'
 #: Decision 63: never replaces a key. Nothing is clicked while the page has
 #: any ``code`` element (a key shown in a shape ``JS_KEY`` does not read is
 #: still a key), nor anything reading *Regenerate*, *new key* or *Revoke*.
@@ -110,6 +132,7 @@ TEXT_CANCELLED = "The key fetch was cancelled"
 TEXT_LOGIN_CHANGED = "SteamGridDB's login page has changed; enter the key by hand"
 TEXT_NO_KEY = "SteamGridDB shows no API key; generate one on its API page, then try again"
 TEXT_PAGE_CHANGED = "SteamGridDB's page has changed; enter the key by hand"
+TEXT_API_NOT_LOADED = "SteamGridDB's API page did not load; try again or enter the key by hand"
 
 
 _ERROR_NAME = re.compile(r"^[A-Za-z_$][\w$]{0,63}$")
@@ -209,6 +232,9 @@ class _Fetch:
         self.openid_submitted = False
         self.generate_clicked_at: float | None = None
         self.navigated_to_api: set[str] = set()
+        # Decision 69: a complete document at the API URL without the page's body
+        self.no_body_since: float | None = None
+        self.api_reloaded = False
         self.unavailable_since: float | None = None
 
     def set_state(self, state: str) -> None:
@@ -330,6 +356,9 @@ class _Fetch:
 
     def _on_sgdb(self, session: Any, href: str, complete: bool) -> str | None:
         self.set_state("reading")
+        if not is_api_page(href) or not complete:
+            # Decision 69's grace is per visit to a complete API page.
+            self.no_body_since = None
         if not is_api_page(href):
             if href in self.navigated_to_api or not complete:
                 return None
@@ -346,6 +375,10 @@ class _Fetch:
                 "sgdb-page", TEXT_PAGE_CHANGED, detail="the key snippet answered oddly"
             )
         if self.generate_clicked_at is None:
+            # The body first, so nothing is ever clicked on a page that is
+            # not the API page (Decision 63's spirit; PR 53's review).
+            if session.evaluate(JS_API_BODY) is not True:
+                return self._no_api_body(session)
             clicked = session.evaluate(JS_GENERATE)
             if clicked is True:
                 self.generate_clicked_at = self.clock()
@@ -354,6 +387,34 @@ class _Fetch:
         if self.clock() - self.generate_clicked_at >= GENERATE_WAIT_S:
             raise FetchFailed("sgdb-page", TEXT_NO_KEY, detail="no key after generating one")
         return None
+
+    def _no_api_body(self, session: Any) -> None:
+        """A complete document at the API URL that is not the API page
+        (Decision 69): wait ``API_PAGE_GRACE_S`` for one that is (the
+        frontend's navigation landing, an interstitial passing), then
+        reload once and wait again, then fail. The grace counts one visit:
+        ``no_body_since`` is cleared whenever the fetch is off the API
+        page or the document is loading, so a tab that leaves (a session
+        bounce to ``/login``, the user tapping around) and comes back
+        gets the whole grace again; the 180 s timeout caps the total. The
+        reload is at most once per fetch, visits notwithstanding."""
+        now = self.clock()
+        if self.no_body_since is None:
+            self.no_body_since = now
+            return None
+        if now - self.no_body_since < API_PAGE_GRACE_S:
+            return None
+        if not self.api_reloaded:
+            # Assigning the current URL navigates (Chromium loads it afresh),
+            # which is the reload meant; ``location.reload()`` would need a
+            # mirror of its own in the tests' fake DOM for no gain.
+            session.evaluate(navigate_js(SGDB_API_PAGE))
+            self.api_reloaded = True
+            self.no_body_since = None
+            return None
+        raise FetchFailed(
+            "sgdb-page", TEXT_API_NOT_LOADED, detail="no API page body, even after a reload"
+        )
 
 
 def fetch_key(

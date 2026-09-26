@@ -289,13 +289,14 @@ class FakeBrowser:
         signed_in: bool = False,
         has_key: bool = True,
         steam_needs_password: bool = False,
-        api_fixture: str | None = None,
+        api_fixture: str | list[str] | None = None,
         loading_polls: int = 0,
     ) -> None:
         self.signed_in = signed_in
         self.has_key = has_key
         self.steam_needs_password = steam_needs_password
-        self.api_fixture = api_fixture
+        # a list is consumed per load: copied, so a shared literal is not drained
+        self.api_fixture = list(api_fixture) if isinstance(api_fixture, list) else api_fixture
         self.loading_polls = loading_polls
         self.url: str | None = None
         self.document: fakedom.Document | None = None
@@ -385,13 +386,22 @@ class FakeBrowser:
             if not self.signed_in:
                 self._show(SGDB_LOGIN, fakedom.Document.from_fixture("login.html", SGDB_LOGIN))
             else:
-                fixture = self.api_fixture or ("api.html" if self.has_key else "api-no-key.html")
-                self._show(url, fakedom.Document.from_fixture(fixture, url))
+                self._show(url, fakedom.Document.from_fixture(self._api_fixture(), url))
         else:
             self._show(url, fakedom.Document.from_html(_HOME_HTML, url))
 
+    def _api_fixture(self) -> str:
+        """The API page's fixture for this load: ``api_fixture`` (a list is
+        consumed one per load, its last entry standing), else by ``has_key``."""
+        fixture = self.api_fixture
+        if isinstance(fixture, list):
+            fixture = fixture.pop(0) if len(fixture) > 1 else fixture[0]
+        return fixture or ("api.html" if self.has_key else "api-no-key.html")
+
     def _openid_document(self) -> fakedom.Document:
-        document = fakedom.Document.from_fixture("openid.html", "https://steamcommunity.com/openid/login")
+        document = fakedom.Document.from_fixture(
+            "openid.html", "https://steamcommunity.com/openid/login"
+        )
         if self.steam_needs_password:
             form = document.query_selector("#openidForm")
             assert form is not None

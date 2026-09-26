@@ -281,7 +281,7 @@ def evaluate(js: str, document: Document) -> Any:
         (selector,) = selectors_of(js)
         el = document.query_selector(selector)
         return el.href if el is not None else None
-    if js == sgdbpage.JS_OPENID_FORM:
+    if js in (sgdbpage.JS_OPENID_FORM, sgdbpage.JS_API_BODY):
         (selector,) = selectors_of(js)
         return document.query_selector(selector) is not None
     if js == sgdbpage.JS_OPENID_SUBMIT:
@@ -324,4 +324,5 @@ ALL_SNIPPETS = (
     sgdbpage.JS_OPENID_FORM,
     sgdbpage.JS_KEY,
     sgdbpage.JS_GENERATE,
+    sgdbpage.JS_API_BODY,
 )
