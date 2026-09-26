@@ -987,6 +987,17 @@ describe("the Titles page (spec 3.8)", () => {
     expect(names()).toContain("list_cached");
   });
 
+  it("an art run on a never-synced host does not promise the list (it never plans)", async () => {
+    const controller = await loaded({ pending: { ok: true, ...PENDING, synced_hosts: {} } });
+    await controller.run("art");
+    expect(controller.state.run?.running).toBe(true);
+    expect(await controller.loadTitles()).toEqual({
+      ok: false,
+      message: "MY-GAMING-PC was never synced; Sync now lists its titles",
+      neverSynced: true,
+    });
+  });
+
   it("any other list failure is shown as is", async () => {
     const controller = await loaded({
       list_cached: { ok: false, error: "timeout", message: "timed out after 30 s", timeout_s: 30 },

@@ -245,7 +245,10 @@ src/lib/                    pure modules (vitest)
                             when no run is going, the page always gets its entries;
                             a host no sync planned for, hostSynced(), is `neverSynced`
                             with no backend call, whatever a *Check* or an add cached,
-                            and the page shows its line and *Sync now*, no rows),
+                            and the page shows its line and *Sync now*, no rows; the
+                            line says it fills in only while a `sync` runs, since an
+                            art or remove run never plans; the page re-loads when a
+                            run starts and again when it ends),
                             checkHost() (the row's *Check* and nothing else: never on
                             load, panel open or the toggle; addHost() paints the row
                             from add_host's own count, no memo read -- PR 46's review),

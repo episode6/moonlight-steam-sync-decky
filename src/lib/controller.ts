@@ -771,9 +771,12 @@ export class Controller {
     const active = this.state.hosts?.active;
     if (!active) return { ok: false, message: "No host yet; add one on the Host page", neverSynced: false };
     const running = !!this.state.run?.running;
+    // Only a sync lists the host and plans for it: an art or remove run
+    // going leaves it exactly as never synced as before.
+    const syncing = running && this.state.run?.kind === "sync";
     const neverSynced = (): TitlesLoad => ({
       ok: false,
-      message: running
+      message: syncing
         ? `${active} was never synced; this list fills in when the sync finishes`
         : `${active} was never synced; Sync now lists its titles`,
       neverSynced: true,

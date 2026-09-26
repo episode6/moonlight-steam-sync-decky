@@ -183,7 +183,8 @@ function headline(data: TitlesData, rows: readonly TitleRow[]): string {
  * title's layout for every entry (spec 3.16.5). Nothing here restarts Steam: a pin or
  * an ignore takes effect on the next sync. While a run is going the list
  * comes from the CLI's per-host cache (no live `list` racing the run), both
- * row edits are locked, and the page refreshes when the run finishes. A
+ * row edits are locked, and the page refreshes when the run starts (its
+ * headline, or the never-synced line, says so) and again when it finishes. A
  * host no sync has planned for yet shows no titles at all, only that it
  * was never synced and a *Sync now* button.
  */

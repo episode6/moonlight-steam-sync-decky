@@ -103,9 +103,11 @@ PENDING_KEYS = ("restart_needed", "layout_walk")
 
 def _legacy_synced_hosts(data: dict[str, Any]) -> dict[str, Any]:
     """``synced_hosts`` for a ``pending.json`` from before the key: the host
-    of the last recorded plan (only a ``sync`` plans), stamped with ``since``,
-    so an upgrade does not blank the Titles page of the host being synced.
-    Any other host counts as synced from its next sync."""
+    of the last recorded plan (only a ``sync`` plans), so an upgrade does not
+    blank the Titles page of the host being synced. Any other host counts as
+    synced from its next sync. The stamp is ``since``, the *Last sync* row's,
+    which may be a later ``art`` run's time: it is informational, and nothing
+    reads a ``synced_hosts`` stamp, only its keys."""
     plan = data.get("last_plan")
     host = plan.get("host") if isinstance(plan, dict) else None
     if not isinstance(host, str) or not host:
