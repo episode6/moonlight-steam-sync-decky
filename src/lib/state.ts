@@ -198,6 +198,17 @@ export function cachedHostOf(hosts: HostsInfo | null, name: string | null): Cach
 }
 
 /**
+ * Whether a sync has ever planned for the host (`pending.synced_hosts`, by
+ * name in any case). Unknown -- `pending` not read -- counts as synced, so
+ * a failed read hides nothing.
+ */
+export function hostSynced(pending: Pending | null, name: string): boolean {
+  if (!pending) return true;
+  const wanted = name.toLowerCase();
+  return Object.keys(pending.synced_hosts ?? {}).some((host) => host.toLowerCase() === wanted);
+}
+
+/**
  * A host's Wake-on-LAN info (spec 3.18), by name in any case: `hosts()` keys
  * `wake` by the known host's stored spelling while the active host's name
  * comes from the CLI's state file.

@@ -121,7 +121,9 @@ py_modules/moonlight_sync/  the backend (imports nothing from decky)
                             {removed, titles, pins} for the toast; no CLI)
   install.py                read_version(), MIN_CLI_VERSION, atomic install/upgrade
   settings.py               settings.json / ignore.json / owned-apps.json /
-                            pending.json / layouts.json, all .tmp + os.replace
+                            pending.json / layouts.json, all .tmp + os.replace;
+                            pending()'s `synced_hosts` seed for an older file
+                            (the last plan's host, stamped `since`)
   keys.py                   SteamGridDB key sources (config -> env -> file), key file
   wake.py                   Wake-on-LAN (spec 3.18): parse_mac(), magic_packet(),
                             moonlight_hosts() / moonlight_entries() / find_host() /
@@ -208,6 +210,8 @@ src/lib/                    pure modules (vitest)
                             cachedHostOf() (its `cached_hosts` entry, any case: the
                             host row's line until something asked, a sync's exit-3
                             *last seen*, the Titles page's stamp),
+                            hostSynced() (`pending.synced_hosts` names the host, any
+                            case; an unread `pending` counts as synced),
                             HOST_APPS / hostAppsFromStatus() (the panel's Desktop and
                             Steam Big Picture buttons, by Moonlight name, blind to
                             `hidden`), launchButtons() / launchCaption() (the panel's
@@ -238,7 +242,13 @@ src/lib/                    pure modules (vitest)
                             loadTitles() (list_cached only, never a live list -- a
                             `moonlight list` wakes the PC, Decision 66; `syncing`
                             while a run is going; `status` only reaches the shared store
-                            when no run is going, the page always gets its entries),
+                            when no run is going, the page always gets its entries;
+                            a host no sync planned for, hostSynced(), is `neverSynced`
+                            with no backend call, whatever a *Check* or an add cached,
+                            and the page shows its line and *Sync now*, no rows; the
+                            line says it fills in only while a `sync` runs, since an
+                            art or remove run never plans; the page re-loads when a
+                            run starts and again when it ends),
                             checkHost() (the row's *Check* and nothing else: never on
                             load, panel open or the toggle; addHost() paints the row
                             from add_host's own count, no memo read -- PR 46's review),
@@ -618,7 +628,11 @@ run sets or settles it, so a `sync` that found nothing to do cannot rename a
 pending `remove`'s write (which would re-run the wrong kind from the restart
 row and let the next sync settle it as "same kind"). `last_summary` and
 `since` are the *Last sync* row and always describe the run that just
-finished. `restart_countdown_s` is 0-30 everywhere
+finished. `synced_hosts` (`{<host>: <when>}`) gains the plan's host
+whenever a `sync` reached its `plan`, whatever the exit, and never loses
+one: the host cache cannot say "synced", since a *Check* or an `add_host`
+writes it too. A `pending.json` from before the key reads as the last
+plan's host alone (`settings._legacy_synced_hosts`). `restart_countdown_s` is 0-30 everywhere
 (Decision 30: the CLI's await-exit wait times out at 60 s); a larger value
 in an older `settings.json` is clamped on read, not rejected. `check_host`'s
 reachable result carries an additive `ignored` count for the panel's

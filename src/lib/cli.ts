@@ -400,6 +400,12 @@ export interface Pending {
   last_summary: SummaryEvent | null;
   last_plan: PlanEvent | null;
   last_kind: RunKind | null;
+  /**
+   * Every host a `sync` has listed and planned for, in the plan's spelling,
+   * with when (`null` for the one seeded from an older `pending.json`).
+   * A *Check* or an add caches a host's list too, so only this says synced.
+   */
+  synced_hosts: Record<string, string | null>;
 }
 
 export interface RunOpts {

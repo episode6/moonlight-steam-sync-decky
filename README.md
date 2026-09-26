@@ -370,7 +370,9 @@ a time with a "Show 50 more" row at the end, so a 500-title host stays
 quick to scroll with the D-pad. The page reads the listing the last sync
 cached ("N published by MY-GAMING-PC · listed <when>"), never the host
 itself (a live `moonlight list` would wake the PC); **Sync now** is what
-refreshes it, and a host that was never synced says so. While a sync is
+refreshes it. A host that was never synced lists nothing, even when *Check*
+or adding it cached its list: the page says so and offers **Sync now**
+itself. While a sync is
 running it shows the same cached listing ("refreshes when the sync
 finishes") and re-lists on its own as soon as the run ends.
 
@@ -590,8 +592,9 @@ Steam's:
 - `~/homebrew/settings/Moonlight Sync/`: `settings.json`, `ignore.json`
   (the Titles page's ignore list, a sorted JSON list of names),
   `owned-apps.json` (the owned games, rewritten before every sync),
-  `pending.json` (a restart that is still pending, and whether the layout
-  walk after a sync's restart is still due), `layouts.json` (the last
+  `pending.json` (a restart that is still pending, whether the layout
+  walk after a sync's restart is still due, and every host a sync has
+  run for), `layouts.json` (the last
   layout result per hidden shortcut: `{"version": 1, "entries":
   {"<shortcut appid>": {"real_appid", "result", "url", "when",
   "applied"}}}`; `real_appid` is `null` for an entry with no Steam game

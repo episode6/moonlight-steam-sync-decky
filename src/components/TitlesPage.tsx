@@ -183,7 +183,10 @@ function headline(data: TitlesData, rows: readonly TitleRow[]): string {
  * title's layout for every entry (spec 3.16.5). Nothing here restarts Steam: a pin or
  * an ignore takes effect on the next sync. While a run is going the list
  * comes from the CLI's per-host cache (no live `list` racing the run), both
- * row edits are locked, and the page refreshes when the run finishes.
+ * row edits are locked, and the page refreshes when the run starts (its
+ * headline, or the never-synced line, says so) and again when it finishes. A
+ * host no sync has planned for yet shows no titles at all, only that it
+ * was never synced and a *Sync now* button.
  */
 export function TitlesPage() {
   const state = useStore(controller.store);
@@ -216,10 +219,11 @@ export function TitlesPage() {
     if (ready && active) void refresh();
   }, [ready, active, epoch, refresh]);
 
-  // a sync that just finished changed what list and status say
+  // a sync that just finished changed what list and status say; one that
+  // just started changes what the page says about them
   const wasRunning = useRef(running);
   useEffect(() => {
-    if (wasRunning.current && !running && ready && active) void refresh();
+    if (wasRunning.current !== running && ready && active) void refresh();
     wasRunning.current = running;
   }, [running, ready, active, refresh]);
 
@@ -259,6 +263,11 @@ export function TitlesPage() {
       setLoad(next);
     }
     void refresh(); // the next list reports the pin itself, and status the art refresh
+  };
+
+  const syncNow = async () => {
+    const failure = await controller.sync();
+    if (failure) toaster.toast({ title: "Moonlight Sync", body: errorText(failure) });
   };
 
   const changeMatch = (row: TitleRow) => {
@@ -302,6 +311,20 @@ export function TitlesPage() {
   }
 
   if (!data) {
+    // Nothing is listed for a host no sync has planned for, even when a
+    // *Check* or an add cached its list: only the way to sync it.
+    if (load && !load.ok && load.neverSynced && !loading) {
+      return (
+        <div>
+          <Field description={load.message} focusable={false} />
+          {!running ? (
+            <DialogButton style={SMALL} onClick={() => void syncNow()}>
+              Sync now
+            </DialogButton>
+          ) : null}
+        </div>
+      );
+    }
     if (load && !load.ok && !loading) {
       return (
         <div>

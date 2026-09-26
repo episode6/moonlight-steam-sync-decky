@@ -127,12 +127,21 @@ def next_pending(
     Nothing reads ``last_kind`` as "the kind of the last summary":
     `Controller.restartRow()` uses it for the row's re-run and the *Last
     sync* row is built from ``since`` + ``last_summary``.
+
+    ``synced_hosts`` gains the plan's host, stamped ``now``, whenever a
+    ``sync`` got as far as its ``plan``, whatever its exit: the host was
+    listed and planned for, which is what the Titles page shows. No other
+    kind plans, and nothing drops a host from it.
     """
     pending = dict(previous)
     was_pending = previous.get("restart_needed", "none")
     was_kind = previous.get("last_kind")
     summary = last_of(events, "summary")
     plan = last_of(events, "plan")
+    host = plan.get("host") if plan is not None else None
+    if kind == "sync" and isinstance(host, str) and host:
+        synced = previous.get("synced_hosts")
+        pending["synced_hosts"] = {**(synced if isinstance(synced, dict) else {}), host: now}
 
     def owns() -> None:
         """This run set or settled ``restart_needed``: it owns the state now."""

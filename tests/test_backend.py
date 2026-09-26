@@ -290,6 +290,7 @@ def test_full_sync_relays_in_order_and_writes_pending_before_the_wait(backend, s
     assert pending["last_summary"] == expected[-1]
     assert pending["last_plan"] == expected[1]
     assert pending["last_kind"] == "sync"
+    assert list(pending["synced_hosts"]) == ["MY-GAMING-PC"]
     assert read_pending(backend) == pending
     # the last event before sync_done
     assert backend.emitted.calls[-1][0] == "sync_done"
@@ -1159,6 +1160,36 @@ def test_a_run_that_sets_or_settles_the_write_does_take_its_name() -> None:
     assert art["last_kind"] == "art"
 
 
+def test_a_sync_that_planned_marks_its_host_synced() -> None:
+    """The Titles page lists a host only once a sync planned for it: a
+    *Check* or an add caches the host's list too, so the cache cannot say."""
+    office = {"synced_hosts": {"OFFICE-PC": "2026-09-01T09:00:00Z"}}
+    stopped = _pending_after(office, "sync", load_fixture("stopped/sync.ndjson"), 130)
+    assert stopped["synced_hosts"] == {
+        "OFFICE-PC": "2026-09-01T09:00:00Z",
+        "MY-GAMING-PC": "2026-09-20T12:00:00Z",
+    }
+    unreachable = _pending_after(office, "sync", load_fixture("unreachable/sync.ndjson"), 3)
+    assert unreachable["synced_hosts"] == office["synced_hosts"]  # no plan: never listed
+    art = _pending_after({}, "art", load_fixture("common/art.ndjson"), 0)
+    assert "synced_hosts" not in art
+
+
+def test_pending_seeds_synced_hosts_from_an_older_file(backend) -> None:
+    """A pending.json from before the key: the last plan's host counts as
+    synced, so upgrading does not blank its Titles page."""
+    path = Path(backend.settings_dir) / "pending.json"
+    plan = {"event": "plan", "host": "MY-GAMING-PC"}
+    path.write_text(json.dumps({"since": "2026-09-18T14:02:00Z", "last_plan": plan}))
+    assert run(backend.pending())["synced_hosts"] == {"MY-GAMING-PC": "2026-09-18T14:02:00Z"}
+    path.write_text(json.dumps({"since": "2026-09-18T14:02:00Z", "last_plan": None}))
+    assert run(backend.pending())["synced_hosts"] == {}
+    path.write_text(json.dumps({"last_plan": plan, "synced_hosts": {}}))
+    assert run(backend.pending())["synced_hosts"] == {}  # the key is there: no seed
+    path.write_text(json.dumps({"synced_hosts": ["MY-GAMING-PC"]}))
+    assert run(backend.pending())["synced_hosts"] == {}  # broken by hand
+
+
 # ----------------------------------------------------------------------
 # settings, pending, stubs, never raising
 
@@ -1216,6 +1247,7 @@ def test_pending_and_clear_pending(backend) -> None:
         "last_summary": None,
         "last_plan": None,
         "last_kind": None,
+        "synced_hosts": {},
     }
     (Path(backend.settings_dir) / "pending.json").write_text(
         json.dumps({"restart_needed": "art", "layout_walk": True, "since": "2026-09-18T14:02:00Z"})

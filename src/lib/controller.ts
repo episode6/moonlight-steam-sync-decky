@@ -69,6 +69,7 @@ import {
   applyRunDone,
   applyRunEvent,
   cachedHostOf,
+  hostSynced,
   initialState,
   layoutEntryFor,
   newRun,
@@ -756,8 +757,10 @@ export class Controller {
    * `list_cached(active)`, `status()` and `ignore.json` for the Titles page.
    * The page only ever reads the per-host cache the last sync (or the
    * add-host listing) wrote: a live `list` wakes the PC (Decision 66), and
-   * a sync refreshes the cache anyway. Exit 3 from the cache means there
-   * is no cache for the host yet ("never synced").
+   * a sync refreshes the cache anyway. A host no sync has planned for
+   * (`pending.synced_hosts`) is "never synced" and lists nothing, even when
+   * a *Check* or an add cached its list; so is exit 3 from the cache (no
+   * cache for the host).
    *
    * While a run is going the source is `"syncing"` (the run is rewriting
    * that cache; the page re-lists when it finishes), else `"cached"`.
@@ -768,6 +771,17 @@ export class Controller {
     const active = this.state.hosts?.active;
     if (!active) return { ok: false, message: "No host yet; add one on the Host page", neverSynced: false };
     const running = !!this.state.run?.running;
+    // Only a sync lists the host and plans for it: an art or remove run
+    // going leaves it exactly as never synced as before.
+    const syncing = running && this.state.run?.kind === "sync";
+    const neverSynced = (): TitlesLoad => ({
+      ok: false,
+      message: syncing
+        ? `${active} was never synced; this list fills in when the sync finishes`
+        : `${active} was never synced; Sync now lists its titles`,
+      neverSynced: true,
+    });
+    if (!hostSynced(this.state.pending, active)) return neverSynced();
     const [listed, status, ignored] = await Promise.all([
       this.withOwnedRetry(() => this.backend.list_cached(active)),
       this.withOwnedRetry(() => this.backend.status()),
@@ -775,13 +789,8 @@ export class Controller {
     ]);
     const source: TitlesData["source"] = running ? "syncing" : "cached";
     if (isFailure(listed)) {
-      const neverSynced = listed.error === "cli-error" && listed.exit === 3;
-      const message = !neverSynced
-        ? errorText(listed)
-        : running
-          ? `${active} was never synced; this list fills in when the sync finishes`
-          : `${active} was never synced; Sync now lists its titles`;
-      return { ok: false, message, neverSynced };
+      if (listed.error === "cli-error" && listed.exit === 3) return neverSynced();
+      return { ok: false, message: errorText(listed), neverSynced: false };
     }
     const apps: AppEvent[] = listed.apps;
     const cachedWhen = this.cachedStamp(active, apps);

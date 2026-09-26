@@ -224,10 +224,12 @@ to `~/homebrew/logs/steam-input-probe/steam-input-probe.log` (the loader's
       headline returns to "N published by MY-GAMING-PC · listed just now ·
       sorted by name", *Change match* is enabled again.
 - [ ] **Never-synced host.** On a host that has never been synced, open
-      Titles: "MY-GAMING-PC was never synced; Sync now lists its titles".
-      Start a sync and open Titles mid-run: "MY-GAMING-PC was never synced;
-      this list fills in when the sync finishes" with a Retry button,
-      filling in after the run ends.
+      Titles: "MY-GAMING-PC was never synced; Sync now lists its titles"
+      and a *Sync now* button, no rows, filters or Retry. Add OFFICE-PC
+      and press *Check* on it (both cache its list), make it active and
+      open Titles: the same line, still no rows. Press the page's *Sync
+      now*: the line reads "… this list fills in when the sync finishes",
+      the button goes, and the titles fill in after the run ends.
 - [ ] **Change match races a sync.** Open *Change match* on a title; before
       pressing *Use this*, start a sync from the panel; then press *Use
       this*. Expect "A sync is already running", no pin written

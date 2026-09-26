@@ -22,6 +22,12 @@ project uses [semantic versioning](https://semver.org/).
 - The toggle at the top of the panel reads **Enable Sync** and has no
   description. The settings route still explains what off means while
   the plugin is off. *Sync now* has no description either.
+- The Titles page lists nothing for a host that has never been synced,
+  even when *Check* or adding the host cached its list: it says the host
+  was never synced and offers *Sync now* instead. The plugin now records
+  each host a sync has run for (`synced_hosts` in `pending.json`); on
+  upgrade the host of the last recorded sync counts as synced, and any
+  other host counts from its next sync.
 
 ## [0.10.0] - 2026-09-24
 
