@@ -268,6 +268,11 @@ and superseded by §8.*
       library page of an owned game the host publishes: expect a Stream
       row. Open a game the host does not publish (or one parked / matched
       to nothing): expect no Stream row.
+- [ ] **Focus order beside another plugin.** With ProtonDB Badges (or any
+      plugin that adds to the game page) installed, open such a page and
+      press up from *Play*: expect the Stream button first and the other
+      plugin's badge after it, as they are drawn, and the same order in
+      reverse going down.
 - [ ] ~~**First press copies a community layout.**~~ Superseded by §8
       (nothing copies from the real game any more). With **no default
       layout set**, press *Stream* on a game whose real entry has a

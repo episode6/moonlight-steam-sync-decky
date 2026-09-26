@@ -374,6 +374,17 @@ src/lib/                    pure modules (vitest)
                             footerOf(), syntheticCollection() (the Collection surface
                             over overviews: allApps / visibleApps / apps, read-only)
   tabs.test.ts              the walk, the template, the synthetic collection
+  appPage.ts                the owned game's page, pure: streamRowIndex() (where the
+                            Stream row goes in the page column's children: the index
+                            of the child with `appDetailsClasses.AppDetailsOverviewPanel`,
+                            else 1). The client's gamepad navigation sorts a column's
+                            children by document position (`compareDocumentPosition`,
+                            measured on a Deck 2026-09-26), and other plugins splice
+                            their own children in at index 1, some drawn over the
+                            header (ProtonDB Badges), so a row at a fixed index 1 was
+                            focused in the wrong order whenever it patched last
+  appPage.test.ts           the index with and without another plugin's child, before
+                            and after; the fallback
   join.ts                   the Titles page: list + status joined by name into rows
                             (badge, chips, match line, capsule), filters, Show parked,
                             pages of 50, applyPin; the Change match rows (candidateRows,
@@ -432,7 +443,8 @@ src/routes/libraryApp.tsx   the /library/app/:appid patch (routerHook.addPatch, 
                             app-details component -- the one with `overview` props -- whose
                             own output is the first tree that holds the InnerContainer;
                             renderFunc's output does not, found on device 2026-09-21),
-                            written fresh; injects StreamButton
+                            written fresh; injects StreamButton directly before the
+                            overview panel (`appPage.ts`'s `streamRowIndex`)
 src/routes/libraryContextMenu.tsx  the library gear menu patch (spec 3.16.5, Decision 56):
                             the menu class is reached through its wrapper component
                             (findModuleChild over `contextMenu.ts`'s `wrappersOf`,

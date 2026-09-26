@@ -13,7 +13,10 @@
  * then `renderChildrenFunc` when there is one, then the overview
  * component's type (`createReactTreePatcher`, which caches the patched type
  * so the page is not remounted on every render), and there the button row
- * is spliced in right after the header. A props object is only ever wrapped
+ * is spliced in between the header and the overview panel, directly before
+ * the panel (`streamRowIndex`), so that it follows whatever another plugin
+ * adds after the header: gamepad navigation goes by document order. A props
+ * object is only ever wrapped
  * once (`afterPatch` stacks, and the row's key would hide a stack), should
  * the client hand the same element back across renders. Unloading removes
  * the route patch only: the patched type lives on per-render elements, so
@@ -27,6 +30,7 @@ import { afterPatch, appDetailsClasses, createReactTreePatcher, findInReactTree 
 import type { ReactElement } from "react";
 
 import { StreamButton } from "../components/StreamButton";
+import { streamRowIndex } from "../lib/appPage";
 import { SHORTCUT_APPID_FLOOR } from "../lib/steam";
 import { ensureLibraryContextMenuPatched } from "./libraryContextMenu";
 import { isOverview, type Overview, type TreeNode } from "./tree";
@@ -64,7 +68,9 @@ export function injectStreamRow(rendered: unknown, overview: Overview | null): b
   if (!container) return false;
   const children = container.props.children;
   if (children.some((child) => (child as TreeNode | null)?.key === STREAM_ROW_KEY)) return true;
-  children.splice(1, 0, <StreamButton key={STREAM_ROW_KEY} appid={overview.appid} name={overview.display_name} />);
+  // Right before the client's own panel, not at a fixed index: see `streamRowIndex`.
+  const index = streamRowIndex(children, appDetailsClasses.AppDetailsOverviewPanel);
+  children.splice(index, 0, <StreamButton key={STREAM_ROW_KEY} appid={overview.appid} name={overview.display_name} />);
   return true;
 }
 
