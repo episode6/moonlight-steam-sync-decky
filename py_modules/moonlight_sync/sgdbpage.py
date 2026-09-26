@@ -40,11 +40,13 @@ so a SteamGridDB redesign is a one-file change. The rules, each a test:
   the same state (a redirect loop) fails with ``sgdb-page`` instead. The
   API page is reloaded at most once, and only after ``API_PAGE_GRACE_S``
   of showing no API page body.
-- **A page that is not the API page's is not judged.** At the API URL,
-  a complete document without the page's own ``div.profile`` body (a page
-  left in the tab by an earlier attempt, which the frontend's navigation
-  has not yet replaced; an interstitial; a render that never came) is
-  neither a missing key nor a missing *Generate* button: it is polled,
+- **A page that is not the API page's is not judged, and nothing on it
+  is clicked.** At the API URL, a complete document without the page's
+  own ``div.profile`` body (a page left in the tab by an earlier attempt,
+  which the frontend's navigation has not yet replaced; an interstitial;
+  a render that never came) is neither a missing key nor a missing
+  *Generate* button: ``JS_API_BODY`` is asked before ``JS_GENERATE``, so
+  no control on it is pressed, and it is polled,
   reloaded once, polled again, and only then a failure (Decision 69, from
   a device's 2026-09-25: every retry failed within milliseconds on the
   page the previous attempt had left, until Steam was restarted).
@@ -354,6 +356,9 @@ class _Fetch:
 
     def _on_sgdb(self, session: Any, href: str, complete: bool) -> str | None:
         self.set_state("reading")
+        if not is_api_page(href) or not complete:
+            # Decision 69's grace is per visit to a complete API page.
+            self.no_body_since = None
         if not is_api_page(href):
             if href in self.navigated_to_api or not complete:
                 return None
@@ -370,13 +375,15 @@ class _Fetch:
                 "sgdb-page", TEXT_PAGE_CHANGED, detail="the key snippet answered oddly"
             )
         if self.generate_clicked_at is None:
+            # The body first, so nothing is ever clicked on a page that is
+            # not the API page (Decision 63's spirit; PR 53's review).
+            if session.evaluate(JS_API_BODY) is not True:
+                return self._no_api_body(session)
             clicked = session.evaluate(JS_GENERATE)
             if clicked is True:
                 self.generate_clicked_at = self.clock()
                 return None
-            if session.evaluate(JS_API_BODY) is True:
-                raise FetchFailed("sgdb-page", TEXT_NO_KEY, detail="no key and no generate button")
-            return self._no_api_body(session)
+            raise FetchFailed("sgdb-page", TEXT_NO_KEY, detail="no key and no generate button")
         if self.clock() - self.generate_clicked_at >= GENERATE_WAIT_S:
             raise FetchFailed("sgdb-page", TEXT_NO_KEY, detail="no key after generating one")
         return None
@@ -385,7 +392,12 @@ class _Fetch:
         """A complete document at the API URL that is not the API page
         (Decision 69): wait ``API_PAGE_GRACE_S`` for one that is (the
         frontend's navigation landing, an interstitial passing), then
-        reload once and wait again, then fail."""
+        reload once and wait again, then fail. The grace counts one visit:
+        ``no_body_since`` is cleared whenever the fetch is off the API
+        page or the document is loading, so a tab that leaves (a session
+        bounce to ``/login``, the user tapping around) and comes back
+        gets the whole grace again; the 180 s timeout caps the total. The
+        reload is at most once per fetch, visits notwithstanding."""
         now = self.clock()
         if self.no_body_since is None:
             self.no_body_since = now
@@ -393,6 +405,9 @@ class _Fetch:
         if now - self.no_body_since < API_PAGE_GRACE_S:
             return None
         if not self.api_reloaded:
+            # Assigning the current URL navigates (Chromium loads it afresh),
+            # which is the reload meant; ``location.reload()`` would need a
+            # mirror of its own in the tests' fake DOM for no gain.
             session.evaluate(navigate_js(SGDB_API_PAGE))
             self.api_reloaded = True
             self.no_body_since = None

@@ -295,7 +295,8 @@ class FakeBrowser:
         self.signed_in = signed_in
         self.has_key = has_key
         self.steam_needs_password = steam_needs_password
-        self.api_fixture = api_fixture
+        # a list is consumed per load: copied, so a shared literal is not drained
+        self.api_fixture = list(api_fixture) if isinstance(api_fixture, list) else api_fixture
         self.loading_polls = loading_polls
         self.url: str | None = None
         self.document: fakedom.Document | None = None

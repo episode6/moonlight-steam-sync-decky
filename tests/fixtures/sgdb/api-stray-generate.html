@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<!-- A page at the API URL that is not the API page (no div.profile) but
+     carries a control reading "Generate": what a stray page might show.
+     JS_API_BODY is asked before JS_GENERATE, so it is never pressed
+     (Decision 69, PR 53's review). -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>SteamGridDB</title>
+</head>
+<body>
+  <div class="container">
+    <p>Something else entirely.</p>
+    <form action="/somewhere/generate" method="post">
+      <button class="button" type="submit">Generate</button>
+    </form>
+  </div>
+</body>
+</html>

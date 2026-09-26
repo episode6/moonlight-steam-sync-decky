@@ -171,9 +171,11 @@ py_modules/moonlight_sync/  the backend (imports nothing from decky)
                             JS_GENERATE once, Decision 61, and never while a code
                             element shows nor on a Regenerate / new key / Revoke
                             control, Decision 63; a complete document at the API
-                            URL without the page's body, JS_API_BODY, is not
-                            judged: polled API_PAGE_GRACE_S, reloaded once,
-                            polled again, then TEXT_API_NOT_LOADED, Decision 69
+                            URL without the page's body, JS_API_BODY, asked
+                            before JS_GENERATE so nothing on it is clicked, is
+                            not judged: polled API_PAGE_GRACE_S (per visit to a
+                            complete API page), reloaded once per fetch, polled
+                            again, then TEXT_API_NOT_LOADED, Decision 69
                             -- the page a failed attempt leaves in the tab, which
                             the frontend's open has not yet replaced when the
                             fetch first polls) -> done. A session per
@@ -902,9 +904,10 @@ There is no Steam Deck during development; everything else is tested.
   with the last standing). The pages are
   `tests/fixtures/sgdb/*.html` (`login`, `openid`, `api`, `api-no-key`,
   `api-revoke-only`, Decision 63's `api-hidden-key` / `api-regenerate`,
-  and Decision 69's `api-unrendered`, a complete document at the API URL
-  without the page's body, hand-written from spec 3.20.1 with the
-  placeholder key), parsed by `tests/fakedom.py`: a minimal DOM (`querySelector` /
+  and Decision 69's `api-unrendered` / `api-stray-generate`, complete
+  documents at the API URL without the page's body, the latter with a
+  *Generate* control that must never be pressed, hand-written from spec
+  3.20.1 with the placeholder key), parsed by `tests/fakedom.py`: a minimal DOM (`querySelector` /
   `querySelectorAll` over tag, class, id, `[attr=v]`, `[attr*=v]`,
   descendants and lists; `textContent`, `innerText`, `value`, `href`, a
   recording `click()`, `readyState`, `location.href`) and `evaluate(js,
