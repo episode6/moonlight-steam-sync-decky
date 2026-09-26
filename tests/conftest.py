@@ -264,6 +264,14 @@ class FakeSession:
         assert not self.closed, "evaluate after close"
         return self.browser.evaluate(js)
 
+    def navigate(self, url: str, *, timeout: float = 10.0) -> None:
+        """``Page.navigate``: recorded in ``commands``, then the browser moves
+        (a URL on neither host, ``about:blank`` included, shows a blank
+        page there)."""
+        assert not self.closed, "navigate after close"
+        self.browser.commands.append(("Page.navigate", self.ws_url, url))
+        self.browser.navigate(url)
+
     def close(self) -> None:
         self.closed = True
         self.browser.closed_sessions += 1
@@ -305,6 +313,8 @@ class FakeBrowser:
         self.connected: list[str] = []
         self.closed_sessions = 0
         self.evaluated: list[tuple[str, str]] = []
+        #: CDP commands other than evaluate: ``(method, session url, argument)``.
+        self.commands: list[tuple[str, str, str]] = []
         self.navigations: list[str] = []
         self.clicks: list[str] = []
         self.revoked = False

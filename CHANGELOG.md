@@ -22,6 +22,9 @@ project uses [semantic versioning](https://semver.org/).
   that has not rendered ten seconds, reloads it once, waits ten more, and
   only then reports "SteamGridDB's API page did not load; try again or
   enter the key by hand".
+- Before each **Get key from SteamGridDB…** the plugin also resets the
+  page Steam's browser kept from the last attempt (the browser keeps its
+  tab after you leave it), so the fetch only ever reads the page it opens.
 
 ### Removed
 

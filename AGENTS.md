@@ -150,7 +150,9 @@ py_modules/moonlight_sync/  the backend (imports nothing from decky)
                             Session (a stdlib websocket: handshake, masking, the
                             three length forms, fragments, ping, close; evaluate()
                             = Runtime.evaluate returnByValue + awaitPromise, an
-                            EvaluateError on a thrown exception), the CONNECT /
+                            EvaluateError on a thrown exception; navigate() =
+                            Page.navigate, the tab reset's, an errorText reply
+                            DebuggerUnavailable; both over one _call), the CONNECT /
                             TARGETS seams the tests replace, as wake.SOCKET is;
                             DebuggerUnavailable (a ConnectionError) for a refused
                             port, a timeout, a closed socket and a CDP-level error
@@ -181,7 +183,14 @@ py_modules/moonlight_sync/  the backend (imports nothing from decky)
                             fetch first polls) -> done. A session per
                             poll, closed after it; only a `page` target on one of
                             the two hosts is ever evaluated in; the stop event's
-                            wait() is the 500 ms poll, so a cancel lands within one
+                            wait() is the 500 ms poll, so a cancel lands within one.
+                            reset_tab(listed, targets, connect, sleep) (Decision
+                            70, run by start_sgdb_key_fetch after the port probe):
+                            the page target on either host, the tab a previous
+                            fetch left, gets a Page.navigate to RESET_URL
+                            (about:blank; no script evaluated), and the listing is
+                            re-read every RESET_POLL_S up to RESET_WAIT_S until
+                            it is off both hosts; answers the host it was on
 backend/entrypoint.sh       the one CLI build step (strict): scripts/build_cli.py into
                             backend/out/, then a --version smoke run; also the Decky
                             store hook (/plugin/cli/src inside its container)
@@ -732,7 +741,12 @@ not under the runs' busy guard (Decision 62: no `matches.json` involved, so
 a sync may run meanwhile and a fetch may start during a sync); it has its
 own, `busy` with kind `"key"`. `start_sgdb_key_fetch()` probes
 `cdp.TARGETS()` once (so `no-debugger` comes back here, before the
-frontend opens the browser), then runs `sgdbpage.fetch_key` in a worker
+frontend opens the browser), resets the tab a previous fetch left on
+SteamGridDB or Steam to `about:blank` (`sgdbpage.reset_tab` over the
+probe's listing, Decision 70: the Game Mode browser's one tab outlives
+`NavigateBack`, and without the reset the fetch's first polls read the
+page the last attempt left there; a reset the debugger refuses is logged
+and the fetch starts anyway), then runs `sgdbpage.fetch_key` in a worker
 thread (`asyncio.to_thread`, a `threading.Event` for cancellation) and
 answers `{ok, started}`; each state change is `sgdb_key_event {state}`
 (never page contents) and the end `sgdb_key_done {ok: true, source, hint}`
@@ -919,10 +933,14 @@ There is no Steam Deck during development; everything else is tested.
   per failure, the four rules, cancellation, the 180 s timeout) and the
   backend's thread with `POLL_INTERVAL_S` patched short (the events, the
   0600 key file, `busy`, cancel, `unload`, a refused key, the busy-guard
-  independence). `tests/test_cdp.py` runs the real websocket client
+  independence, the stale tab blanked before the fetch's first poll and a
+  refused reset that still starts the fetch); `reset_tab` itself over the
+  fake (a tab on either host blanked with one `Page.navigate` and no
+  evaluate, no tab or another host untouched, the listing's wait). `tests/test_cdp.py` runs the real websocket client
   against a loopback fake debugger in a thread (handshake, masking, the
   126- and 127-length forms, a fragmented reply, a ping, close, a
-  protocol error, a timeout) and `targets()` over a stubbed `urlopen`.
+  protocol error, a timeout, `navigate()`'s `Page.navigate` with its
+  `errorText` and error replies) and `targets()` over a stubbed `urlopen`.
 - `tests/test_entrypoint.py` runs `backend/entrypoint.sh` from a sandbox
   copy of `backend/`, `scripts/build_cli.py`, `cli/src` and a
   `package.json` (the zipapp's entries, mode and `--version`; a version
