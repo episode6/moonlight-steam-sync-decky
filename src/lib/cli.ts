@@ -251,7 +251,7 @@ export type ErrorCode =
   | "owned-apps-empty"
   | "bad-request"
   | "io"
-  /** `wake_host`: neither the Host page nor Moonlight's own list has a MAC for the host (spec 3.18). */
+  /** `wake_host`: Moonlight's own host list has no MAC for the host (spec 3.18). */
   | "no-mac"
   /** The key fetch (spec 3.20.3): Steam's debugger port is not reachable. */
   | "no-debugger"

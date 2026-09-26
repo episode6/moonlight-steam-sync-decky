@@ -310,10 +310,11 @@ count and when it was last seen, the active one marked:
   tiles stay until you remove everything.
 - **Wake-on-LAN**: the panel's **Wake** button sends its magic packet to
   the MAC address in Moonlight's own host list (the Flatpak's
-  `Moonlight.conf`, read, never written), which the client learned while
-  pairing. There is nothing to enter here: a host Moonlight has no MAC for
-  (a Sunshine host that reports none) has no Wake button; pair it again
-  once the host reports one. Moonlight itself has *Wake PC* in a host's
+  `Moonlight.conf`, read, never written), which the client reads from the
+  host each time it sees it online. There is nothing to enter here: a host
+  Moonlight has no MAC for (a Sunshine host that reports none) has no Wake
+  button; once the host reports one, open Moonlight with the PC on and the
+  client picks it up. Moonlight itself has *Wake PC* in a host's
   menu but no command-line action for it, so the plugin sends the packet
   itself: to the broadcast address and to every address Moonlight knows
   for the host, on the usual Wake-on-LAN ports and the GameStream ones.
