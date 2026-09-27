@@ -1078,6 +1078,12 @@ the CLI itself, so "same CLI pin" stops applying here: the CLI takes the
 plugin's number, `0.10.0`, and the minimum stays `0.4.0`) and for Decision
 66, no Moonlight command unasked (the host row's *Check* button). Its
 bump went through a PR, since `main` only accepts changes that way.
+Plugin `v0.11.0` (the user asked for it on 2026-09-27) is a minor release
+for the tidier Quick Access panel (Decision 67's icon launch row and one
+Moonlight layout row, the shorter host row hidden with a single host), the
+Titles page's never-synced state, the Host page's MAC field removed, and
+fixes to the Stream button's focus order and to the key fetch's stale tab;
+the CLI takes `0.11.0`, the minimum stays `0.4.0`.
 
 Once everything intended for the release has merged to `main`
 (substitute the version being cut for `X.Y.Z`):
