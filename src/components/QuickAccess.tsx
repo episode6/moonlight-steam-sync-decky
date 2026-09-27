@@ -241,6 +241,7 @@ function HostRow({ state }: { state: AppState }) {
             }
             childrenContainerWidth="max"
             bottomSeparator={view.error ? "none" : "standard"}
+            disabled={busy}
           >
             <Dropdown
               menuLabel="Host"

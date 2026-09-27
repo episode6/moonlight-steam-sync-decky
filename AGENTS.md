@@ -236,7 +236,9 @@ src/lib/                    pure modules (vitest)
                             `tone` ok / bad / unknown for the circle, `text` the
                             count -- the listing's, else the cached one, else
                             "never synced", "Checking…" during the first check --
-                            and `error`, the status text with *last seen*, only
+                            and `error`, the status text with *last seen* (for a
+                            host never listed "never synced", and that only
+                            without the row, whose `text` says it already), only
                             when the host answered with one; nothing about what
                             other hosts have parked),
                             hostSynced() (`pending.synced_hosts` names the host, any
@@ -515,7 +517,9 @@ src/components/             adoptDefault (inspectLayout -> refusal toasts -> Con
                             hosts a `Field` with `childrenContainerWidth="max"`
                             around a `Dropdown` (a Field's control column stops at
                             half the row otherwise, and DropdownItem has no such
-                            prop), the circle and the count as its description;
+                            prop), the circle and the count as its description,
+                            `disabled` on the Field as on the Dropdown so the
+                            whole row dims while busy, as the DropdownItem did;
                             with one host no row at all; an error's text in a row
                             of its own under the switcher, which draws the divider
                             the Field then leaves out; then *Check* + *Wake*

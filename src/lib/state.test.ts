@@ -399,12 +399,17 @@ describe("the panel's host row (the user's decision of 2026-09-27)", () => {
   it("falls back to the host cache, then to never synced", () => {
     const never = { ...unreachable, last_seen: null, cached_count: null };
     expect(hostRowView({ hosts: two, reach: never, reachLoading: false }, now)?.text).toBe("274 apps");
+    // Never listed: the row says so once, beside the circle ...
     expect(
       hostRowView({ hosts: { ...two, cached_hosts: [] }, reach: never, reachLoading: false }, now),
     ).toMatchObject({
       text: "never synced",
-      error: "list: moonlight: host MY-GAMING-PC unreachable · last seen never synced",
+      error: "list: moonlight: host MY-GAMING-PC unreachable",
     });
+    // ... and with one host, where there is no row, the status text does.
+    expect(
+      hostRowView({ hosts: { ...one, cached_hosts: [] }, reach: never, reachLoading: false }, now)?.error,
+    ).toBe("list: moonlight: host MY-GAMING-PC unreachable · never synced");
   });
 });
 

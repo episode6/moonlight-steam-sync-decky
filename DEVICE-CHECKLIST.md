@@ -158,12 +158,21 @@ to `~/homebrew/logs/steam-input-probe/steam-input-probe.log` (the loader's
 - [ ] **Check asks once.** With several hosts, press Check: "Checking…",
       then a green circle and "N apps"; the log shows one live `--json
       list --host`. A second press within 10 s is answered from the memo
-      (no new spawn).
+      (no new spawn). While a sync runs elsewhere (or the library is
+      still loading) the whole Host row is dimmed, label and count
+      included, and the dropdown does not open.
+- [ ] **Check with one host.** With a single host, press Check: expect
+      no "Checking…" text anywhere (there is no row to put it in), the
+      Check button unavailable meanwhile, then **Check** / **Wake** gone
+      when the host answered, or the red error line alone above them
+      when it did not; one live `--json list --host` in the log.
 - [ ] **Unreachable host row.** With several hosts and the active one
       unreachable, press Check: expect a red circle and the cached "N
-      apps" ("never synced" when there is no cache) in the Host row, and
-      under the dropdown, above the divider, the CLI's error message and
-      "last seen <relative time>" in red. A *Sync now* that fails with
+      apps" in the Host row, and under the dropdown, above the divider,
+      the CLI's error message and "last seen <relative time>" in red.
+      For a host never listed the row says "never synced" and the error
+      line is the message alone; with one host the line ends "· never
+      synced" instead. A *Sync now* that fails with
       exit 3 paints the row the same way, and one that lists paints it
       green and takes the error line away, with no `check_host` spawned
       for either.

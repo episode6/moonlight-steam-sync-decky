@@ -252,6 +252,8 @@ export interface HostRowView {
   /**
    * The status text for the row under the switcher, only when the host
    * answered with an error; `null` otherwise, and the row is not drawn.
+   * The error with "last seen <when>"; for a host never listed, "never
+   * synced" instead, and only when `text` is not there to say it.
    */
   error: string | null;
 }
@@ -284,12 +286,18 @@ export function hostRowView(
   }
   if (reach.reachable) return { switcher, tone: "ok", text: appsText(reach.count), error: null };
   const count = reach.cached_count ?? cached?.count ?? null;
-  const seen = reach.last_seen ? relativeTime(reach.last_seen, now) : "never synced";
+  // Never listed: the Host row says so beside its circle, so the status
+  // text only repeats it when there is no such row to say it.
+  const seen = reach.last_seen
+    ? ` · last seen ${relativeTime(reach.last_seen, now)}`
+    : switcher
+      ? ""
+      : " · never synced";
   return {
     switcher,
     tone: "bad",
     text: count === null ? "never synced" : appsText(count),
-    error: `${reach.message} · last seen ${seen}`,
+    error: `${reach.message}${seen}`,
   };
 }
 
