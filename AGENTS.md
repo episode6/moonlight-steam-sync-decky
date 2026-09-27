@@ -227,8 +227,20 @@ src/lib/                    pure modules (vitest)
                             state texts),
                             wakeInfoOf() (a host's `wake` entry, any case),
                             cachedHostOf() (its `cached_hosts` entry, any case: the
-                            host row's line until something asked, a sync's exit-3
+                            host row's count until something asked, a sync's exit-3
                             *last seen*, the Titles page's stamp),
+                            hostOptions() (the switcher's hosts: `known`, the active
+                            one in front when it is not among them) and
+                            hostRowView() (the panel's host, the user's decision of
+                            2026-09-27: `switcher` only with more than one host,
+                            `tone` ok / bad / unknown for the circle, `text` the
+                            count -- the listing's, else the cached one, else
+                            "never synced", "Checking…" during the first check --
+                            and `error`, the status text with *last seen* (for a
+                            host never listed "never synced", and that only
+                            without the row, whose `text` says it already), only
+                            when the host answered with one; nothing about what
+                            other hosts have parked),
                             hostSynced() (`pending.synced_hosts` names the host, any
                             case; an unread `pending` counts as synced),
                             HOST_APPS / hostAppsFromStatus() (the panel's Desktop and
@@ -501,10 +513,18 @@ src/components/             adoptDefault (inspectLayout -> refusal toasts -> Con
                             when the client has no configurator) and *Make default*
                             (adoptAsDefault on the client, hidden under `picker`),
                             with clientLayoutCaption under it; *Sync now* has no
-                            description; the host row: the cached "N apps · listed
-                            <when>" until a check, then *Check* + *Wake* whenever the
-                            host is not known reachable, the latter only when
-                            `wakeInfoOf` finds a MAC), SyncProgress,
+                            description; HostRow over `hostRowView`: with several
+                            hosts a `Field` with `childrenContainerWidth="max"`
+                            around a `Dropdown` (a Field's control column stops at
+                            half the row otherwise, and DropdownItem has no such
+                            prop), the circle and the count as its description,
+                            `disabled` on the Field as on the Dropdown so the
+                            whole row dims while busy, as the DropdownItem did;
+                            with one host no row at all; an error's text in a row
+                            of its own under the switcher, which draws the divider
+                            the Field then leaves out; then *Check* + *Wake*
+                            whenever the host is not known reachable, the latter
+                            only when `wakeInfoOf` finds a MAC), SyncProgress,
                             RestartModal, SettingsPage, HostPage (no MAC field since
                             2026-09-26: Moonlight's list is the one Wake source),
                             TitlesPage (layout text; the *Layout* menu:

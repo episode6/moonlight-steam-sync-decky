@@ -48,6 +48,14 @@ project uses [semantic versioning](https://semver.org/).
   no longer have their own layout buttons on the panel: set theirs from
   the Titles page (**Layout** → *Choose layout…*), and they still take
   the default.
+- **A shorter Host row on the panel.** With one host there is nothing to
+  switch to, so the *Host* row and its dropdown are gone. With several
+  hosts the row shows a circle (green, red, or grey while nothing has
+  asked the PC) and the number of apps, and the dropdown takes the rest
+  of the line, so a host's name fits. An error's text ("… unreachable ·
+  last seen <when>") has a row of its own under the dropdown, shown only
+  when there is an error. The line about what the other hosts have
+  parked is gone, and so is "listed <when>" beside the cached count.
 - The toggle at the top of the panel reads **Enable Sync** and has no
   description. The settings route still explains what off means while
   the plugin is off. *Sync now* has no description either.

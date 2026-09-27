@@ -31,6 +31,7 @@ import type {
   TitleEvent,
   WakeInfo,
 } from "./cli";
+import { relativeTime } from "./format";
 import { defaultLayoutOf, layoutStrategy } from "./layouts";
 import { cliStatus, type CliStatus } from "./version";
 
@@ -188,8 +189,8 @@ export function hostAppsFromStatus(entries: readonly EntryEvent[]): Record<HostA
 
 /**
  * A host's entry in `hosts().cached_hosts` (the last listing's count and
- * time), by name in any case: the host row's line until something has asked
- * the host (Decision 66), and a sync's *last seen* on exit 3.
+ * time), by name in any case: the host row's count until something has
+ * asked the host (Decision 66), and a sync's *last seen* on exit 3.
  */
 export function cachedHostOf(hosts: HostsInfo | null, name: string | null): CachedHost | null {
   if (!hosts || !name) return null;
@@ -223,30 +224,81 @@ export function wakeInfoOf(hosts: HostsInfo | null, name: string | null): WakeIn
 }
 
 /**
- * The host row's subtitle (spec 3.8): the other known hosts and how many
- * titles each has parked.
- *
- * `status` carries one parked total, which can only be attributed to a single
- * other host ("active host · OFFICE-PC parked (198 titles kept)"). With two or
- * more the total says nothing about any one of them, so the line names each
- * host with the size of its last listing instead ("active host · parked from
- * OFFICE-PC (312 titles), LIVING-ROOM-PC (40 titles)") and drops the count for
- * a host that has never been listed.
+ * The hosts the panel's switcher offers: the known ones, with the active
+ * host in front when it is not among them (its name comes from the CLI's
+ * state file, not from the plugin's list).
  */
-export function otherHostsLine(hosts: HostsInfo | null, parked: number): string {
-  if (!hosts?.active) return "";
-  const others = hosts.known.filter((name) => name.toLowerCase() !== hosts.active!.toLowerCase());
-  if (!others.length) return "active host";
-  if (others.length === 1) {
-    const titles = `${parked} ${parked === 1 ? "title" : "titles"} kept`;
-    return `active host · ${others[0]} parked (${titles})`;
+export function hostOptions(hosts: HostsInfo | null): string[] {
+  if (!hosts) return [];
+  const names = [...hosts.known];
+  const active = hosts.active;
+  if (active && !names.some((name) => name.toLowerCase() === active.toLowerCase())) names.unshift(active);
+  return names;
+}
+
+/** The host row's circle: green, red, or grey while nothing has asked the host. */
+export type HostTone = "ok" | "bad" | "unknown";
+
+export interface HostRowView {
+  /**
+   * Whether the *Host* row and its switcher are there at all: only with
+   * more than one host to switch between (the user's decision of
+   * 2026-09-27). With one host the panel shows `error` alone.
+   */
+  switcher: boolean;
+  tone: HostTone;
+  /** Beside the circle: "274 apps", "never synced", "Checking…". */
+  text: string;
+  /**
+   * The status text for the row under the switcher, only when the host
+   * answered with an error; `null` otherwise, and the row is not drawn.
+   * The error with "last seen <when>"; for a host never listed, "never
+   * synced" instead, and only when `text` is not there to say it.
+   */
+  error: string | null;
+}
+
+function appsText(count: number): string {
+  return `${count} ${count === 1 ? "app" : "apps"}`;
+}
+
+/**
+ * What the panel says about the active host (the user's decision of
+ * 2026-09-27): a circle and the number of apps in the *Host* row, the
+ * status text in a row of its own under the switcher when there is an
+ * error, and nothing about what the other hosts have parked. The host is
+ * never asked on its own (Decision 66), so until *Check*, an add or a sync
+ * says otherwise the circle is grey and the count is the last listing's.
+ * `null` without an active host.
+ */
+export function hostRowView(
+  state: Pick<AppState, "hosts" | "reach" | "reachLoading">,
+  now: Date = new Date(),
+): HostRowView | null {
+  const hosts = state.hosts;
+  if (!hosts?.active) return null;
+  const switcher = hostOptions(hosts).length > 1;
+  const reach = state.reach;
+  const cached = cachedHostOf(hosts, hosts.active);
+  if (!reach) {
+    const text = state.reachLoading ? "Checking…" : cached ? appsText(cached.count) : "never synced";
+    return { switcher, tone: "unknown", text, error: null };
   }
-  const cached = new Map(hosts.cached_hosts.map((host) => [host.name.toLowerCase(), host.count]));
-  const parts = others.map((name) => {
-    const count = cached.get(name.toLowerCase());
-    return count === undefined ? name : `${name} (${count} ${count === 1 ? "title" : "titles"})`;
-  });
-  return `active host · parked from ${parts.join(", ")}`;
+  if (reach.reachable) return { switcher, tone: "ok", text: appsText(reach.count), error: null };
+  const count = reach.cached_count ?? cached?.count ?? null;
+  // Never listed: the Host row says so beside its circle, so the status
+  // text only repeats it when there is no such row to say it.
+  const seen = reach.last_seen
+    ? ` · last seen ${relativeTime(reach.last_seen, now)}`
+    : switcher
+      ? ""
+      : " · never synced";
+  return {
+    switcher,
+    tone: "bad",
+    text: count === null ? "never synced" : appsText(count),
+    error: `${reach.message}${seen}`,
+  };
 }
 
 // ---------------------------------------------------------------------------

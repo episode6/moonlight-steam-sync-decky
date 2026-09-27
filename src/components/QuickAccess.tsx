@@ -1,7 +1,7 @@
 import {
   ButtonItem,
   DialogButton,
-  DropdownItem,
+  Dropdown,
   Field,
   Focusable,
   Navigation,
@@ -13,19 +13,20 @@ import { useEffect, useState, type ReactNode } from "react";
 import { FaDesktop, FaGamepad, FaMoon, FaStar, FaSteam } from "react-icons/fa";
 
 import { SETTINGS_ROUTE, controller } from "../instance";
-import { lastSyncLine, relativeTime } from "../lib/format";
+import { lastSyncLine } from "../lib/format";
 import { layoutStrategy } from "../lib/layouts";
 import {
   actionsReady,
-  cachedHostOf,
   clientLayoutCaption,
+  hostOptions,
+  hostRowView,
   ignoredCounter,
   launchButtons,
   launchCaption,
-  otherHostsLine,
   restartRowView,
   wakeInfoOf,
   type AppState,
+  type HostTone,
   type LaunchKey,
 } from "../lib/state";
 import { pluginEnabled } from "../lib/library";
@@ -184,9 +185,29 @@ function Counter({ value, label }: { value: number | null | undefined; label: st
   );
 }
 
+const TONE_COLORS: Record<HostTone, string> = {
+  ok: "#5ba32b",
+  bad: "#d94b4b",
+  unknown: "#8b98a8",
+};
+
+/** The status row's text colour: Pill's `bad` tone. */
+const ERROR_TEXT = "#ff9a9a";
+/** The client's own `Field` separator, for a row that is not a Field. */
+const SEPARATOR = "1px solid rgba(255,255,255,0.1)";
+
+/**
+ * The host (the user's decision of 2026-09-27). With more than one host:
+ * the *Host* row, a circle and the number of apps under its label and the
+ * switcher taking the rest of the line. With one host there is nothing to
+ * switch to and the row is not drawn. Either way an error's status text
+ * gets a row of its own, under the switcher and above the divider, and
+ * *Check* / *Wake* follow while the host is not known reachable.
+ */
 function HostRow({ state }: { state: AppState }) {
   const hosts = state.hosts;
-  if (!hosts?.active) {
+  const view = hostRowView(state);
+  if (!hosts?.active || !view) {
     return (
       <PanelSectionRow>
         <ButtonItem
@@ -200,63 +221,57 @@ function HostRow({ state }: { state: AppState }) {
       </PanelSectionRow>
     );
   }
-  const reach = state.reach;
-  // The host is never asked on its own (every `moonlight list` wakes the
-  // PC, Decision 66): until *Check*, an add or a sync says otherwise the
-  // row shows what the last listing cached.
-  const cached = cachedHostOf(hosts, hosts.active);
-  let reachLine: ReactNode;
-  if (state.reachLoading && !reach) {
-    reachLine = <span>Checking {hosts.active}…</span>;
-  } else if (!reach) {
-    reachLine = cached ? (
-      <span>
-        {cached.count} apps · listed {relativeTime(cached.when)}
-      </span>
-    ) : (
-      <span>{hosts.active} · never synced</span>
-    );
-  } else if (reach.reachable) {
-    reachLine = (
-      <span>
-        {dot("#5ba32b")}
-        {reach.count} apps
-      </span>
-    );
-  } else {
-    reachLine = (
-      <span>
-        {dot("#d94b4b")}
-        {reach.message} · last seen{" "}
-        {reach.last_seen ? relativeTime(reach.last_seen) : "never synced"}
-      </span>
-    );
-  }
-  const options = hosts.known.map((name) => ({ data: name, label: name }));
-  if (!hosts.known.some((name) => name.toLowerCase() === hosts.active!.toLowerCase())) {
-    options.unshift({ data: hosts.active, label: hosts.active });
-  }
+  const active = hosts.active;
+  const busy = !actionsReady(state) || !!state.run?.running;
   return (
     <>
-      <PanelSectionRow>
-        <DropdownItem
-          label="Host"
-          description={
-            <div>
-              <div>{reachLine}</div>
-              <div style={{ opacity: 0.7 }}>{otherHostsLine(hosts, state.counters?.parked ?? 0)}</div>
-            </div>
-          }
-          rgOptions={options}
-          selectedOption={hosts.active}
-          disabled={!actionsReady(state) || !!state.run?.running}
-          onChange={(option) => {
-            const name = option.data as string;
-            if (name !== hosts.active) confirmSwitch(controller, name);
-          }}
-        />
-      </PanelSectionRow>
-      {!reach?.reachable ? (
+      {view.switcher ? (
+        <PanelSectionRow>
+          {/* A Field's control column stops at half the row unless the
+              Field lets it grow: "max" leaves the label column as wide as
+              its text and gives the switcher the rest, so a host's name
+              fits. DropdownItem has no such prop, hence Field + Dropdown. */}
+          <Field
+            label="Host"
+            description={
+              <span style={{ whiteSpace: "nowrap" }}>
+                {dot(TONE_COLORS[view.tone])}
+                {view.text}
+              </span>
+            }
+            childrenContainerWidth="max"
+            bottomSeparator={view.error ? "none" : "standard"}
+            disabled={busy}
+          >
+            <Dropdown
+              menuLabel="Host"
+              rgOptions={hostOptions(hosts).map((name) => ({ data: name, label: name }))}
+              selectedOption={active}
+              disabled={busy}
+              onChange={(option) => {
+                const name = option.data as string;
+                if (name !== active) confirmSwitch(controller, name);
+              }}
+            />
+          </Field>
+        </PanelSectionRow>
+      ) : null}
+      {view.error ? (
+        <PanelSectionRow>
+          <div
+            style={{
+              padding: view.switcher ? "0 0 10px" : "10px 0",
+              fontSize: 12,
+              lineHeight: "16px",
+              color: ERROR_TEXT,
+              borderBottom: SEPARATOR,
+            }}
+          >
+            {view.error}
+          </div>
+        </PanelSectionRow>
+      ) : null}
+      {!state.reach?.reachable ? (
         <PanelSectionRow>
           <Focusable style={{ display: "flex", gap: 8 }}>
             {/* *Check* is the one way the panel asks the host (Decision 66);
@@ -264,14 +279,14 @@ function HostRow({ state }: { state: AppState }) {
                 is why it is never pressed for the user. */}
             <DialogButton
               style={{ minWidth: 0, flex: 1 }}
-              disabled={state.reachLoading || !actionsReady(state) || !!state.run?.running}
+              disabled={state.reachLoading || busy}
               onClick={() => void controller.checkHost(true)}
             >
               Check
             </DialogButton>
             {/* Wake-on-LAN (spec 3.18): only when Moonlight's own host list
                 knows the host's MAC; a dead button would not say why. */}
-            {wakeInfoOf(hosts, hosts.active) ? (
+            {wakeInfoOf(hosts, active) ? (
               <DialogButton style={{ minWidth: 0, flex: 1 }} onClick={() => void controller.wakeHost()}>
                 Wake
               </DialogButton>
