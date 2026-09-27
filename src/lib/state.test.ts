@@ -11,6 +11,8 @@ import {
   clientLayoutCaption,
   countersFromStatus,
   hostAppsFromStatus,
+  hostOptions,
+  hostRowView,
   hostSynced,
   ignoredCounter,
   initialState,
@@ -19,7 +21,6 @@ import {
   launchButtons,
   launchCaption,
   newRun,
-  otherHostsLine,
   progressFraction,
   RECENT_TITLES,
   runFromSyncState,
@@ -314,27 +315,96 @@ describe("the store and derived flags", () => {
     ).toBe(1);
   });
 
-  it("names the other hosts and their parked titles", () => {
-    const hosts = { active: "MY-GAMING-PC", source: "state" as const, cached_hosts: [], known: ["MY-GAMING-PC", "OFFICE-PC"] };
-    expect(otherHostsLine(hosts, 198)).toBe("active host · OFFICE-PC parked (198 titles kept)");
-    expect(otherHostsLine({ ...hosts, known: ["MY-GAMING-PC"] }, 0)).toBe("active host");
-    expect(otherHostsLine({ ...hosts, active: null }, 0)).toBe("");
+});
+
+describe("the panel's host row (the user's decision of 2026-09-27)", () => {
+  const now = new Date(2026, 8, 18, 15, 30);
+  const listed = new Date(2026, 8, 15, 9, 5).toISOString();
+  const one = {
+    active: "MY-GAMING-PC",
+    source: "state" as const,
+    cached_hosts: [{ name: "my-gaming-pc", when: listed, count: 274 }],
+    known: ["MY-GAMING-PC"],
+  };
+  const two = { ...one, known: ["MY-GAMING-PC", "OFFICE-PC"] };
+  const base = { reach: null, reachLoading: false };
+  const unreachable = {
+    host: "MY-GAMING-PC",
+    reachable: false as const,
+    message: "list: moonlight: host MY-GAMING-PC unreachable",
+    exit: 3,
+    last_seen: listed,
+    cached_count: 274,
+    checked_at: "",
+  };
+
+  it("offers the switcher only with more than one host", () => {
+    expect(hostRowView({ ...base, hosts: one }, now)?.switcher).toBe(false);
+    expect(hostRowView({ ...base, hosts: two }, now)?.switcher).toBe(true);
+    // The active host counts when the plugin's list does not have it.
+    expect(hostOptions({ ...one, known: ["OFFICE-PC"] })).toEqual(["MY-GAMING-PC", "OFFICE-PC"]);
+    expect(hostRowView({ ...base, hosts: { ...one, known: ["OFFICE-PC"] } }, now)?.switcher).toBe(true);
+    expect(hostRowView({ ...base, hosts: { ...one, known: ["my-gaming-pc"] } }, now)?.switcher).toBe(false);
+    expect(hostRowView({ ...base, hosts: { ...one, known: [] } }, now)?.switcher).toBe(false);
+    expect(hostOptions(null)).toEqual([]);
   });
 
-  it("never blames one parked total on several hosts", () => {
-    // The total says nothing per host, so each host's last listing is shown.
-    const hosts = {
-      active: "MY-GAMING-PC",
-      source: "state" as const,
-      cached_hosts: [
-        { name: "OFFICE-PC", when: "2026-09-19T10:00:00Z", count: 312 },
-        { name: "MY-GAMING-PC", when: "2026-09-20T10:00:00Z", count: 40 },
-      ],
-      known: ["MY-GAMING-PC", "OFFICE-PC", "LIVING-ROOM-PC"],
-    };
-    expect(otherHostsLine(hosts, 198)).toBe(
-      "active host · parked from OFFICE-PC (312 titles), LIVING-ROOM-PC",
-    );
+  it("is nothing without an active host", () => {
+    expect(hostRowView({ ...base, hosts: null }, now)).toBeNull();
+    expect(hostRowView({ ...base, hosts: { ...two, active: null } }, now)).toBeNull();
+  });
+
+  it("is grey with the cached count until something asked the host", () => {
+    expect(hostRowView({ ...base, hosts: two }, now)).toEqual({
+      switcher: true,
+      tone: "unknown",
+      text: "274 apps",
+      error: null,
+    });
+    expect(hostRowView({ ...base, hosts: { ...two, cached_hosts: [] } }, now)?.text).toBe("never synced");
+    expect(hostRowView({ reach: null, reachLoading: true, hosts: two }, now)).toEqual({
+      switcher: true,
+      tone: "unknown",
+      text: "Checking…",
+      error: null,
+    });
+  });
+
+  it("is green with the listing's count, and says nothing of the other hosts", () => {
+    const reach = { host: "MY-GAMING-PC", reachable: true as const, count: 1, checked_at: "" };
+    expect(hostRowView({ hosts: two, reach, reachLoading: false }, now)).toEqual({
+      switcher: true,
+      tone: "ok",
+      text: "1 app",
+      error: null,
+    });
+  });
+
+  it("is red with the cached count, the status text in a row of its own", () => {
+    expect(hostRowView({ hosts: two, reach: unreachable, reachLoading: false }, now)).toEqual({
+      switcher: true,
+      tone: "bad",
+      text: "274 apps",
+      error: "list: moonlight: host MY-GAMING-PC unreachable · last seen 3 days ago",
+    });
+    // One host: no row to put the circle in, the status text still shows.
+    expect(hostRowView({ hosts: one, reach: unreachable, reachLoading: false }, now)).toMatchObject({
+      switcher: false,
+      error: "list: moonlight: host MY-GAMING-PC unreachable · last seen 3 days ago",
+    });
+    // A re-check in flight keeps the last answer.
+    expect(hostRowView({ hosts: two, reach: unreachable, reachLoading: true }, now)?.tone).toBe("bad");
+  });
+
+  it("falls back to the host cache, then to never synced", () => {
+    const never = { ...unreachable, last_seen: null, cached_count: null };
+    expect(hostRowView({ hosts: two, reach: never, reachLoading: false }, now)?.text).toBe("274 apps");
+    expect(
+      hostRowView({ hosts: { ...two, cached_hosts: [] }, reach: never, reachLoading: false }, now),
+    ).toMatchObject({
+      text: "never synced",
+      error: "list: moonlight: host MY-GAMING-PC unreachable · last seen never synced",
+    });
   });
 });
 

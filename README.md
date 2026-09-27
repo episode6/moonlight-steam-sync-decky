@@ -122,19 +122,24 @@ was packaged without the CLI)" and you can install the CLI on its own (see
   as the last status and your settings say, and runs a controller-layout
   walk that fell due meanwhile. The toggle is unavailable while a sync
   runs; the run finishes on its own.
-- **Host**: a dropdown of your known hosts with the active one selected.
-  The plugin never asks the PC anything on its own: every `moonlight list`
-  wakes it (Moonlight's client sends a Wake-on-LAN packet before it even
-  looks, see "Hosts" below), so the row shows what the last listing cached
-  ("N apps · listed <when>") until you press **Check**, add a host or sync.
-  After a check, a green dot and "N apps" when `moonlight list` answered; a
-  red dot, the error, and "last seen <when>" from the last successful
-  listing when it did not. A sync counts as a check too. Next to Check,
-  **Wake** sends the PC a Wake-on-LAN magic packet when its MAC address is
-  known; it toasts "Give it a minute, then Check", since sending proves
-  nothing about the PC. Choosing another host asks first ("Switch to
-  OFFICE-PC? MY-GAMING-PC's tiles are parked, not removed"), then switches
-  and syncs.
+- **Host**: a dropdown of your known hosts with the active one selected,
+  shown only when you have more than one host. Under the label, a circle
+  and the number of apps. The plugin never asks the PC anything on its
+  own: every `moonlight list` wakes it (Moonlight's client sends a
+  Wake-on-LAN packet before it even looks, see "Hosts" below), so the
+  circle is grey and the count is the last listing's until you press
+  **Check**, add a host or sync. After a check, a green circle and the
+  count when `moonlight list` answered; a red circle when it did not,
+  with the error and "last seen <when>" (the last successful listing) on
+  a line of its own under the dropdown. That line is there only while
+  there is an error, and with a single host it is all the panel says
+  about the host. A sync counts as a check too. **Check** and **Wake**
+  show while the host is not known to be reachable, with one host or
+  several; **Wake** sends the PC a Wake-on-LAN magic packet when its MAC
+  address is known, and toasts "Give it a minute, then Check", since
+  sending proves nothing about the PC. Choosing another host asks first
+  ("Switch to OFFICE-PC? MY-GAMING-PC's tiles are parked, not removed"),
+  then switches and syncs.
 - **Sync now**: the full sync. While it runs the panel shows a progress bar
   over the titles, the last five titles and where their images came from,
   the plan, and **Stop** (everything done so far is kept; sync again to

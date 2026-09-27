@@ -151,17 +151,34 @@ to `~/homebrew/logs/steam-input-probe/steam-input-probe.log` (the loader's
 - [ ] **The host is never asked on its own** (Decision 66). Open the panel,
       close it, reopen it, toggle the plugin off and on, open Settings →
       Titles: `moonlight-sync.log` shows no `--json list --host` without
-      `--cached` for any of it, and the host row reads "N apps · listed
-      <relative time>" with **Check** and (when a MAC is known) **Wake**
-      under it. A shut-down PC stays down through all of it.
-- [ ] **Check asks once.** Press Check: "Checking <host>…", then a green
-      dot and "N apps"; the log shows one live `--json list --host`. A
-      second press within 10 s is answered from the memo (no new spawn).
-- [ ] **Unreachable host row.** With the active host unreachable, press
-      Check: expect a red dot, the CLI's error message, and "last seen
-      <relative time>" ("never synced" when there is no cache). A *Sync
-      now* that fails with exit 3 paints the row the same way, and one
-      that lists paints it green, with no `check_host` spawned for either.
+      `--cached` for any of it, and (with several hosts) the host row
+      reads a grey circle and "N apps" with **Check** and (when a MAC is
+      known) **Wake** under it. A shut-down PC stays down through all of
+      it.
+- [ ] **Check asks once.** With several hosts, press Check: "Checking…",
+      then a green circle and "N apps"; the log shows one live `--json
+      list --host`. A second press within 10 s is answered from the memo
+      (no new spawn).
+- [ ] **Unreachable host row.** With several hosts and the active one
+      unreachable, press Check: expect a red circle and the cached "N
+      apps" ("never synced" when there is no cache) in the Host row, and
+      under the dropdown, above the divider, the CLI's error message and
+      "last seen <relative time>" in red. A *Sync now* that fails with
+      exit 3 paints the row the same way, and one that lists paints it
+      green and takes the error line away, with no `check_host` spawned
+      for either.
+- [ ] **One host: no Host row.** With a single host, expect no *Host*
+      row and no dropdown: **Check** / **Wake** directly under *Enable
+      Sync* until the host is known reachable, then *Sync now* first. An
+      unreachable host shows the error line alone above Check / Wake.
+      Add a second host on Settings → Host: the row and its dropdown
+      appear; Forget it: they go again.
+- [ ] **The switcher takes the row's spare width.** With several hosts,
+      expect the dropdown to start right of "N apps" and show a host
+      name of a dozen characters whole, not cut at half the row. The
+      dropdown opens, lists every host and switches as before (the row
+      is a `Field` with `childrenContainerWidth="max"` around a
+      `Dropdown` now, not a `DropdownItem`: unmeasured on a device).
 - [ ] **In-game guard.** While a game is running, expect no restart
       countdown and the text "A game is running. Restart Steam when you're
       done."
@@ -194,12 +211,10 @@ to `~/homebrew/logs/steam-input-probe/steam-input-probe.log` (the loader's
       state, the message to read "re-fetching art from Game Mode needs a
       CLI whose art command accepts --commit" — never "CLI too old (0.4.0,
       needs 0.4.0)".
-- [ ] **Host subtitle with several hosts.** Add three hosts (one active,
+- [ ] **Nothing about the other hosts.** Add three hosts (one active,
       two not), sync the inactive ones once each so they have cached
-      listings. Expect "active host · parked from MY-GAMING-PC (N titles),
-      OFFICE-PC (M titles)" with each count matching that host's last
-      listing, and a host never listed showing no count. With exactly one
-      inactive host, expect "active host · MY-GAMING-PC parked (N titles kept)".
+      listings. Expect the Host row to say nothing of them: the circle
+      and the active host's count only, no "parked" line.
 - [ ] **The SteamGridDB key round-trip and Test.** Set a key on the
       Artwork page, expect only its last four characters ever shown
       anywhere (panel, events, logs); press *Test*, expect a pass/fail
@@ -711,8 +726,8 @@ Decision 66 answers.
       2026-09-26); anything else that still gives no Wake is a parser gap:
       paste the line's shape (hex masked) into an issue.
 - [ ] **Wake appears and sends.** Shut the PC down (a sleep state
-      Wake-on-LAN is enabled for). Open the panel: the host row shows the
-      cached count with **Check** and **Wake** side by side (the PC stays
+      Wake-on-LAN is enabled for). Open the panel: **Check** and **Wake** are side by
+      side, under the host row's cached count when there are several hosts (the PC stays
       down: nothing was asked). Press Wake: a toast "Wake-on-LAN packet
       sent to <host>. Give it a minute, then Check." and, in
       `moonlight-sync.log`, `wake_host <host>: N packets sent (moonlight
