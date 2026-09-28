@@ -23,12 +23,11 @@ project uses [semantic versioning](https://semver.org/).
   without a SHA-256 is never offered, and every failure before the dialog
   leaves the installed version as it was, with a toast saying why: a
   download that is wrong is found out before Decky removes anything. The
-  page also shows the
-  installed and latest versions, the release notes, **Check now**, the
-  **Channel** (below), **Check for updates automatically** (the
-  new `update_check` setting, on by default) and **Install another
-  version** (every release from 0.12.0 on: reinstall, downgrade or
-  update). Updating is refused while a sync runs, while layouts are being
+  page also shows the installed and latest versions, the release notes,
+  **Check now**, the **Channel** (below), **Check for updates
+  automatically** (the new `update_check` setting, on by default) and
+  **Install another version** (every release from 0.12.0 on: reinstall,
+  downgrade or update). Updating is refused while a sync runs, while layouts are being
   applied and during a SteamGridDB key fetch, and the whole updater is
   silent while the plugin is toggled off. Settings → About gains a
   **Decky Loader** row. Releases before this one have no updater: update

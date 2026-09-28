@@ -579,7 +579,8 @@ export function installable(installed: Installed | null, releases: readonly Rele
   return offers;
 }
 
-const HEX40_LOWER_RE = /^[0-9a-f]{40}$/;
+/** A commit: 40 hex digits, either case (its label lower-cases it). */
+const COMMIT_RE = /^[0-9a-fA-F]{40}$/;
 
 /**
  * The staging answered what was asked for (update spec 3.12.5): the
@@ -600,7 +601,7 @@ export function stagedMatches(offer: Offer, staged: StagedUpdate): boolean {
     build.kind === "branch" &&
     build.ref === offer.ref &&
     typeof build.sha === "string" &&
-    HEX40_LOWER_RE.test(build.sha.toLowerCase())
+    COMMIT_RE.test(build.sha)
   );
 }
 

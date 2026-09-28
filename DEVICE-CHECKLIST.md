@@ -1064,8 +1064,10 @@ SSH session for V10's `moonlight-steam-sync --version` and `sha256sum
       `main`, then any other branch with a build. Choosing `main` asks
       "Follow main?" ("Builds of a branch are untested and can break
       syncing. You can return to Releases here at any time.", *Follow* /
-      *Cancel*); *Cancel* leaves *Releases* selected and asks GitHub
-      nothing. Choosing *Releases* from a branch asks nothing.
+      *Cancel*). **[verify]** *Cancel* leaves *Releases* selected in the
+      dropdown (whether Steam's dropdown snaps back to the stored channel
+      after a cancelled confirm is unmeasured) and asks GitHub nothing.
+      Choosing *Releases* from a branch asks nothing.
 - [ ] **The branch's `build.json` through the loader's fetch.** The
       `build.json` request is the plugin's first request through Decky's
       `fetchNoCors` to `github.com/…/releases/download/…`, which answers
