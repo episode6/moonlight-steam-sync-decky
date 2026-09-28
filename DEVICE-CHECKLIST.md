@@ -770,8 +770,8 @@ Stream shortcuts* **off** (so there are visible shortcuts and a
       when the toggle flipped loses its row on the next render (open
       another game and come back).
 - [ ] **Settings are locked.** The panel's header buttons and *Settings*
-      open a route with the toggle alone: no Host / Titles / Artwork /
-      Advanced / About.
+      open a route with the toggle alone: no Host / Artwork / Titles /
+      Advanced / Updates / About.
 - [ ] **A reboot keeps it off.** Restart Steam: the panel opens on the
       toggle alone and the library is still clean (the load's reconcile
       hides every entry again; the log has no `check_host`).
