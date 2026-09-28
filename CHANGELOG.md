@@ -54,6 +54,11 @@ project uses [semantic versioning](https://semver.org/).
   offered its builds instead. A checkout with uncommitted changes, or on
   no branch, says nothing about itself, as before. See the README's
   "Developing".
+- **Settings → About says what the plugin was built from.** Two new rows
+  under *Plugin version*: **Built from**, the branch (or, for a release,
+  the tag), the first seven digits of the commit and when it was built
+  (`main @ abc1234 · built today 13:03`), and **Commit**, the whole
+  commit. A zip that does not say reads "not recorded in this build".
 - **The plugin can download and check a build before it is installed.**
   The backend can now fetch a release's (or a branch build's) zip from
   this repository on GitHub into `~/homebrew/data/Moonlight Sync/`,

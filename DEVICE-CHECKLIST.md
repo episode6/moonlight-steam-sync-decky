@@ -1127,6 +1127,8 @@ SSH session for V10's `moonlight-steam-sync --version` and `sha256sum
       with the *Channel* on `main` and `build-main` published from that
       same commit: *Installed* reads `<version> · main @ <sha7> · built
       …`, *Latest* says "Up to date · checked …" and there is no install
-      button. Before this, such a build always showed *Switch to main @
+      button; Settings → About's *Built from* reads `main @ <sha7> · built
+      …` and *Commit* is the whole commit, the one `git rev-parse HEAD`
+      printed in the clone. Before this, such a build always showed *Switch to main @
       <sha7>* (found 2026-09-28). With the *Channel* on *Releases* the
       page offers *Switch to <version>* instead, as for any branch build.

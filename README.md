@@ -150,7 +150,9 @@ It downloads and goes through the same dialog.
   from a branch checks GitHub again first, so what is downloaded is the
   build that is there now. Decky's dialog names it as, say, "0.12.0 (main
   @ abc1234)", since a branch's build carries the last release's version
-  number. *Installed* then reads `0.12.0 · main @ abc1234 · built …`.
+  number. *Installed* then reads `0.12.0 · main @ abc1234 · built …`, and
+  Settings → About's **Built from** and **Commit** rows say the same with
+  the whole commit.
 - **Back to Releases**: pick *Releases*; the page then offers **Switch to
   X**, the newest release, which installs it over the branch's build
   (Decky asks to *overwrite*). *Install another version* works from a
@@ -224,7 +226,10 @@ through the link, so the file it pointed to is left as it was.
 The plugin always runs the copy in `~/.local/bin`, through `python3`, so a
 shortcut made from Game Mode and one made from a terminal belong to the same
 tool. Settings → **About** shows both versions, the minimum the plugin
-needs (0.4.0) and any install error. If the installed CLI
+needs (0.4.0) and any install error, and what the plugin itself was built
+from: **Built from** (`main @ abc1234 · built …` for a build of a branch,
+`v0.12.0 @ abc1234 · built …` for a release, "not recorded in this build"
+for a zip that does not say) and **Commit**, the whole commit. If the installed CLI
 is missing or older than 0.4.0 the panel shows a single row, "CLI not
 installed — see About" or "CLI too old (0.2.0, needs 0.4.0) — see About",
 and every CLI action is disabled; the settings pages that only touch the

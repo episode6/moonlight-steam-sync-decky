@@ -425,7 +425,9 @@ src/lib/                    pure modules (vitest)
                             shape decky.ts accepts), and the texts:
                             updateRowView() (the panel's row, on the channel),
                             installedText() (a branch build's ref, sha7 and built
-                            time), latestText(…, channel) ("No build of <ref> is
+                            time), builtFromText() (About's *Built from*: the
+                            same for a release's build.json too, the tag its
+                            ref; BUILD_UNKNOWN_TEXT without one), latestText(…, channel) ("No build of <ref> is
                             published"; a branch offer's "built <when>"),
                             versionLabel(), installButtonText() (`Switch to` for a
                             switch; `Downloading…` / `Waiting for Decky…`)
@@ -897,7 +899,10 @@ src/components/             adoptDefault (inspectLayout -> refusal toasts -> Con
                             cache* (a ConfirmModal, then resetMatchCache(); disabled
                             while a run is going), AboutPage (its rows, *Decky
                             Loader* = `loader_version`, *Bundled CLI install* =
-                            version.ts's BUNDLED_CLI_RULE, the log tail),
+                            version.ts's BUNDLED_CLI_RULE, *Built from* =
+                            updates.ts's builtFromText over `cli_version().build`
+                            and, when there is one, *Commit* = its whole sha;
+                            the log tail),
                             EnabledToggle (spec 3.19: the *Enable Sync* on/off
                             ToggleField, at the top of the panel in every state
                             and, while off, the whole settings route; no

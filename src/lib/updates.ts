@@ -672,6 +672,23 @@ export function installedText(installed: Installed | null, now: Date = new Date(
   return `${version} · ${buildLabel(build)}${built}`;
 }
 
+/** About's *Built from* for a zip without a `build.json`. */
+export const BUILD_UNKNOWN_TEXT = "not recorded in this build";
+
+/**
+ * About's *Built from*: what the installed zip's `build.json` says, a
+ * release's as well as a branch's: its ref (the tag or the branch), the
+ * first 7 of its commit and when it was built (`main @ abc1234 · built
+ * today 13:03`). `BUILD_UNKNOWN_TEXT` for a zip without one: a release from
+ * before the file existed, or a build of a checkout that was not exactly a
+ * commit. The whole commit is About's *Commit* row.
+ */
+export function builtFromText(build: BuildInfo | null | undefined, now: Date = new Date()): string {
+  if (!build) return BUILD_UNKNOWN_TEXT;
+  const built = build.built_at ? ` · built ${relativeTime(build.built_at, now)}` : "";
+  return `${buildLabel(build)}${built}`;
+}
+
 /**
  * *Latest*: what the last check found on the channel, or why it could not.
  * On a branch channel whose branch has no entry, or whose `build.json`
