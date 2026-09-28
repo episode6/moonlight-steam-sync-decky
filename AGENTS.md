@@ -206,7 +206,11 @@ py_modules/moonlight_sync/  the backend (imports nothing from decky)
   settings.py               settings.json / ignore.json / owned-apps.json /
                             pending.json / layouts.json, all .tmp + os.replace;
                             pending()'s `synced_hosts` seed for an older file
-                            (the last plan's host, stamped `since`)
+                            (the last plan's host, stamped `since`);
+                            `update_channel` (update spec 3.12.4): is_channel()
+                            (exactly `stable`, or `branch:` + a ref matching
+                            updates.REF_RE), refused otherwise, a hand-broken
+                            value read back as `stable`
   keys.py                   SteamGridDB key sources (config -> env -> file), key file
   wake.py                   Wake-on-LAN (spec 3.18): parse_mac(), magic_packet(),
                             moonlight_hosts() / moonlight_entries() / find_host() /
@@ -324,34 +328,79 @@ src/lib/                    pure modules (vitest)
                             message until PR-U4c), the staging's types
                             (update spec 3.12.3: `stage_update` / `cancel_update`,
                             StagedUpdate, BuildInfo, CliVersion's `build`),
+                            Settings' / SettingsPatch's `update_channel` and the
+                            UpdateChannel type (`stable` | `branch:<ref>`),
                             SGDB_API_PAGE, KeyFetchState, SgdbKeyEventPayload /
                             SgdbKeyDonePayload (its failure `error` narrowed to
                             SgdbKeyFetchError) (spec 3.20)
   events.ts                 NDJSON parsing, lastOf/eventsOf
-  updates.ts                the updater's logic (update spec §3.4, §3.7): REPO (the
-                            repository's slug, spelled here and in decky.ts only),
+  updates.ts                the updater's logic (update spec §3.4, §3.7, §3.12.4): REPO
+                            (the repository's slug, spelled here and in decky.ts only),
                             RELEASES_API, DOWNLOAD_BASE, ASSET, PLUGIN_NAME,
                             MIN_UPDATER_VERSION ([0, 12, 0], [verify] at release time),
                             MIN_LOADER_VERSION, INSTALL_TYPES_LOADER_VERSION,
                             CHECK_MIN_INTERVAL_MS, NOTES_MAX_CHARS, TAG_RE,
-                            RELEASE_TAG_RE, INSTALL_TYPE; the NetPort / HttpAnswer
-                            seam; Release / Offer / CheckResult / UpdateInfo /
-                            UpdatePhase; parseReleases() (drafts, prereleases,
+                            RELEASE_TAG_RE, REF_RE (the backend's, spelled alike:
+                            test_hard_rules.py holds it and TAG_RE equal),
+                            BUILD_TAG_PREFIX, BUILD_ASSET, BUILD_MAX_BYTES,
+                            STABLE_CHANNEL / BRANCH_CHANNEL_PREFIX, INSTALL_TYPE; the
+                            NetPort / HttpAnswer seam; Release (StableRelease |
+                            BranchBuild: `kind` "branch", `ref`, `version` null,
+                            `updatedAt` the zip's upload, a digest always, `build`
+                            null until fetched) / Offer / Installed / ChannelOption /
+                            CheckResult / UpdateInfo / UpdatePhase; parseReleases()
+                            (phase 1's releases unchanged: drafts, prereleases,
                             non-vX.Y.Z tags and releases without the zip skipped, the
                             zip's `digest` as 64 lower-case hex or null, highest
-                            first, no URL kept), assetUrl() (throws on a bad tag),
-                            checkReleases() (one GET; the §3.4 table: bad-release,
-                            rate-limited with retryAt from `retry-after` else
-                            `x-ratelimit-reset`, network), offerOf() / installable()
-                            (a digest and >= MIN_UPDATER_VERSION only; installable()
-                            empty when the installed version does not parse),
-                            installType(), loaderSupported(), updateCheckEnabled(),
-                            installRequestOf() (throws without a digest), and the
-                            texts: updateRowView() (the panel's row), installedText(),
-                            latestText(), versionLabel(), installButtonText()
-  updates.test.ts           the fixture parsed, every digest form, assetUrl's refusals,
-                            one test per checkReleases row, offerOf / installable,
-                            installType / loaderSupported, installRequestOf, the texts
+                            first; then branch builds by ref: a non-draft prerelease
+                            tagged `build-…` within TAG_RE with the zip and a digest,
+                            `ref` the title when it matches REF_RE else the tag
+                            without `build-`, the latest-uploaded kept when two give
+                            one ref; no URL kept), assetUrl() (throws on a bad tag),
+                            parseBuild(text, ref) (the backend's parse_build rules
+                            plus 64 KiB, `kind` "branch" and the entry's own `ref`),
+                            checkReleases(net, channel) (one GET of the list; the
+                            §3.4 table: bad-release, rate-limited with retryAt from
+                            `retry-after` else `x-ratelimit-reset`, network; on a
+                            branch channel a second GET of that branch's
+                            `build.json` only, from assetUrl, whose failure leaves
+                            `build` null and never fails the check), channelRef() /
+                            channelOf(settings) (anything not a channel reads as
+                            `stable`; every caller reads the channel through it),
+                            installedOf(cliVersion) ({version, build}),
+                            branchEntryOf(), channelsOf() (Releases, `main`, the
+                            other branches by name with `updatedAt`, the selected
+                            one always there), offerOf(installed, releases, channel)
+                            (§3.12.4's six rows: stable updates a release, switches
+                            a branch build to the newest release; a branch channel
+                            switches to its build unless the same ref and sha are
+                            installed, nothing without an entry or its `build`; a
+                            digest and >= MIN_UPDATER_VERSION for a release; only a
+                            `build.json` with `kind` "branch" makes a branch build),
+                            installable() (releases only, whatever the channel; each
+                            a `switch` from a branch build, else update / reinstall /
+                            downgrade, empty when the installed version does not
+                            parse), installType(), loaderSupported(),
+                            updateCheckEnabled(), installRequestOf() (throws without
+                            a digest and for a branch build: never handed to Decky
+                            by URL), branchVersionText() (`<zip version> (<ref> @
+                            <sha7>)`, for PR-U4c's staged hand-off; decky.ts's
+                            version check does not accept it yet), and the texts:
+                            updateRowView() (the panel's row, on the channel),
+                            installedText() (a branch build's ref, sha7 and built
+                            time), latestText(…, channel) ("No build of <ref> is
+                            published"; a branch offer's "built <when>"),
+                            versionLabel(), installButtonText() (`Switch to` for a
+                            switch)
+  updates.test.ts           the fixture parsed (phase 1's releases unchanged, then the
+                            branch builds; every skip, the ref rule, the duplicate
+                            ref), every digest form, assetUrl's refusals, one test per
+                            checkReleases row, the `build.json` request made for the
+                            selected branch only and its failures, parseBuild,
+                            channelOf / channelsOf, one test per row of §3.12.4's
+                            offer table and its edges, installable,
+                            installType / loaderSupported, installRequestOf,
+                            branchVersionText, REF_RE, the texts
   decky.ts                  the Decky seam (update spec §3.5), the one module touching
                             Decky's globals (hard rule 12): INSTALL_ROUTE,
                             RELEASE_URL_PREFIX / RELEASE_ASSET / INSTALL_NAME (literals,
@@ -424,14 +473,21 @@ src/lib/                    pure modules (vitest)
                             and the loader is supported), checkUpdates(manual) (nothing
                             unless idle and on; no request before a rate-limited
                             retryAt, nor for Check now within CHECK_MIN_INTERVAL_MS,
-                            which toasts the stored failure; the automatic check
+                            which toasts the stored failure; checkReleases on
+                            channelOf(settings), offerOf over installedOf(cliVersion)
+                            and that channel, so a followed branch's new build is
+                            announced as a release is; the automatic check
                             toasts only an offer, a manual one only its failure; a
                             failure keeps the last releases; an epoch drops a check
                             that lands after the plugin went off),
                             updatesSupported(), setUpdateCheck(),
                             installUpdate(tag) (refused with a toast while off, during
                             a run, the walk or a key fetch, when unsupported, for a
-                            tag not in installable(); silently while not idle; else
+                            tag neither in installable() nor the channel's offer, and,
+                            until PR-U4c stages it, for a branch build ("Builds of a
+                            branch cannot be installed yet", nothing asked of Decky);
+                            a `switch` back to a release goes by its URL, install
+                            type 4; silently while not idle; else
                             `asking`, leaveSettings(), then installer().request(), a
                             toast when Decky did not take it, `idle`), run() answers
                             "An update is being installed" and restartRow() starts
@@ -727,7 +783,8 @@ src/components/             adoptDefault (inspectLayout -> refusal toasts -> Con
                             with *Check now*, the offer's install button, *What's new
                             in X* in About's log-box style, *Check for updates
                             automatically*, *Install another version* over
-                            installable() / versionLabel(); only *Installed* and the
+                            installable() / versionLabel(), all on channelOf(settings)
+                            (no *Channel* picker until PR-U4c); only *Installed* and the
                             unsupported text when !updatesSupported(); no confirm of
                             its own, Decky's dialog is it), HostPage (no MAC field since
                             2026-09-26: Moonlight's list is the one Wake source),
@@ -996,6 +1053,14 @@ and spawning nothing. Everything else of the updater is the frontend's
 (`updates.ts`, `decky.ts`, the controller's `loadUpdates` /
 `checkUpdates` / `installUpdate`): the backend makes no request, and the
 updater calls no backend callable but `set_settings({update_check})`.
+`settings.update_channel` (update spec §3.12.4, default `"stable"`) is
+what the updater follows: exactly `"stable"`, or `"branch:"` followed by a
+ref matching `updates.REF_RE` (`settings.is_channel`); `set_settings`
+refuses anything else as `bad-request` (a non-string, an empty or
+out-of-pattern ref, another word, whitespace around it), and a hand-broken
+value in the file reads back as `"stable"` rather than failing
+`get_settings`. No UI sets it until PR-U4c; the frontend reads it only
+through `channelOf`.
 The key fetch from the Game Mode browser (spec 3.20) needs no CLI and is
 not under the runs' busy guard (Decision 62: no `matches.json` involved, so
 a sync may run meanwhile and a fetch may start during a sync); it has its
@@ -1201,21 +1266,33 @@ There is no Steam Deck during development; everything else is tested.
   hand-written and trimmed (nothing real; hashes are 64 repeated hex
   digits; download URLs on `example.invalid`, so "no URL kept" is
   provable): a newer `v0.13.0`, the installed `v0.12.0`, `v0.11.0` below
-  `MIN_UPDATER_VERSION`, a draft, a prerelease, a `build-main` prerelease
-  (skipped until phase 2), `v0.12.1` with a `null` digest, `v0.12.2`
-  without the zip, a `v1.2` tag and one string entry, out of order.
-  `updates.test.ts` reads it through `src/test/fixtures.ts`'s
-  `fixtureText` and scripts a `NetPort` per §3.4 table row;
+  `MIN_UPDATER_VERSION`, a draft, a prerelease, `v0.12.1` with a `null`
+  digest, `v0.12.2` without the zip, a `v1.2` tag and one string entry,
+  out of order; and the branch builds of §3.12.4: `build-main` and
+  `build-feature-x` (title `feature/x`), `build-odd-title` (a title that
+  is not a ref, so its ref is the tag's), `build-no-digest` and a draft
+  `build-drafted` (both skipped). `update/build-main.json` is `main`'s
+  `build.json` (an upper-case sha, to prove the lower-casing).
+  `updates.test.ts` reads them through `src/test/fixtures.ts`'s
+  `fixtureText` and scripts a `NetPort` per §3.4 table row (answers by
+  URL for the `build.json` request);
   `decky.test.ts` drives `deckyInstaller` over plain scope objects (a
   recording router, `opener`, throwing getters); `controller.test.ts`'s
   `FakeUi` carries the three `UiPort` members: `net()` answers
-  `netAnswer` (by default a 200 with no release, so older tests see no
-  update toast and their calls are unchanged; an `Error` rejects;
-  `holdNet` parks the GET), `installer()` records requests and pushes
+  `netAnswers[url]`, else `netAnswer` (by default a 200 with no release,
+  so older tests see no update toast and their calls are unchanged; an
+  `Error` rejects; `holdNet` parks the GET), `installer()` records requests and pushes
   `install:<version>` to the `order` log (`holdInstall` parks it), and
   `leaveSettings()` pushes `leave`, so "leave, then ask Decky" is
-  asserted in order. Decky's dialog, its download and the reload are
-  device checks (DEVICE-CHECKLIST §16).
+  asserted in order. Its channel tests (update spec §3.12.4) set
+  `settingsFile.update_channel` and answer `build-main`'s `build.json`
+  through `netAnswers`: the second request made for the followed branch
+  only, the announced `main @ <sha7>`, a failed `build.json` failing
+  nothing, a branch build refused with nothing asked of Decky, a switch
+  back to a release by its URL with install type 4. `state.test.ts` holds
+  the panel's row on a channel, and `tests/test_backend.py`
+  `update_channel`'s validation and its hand-broken read. Decky's dialog,
+  its download and the reload are device checks (DEVICE-CHECKLIST §16).
 - `tests/conftest.py`: `backend` / `make_backend` (a started Backend over
   the fake; `@pytest.mark.scenario("full-sync")` puts that scenario in front
   of `common/`), `steam_gone`, `install_env` (a `python3` shim that prints
@@ -1239,7 +1316,9 @@ There is no Steam Deck during development; everything else is tested.
   `lib/decky.ts` and its test, `api.github.com` only in `lib/updates.ts`
   and its test, `fetchNoCors` only in `instance.tsx`, the repository's
   slug only in `updates.ts`, `decky.ts` and their tests. Each is an
-  equality, so a rename that loses the name fails too.
+  equality, so a rename that loses the name fails too. It also holds
+  `updates.ts`'s `REF_RE` and `TAG_RE` spelled exactly as the backend's
+  `updates.REF_RE` / `TAG_RE` (update spec §3.12.4).
 - The key fetch (spec 3.20) never opens a socket in a test: `conftest.py`'s
   `fake_browser` fixture installs a `FakeBrowser` as `cdp.TARGETS` /
   `cdp.CONNECT` (the Game Mode browser as the seams see it: the page

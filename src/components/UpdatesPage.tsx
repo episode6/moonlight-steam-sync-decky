@@ -3,8 +3,10 @@ import { ButtonItem, DialogButton, DropdownItem, Field, Focusable, ToggleField }
 import { controller } from "../instance";
 import { errorText } from "../lib/cli";
 import {
+  channelOf,
   installable,
   installButtonText,
+  installedOf,
   installedText,
   latestText,
   offerOf,
@@ -37,7 +39,7 @@ const NOTES_BOX = {
 export function UpdatesPage() {
   const state = useStore(controller.store);
   const info = state.cliVersion;
-  const installed = info?.plugin_version ?? null;
+  const installed = installedOf(info);
   const installedRow = <Field label="Installed" description={installedText(installed)} focusable={false} />;
 
   if (!controller.updatesSupported()) {
@@ -56,13 +58,14 @@ export function UpdatesPage() {
   const update = state.update ?? { releases: null, checkedAt: null, error: null };
   const phase = state.updatePhase;
   const idle = phase === "idle";
-  const offer = offerOf(installed, update.releases);
+  const channel = channelOf(state.settings);
+  const offer = offerOf(installed, update.releases, channel);
   const others = installable(installed, update.releases);
 
   return (
     <div>
       {installedRow}
-      <Field label="Latest" description={latestText(update, phase, offer)}>
+      <Field label="Latest" description={latestText(update, phase, offer, channel)}>
         <DialogButton
           style={{ minWidth: 0, width: "auto", padding: "6px 14px" }}
           disabled={!idle}

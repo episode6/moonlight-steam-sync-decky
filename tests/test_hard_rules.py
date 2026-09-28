@@ -11,7 +11,7 @@ import subprocess
 import sys
 
 from conftest import ROOT, run
-from moonlight_sync import sgdbpage
+from moonlight_sync import sgdbpage, updates
 from moonlight_sync.keys import key_file_path
 
 FORBIDDEN_CALLS = (
@@ -99,6 +99,17 @@ def test_the_repository_is_spelled_only_in_the_updater_and_its_allowlist() -> No
         "src/lib/decky.ts",
         "src/lib/decky.test.ts",
     }
+
+
+def test_the_ref_and_tag_patterns_are_spelled_alike_in_both_halves() -> None:
+    """Update spec 3.12.4: ``update_channel``'s ref is checked by the backend
+    (``updates.REF_RE``) and read by the frontend (``updates.ts``'s
+    ``REF_RE``), and a tag is checked by both before it reaches a URL; the
+    two spellings must accept the same strings."""
+    source = (ROOT / "src" / "lib" / "updates.ts").read_text()
+    for name, python in (("REF_RE", updates.REF_RE), ("TAG_RE", updates.TAG_RE)):
+        found = re.findall(rf"^export const {name} = /(.+)/;$", source, re.MULTILINE)
+        assert found == [python], name
 
 
 def test_backend_never_names_config_toml_for_writing() -> None:

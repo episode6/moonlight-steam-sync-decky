@@ -102,20 +102,96 @@
     "name": "main",
     "draft": false,
     "prerelease": true,
-    "published_at": "2026-10-26T08:00:00Z",
-    "body": "A branch build: a prerelease, so phase 1 skips it.",
+    "published_at": "2026-10-10T08:00:00Z",
+    "body": "Build of `main` at abc1234def5678abc1234def5678abc1234def56. Untested: installed from Moonlight Sync's Updates page.",
     "assets": [
       {
         "name": "Moonlight-Sync.zip",
         "size": 1400002,
         "digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "updated_at": "2026-10-26T08:00:00Z",
         "browser_download_url": "https://downloads.example.invalid/build-main/Moonlight-Sync.zip"
       },
       {
         "name": "build.json",
         "size": 200,
         "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+        "updated_at": "2026-10-26T08:00:05Z",
         "browser_download_url": "https://downloads.example.invalid/build-main/build.json"
+      }
+    ]
+  },
+  {
+    "tag_name": "build-feature-x",
+    "name": "feature/x",
+    "draft": false,
+    "prerelease": true,
+    "published_at": "2026-10-22T10:00:00Z",
+    "body": "A second branch build, of a branch with a slash in its name.",
+    "assets": [
+      {
+        "name": "Moonlight-Sync.zip",
+        "size": 1400003,
+        "digest": "sha256:ABCDEFABCDEFABCDEFABCDEFABCDEFABCDEFABCDEFABCDEFABCDEFABCDEFABCD",
+        "updated_at": "2026-10-24T10:00:00Z",
+        "browser_download_url": "https://downloads.example.invalid/build-feature-x/Moonlight-Sync.zip"
+      },
+      {
+        "name": "build.json",
+        "size": 200,
+        "digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+        "updated_at": "2026-10-24T10:00:05Z",
+        "browser_download_url": "https://downloads.example.invalid/build-feature-x/build.json"
+      }
+    ]
+  },
+  {
+    "tag_name": "build-odd-title",
+    "name": "Not a ref: the title has spaces",
+    "draft": false,
+    "prerelease": true,
+    "published_at": "2026-10-23T10:00:00Z",
+    "body": "A branch build whose title is not a ref: its ref is the tag without build-.",
+    "assets": [
+      {
+        "name": "Moonlight-Sync.zip",
+        "size": 1400004,
+        "digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+        "updated_at": "2026-10-23T10:00:00Z",
+        "browser_download_url": "https://downloads.example.invalid/build-odd-title/Moonlight-Sync.zip"
+      }
+    ]
+  },
+  {
+    "tag_name": "build-no-digest",
+    "name": "no-digest",
+    "draft": false,
+    "prerelease": true,
+    "published_at": "2026-10-23T11:00:00Z",
+    "body": "A branch build whose zip has no digest: skipped, nothing is offered without a hash.",
+    "assets": [
+      {
+        "name": "Moonlight-Sync.zip",
+        "size": 1400005,
+        "updated_at": "2026-10-23T11:00:00Z",
+        "browser_download_url": "https://downloads.example.invalid/build-no-digest/Moonlight-Sync.zip"
+      }
+    ]
+  },
+  {
+    "tag_name": "build-drafted",
+    "name": "drafted",
+    "draft": true,
+    "prerelease": true,
+    "published_at": null,
+    "body": "A draft branch build: skipped.",
+    "assets": [
+      {
+        "name": "Moonlight-Sync.zip",
+        "size": 1400006,
+        "digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "updated_at": "2026-10-23T12:00:00Z",
+        "browser_download_url": "https://downloads.example.invalid/build-drafted/Moonlight-Sync.zip"
       }
     ]
   },

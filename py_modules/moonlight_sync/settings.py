@@ -18,7 +18,10 @@ import contextlib
 import copy
 import json
 import os
+import re
 from typing import Any
+
+from .updates import REF_RE
 
 SETTINGS_FILE = "settings.json"
 IGNORE_FILE = "ignore.json"
@@ -47,6 +50,9 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     # check for a newer release when the plugin loads (update spec 3.3);
     # the check is the frontend's, this is only its switch
     "update_check": True,
+    # what the updater follows (update spec 3.12.4): "stable" (the releases)
+    # or "branch:<ref>" (that branch's rolling build); no picker yet (PR-U4c)
+    "update_channel": "stable",
 }
 
 #: Keys an older settings.json may carry that nothing reads any more; they
@@ -61,6 +67,10 @@ RETIRED_SETTINGS = ("wake_macs",)
 #: clamped on read rather than making settings.json unreadable.
 RESTART_COUNTDOWN_MAX = 30
 LAYOUT_STRATEGIES = ("copy", "picker")
+#: ``update_channel``'s fixed value; the other form is ``BRANCH_CHANNEL_PREFIX``
+#: followed by a ref matching ``updates.REF_RE`` (update spec 3.12.4).
+STABLE_CHANNEL = "stable"
+BRANCH_CHANNEL_PREFIX = "branch:"
 #: The settings ``set_settings`` accepts as plain booleans.
 BOOL_SETTINGS = (
     "enabled",
@@ -183,7 +193,9 @@ class Store:
 
         ``restart_countdown_s`` is clamped to ``RESTART_COUNTDOWN_MAX`` on the
         way out: a file written before Decision 30 lowered the ceiling to 30
-        still reads, it just counts down from 30.
+        still reads, it just counts down from 30. A hand-broken
+        ``update_channel`` reads as ``"stable"``, as a broken
+        ``default_layout`` reads as none.
         """
         merged = dict(DEFAULT_SETTINGS)
         merged["hosts"] = []
@@ -196,6 +208,8 @@ class Store:
         else:
             merged["restart_countdown_s"] = DEFAULT_SETTINGS["restart_countdown_s"]
         merged["default_layout"] = _sanitize_default_layout(merged["default_layout"])
+        if not is_channel(merged["update_channel"]):
+            merged["update_channel"] = STABLE_CHANNEL
         return merged
 
     def set_settings(self, patch: Any) -> dict[str, Any]:
@@ -437,6 +451,19 @@ def _sanitize_default_layout(value: Any) -> dict[str, Any] | None:
     return {"url": url, "title": title, "when": when if isinstance(when, str) else None}
 
 
+def is_channel(value: Any) -> bool:
+    """``update_channel``'s value (update spec 3.12.4): exactly ``"stable"``,
+    or ``"branch:"`` followed by a ref matching ``updates.REF_RE``. Nothing
+    is trimmed: ``" stable"`` is not a channel."""
+    if not isinstance(value, str):
+        return False
+    if value == STABLE_CHANNEL:
+        return True
+    if not value.startswith(BRANCH_CHANNEL_PREFIX):
+        return False
+    return bool(re.fullmatch(REF_RE, value[len(BRANCH_CHANNEL_PREFIX) :]))
+
+
 def _validate_setting(key: str, value: Any) -> None:
     if key == "hosts":
         raise SettingsError("hosts are changed with add_host / forget_host")
@@ -459,5 +486,9 @@ def _validate_setting(key: str, value: Any) -> None:
     if key == "layout_strategy":
         if value not in LAYOUT_STRATEGIES:
             raise SettingsError(f"layout_strategy must be one of {', '.join(LAYOUT_STRATEGIES)}")
+        return
+    if key == "update_channel":
+        if not is_channel(value):
+            raise SettingsError('update_channel must be "stable" or "branch:<ref>"')
         return
     raise SettingsError(f"unknown setting {key!r}")
