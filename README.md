@@ -163,7 +163,12 @@ compares that copy with `~/.local/bin/moonlight-steam-sync`:
 
 - missing there, or older → the bundled one is copied into place
   (atomically, `~/.local/bin` is created if needed);
-- the same or newer → left alone. A newer CLI you installed by hand stays.
+- the same version but different bytes → the bundled one replaces it, the
+  same way. A build of a branch carries the last release's version number,
+  so this is how its CLI gets installed; it also replaces a CLI of that
+  version you built or installed by hand;
+- the same version and the same bytes, or newer → left alone. A newer CLI
+  you installed by hand stays; the plugin never installs an older one.
 
 The plugin always runs the copy in `~/.local/bin`, through `python3`, so a
 shortcut made from Game Mode and one made from a terminal belong to the same
@@ -676,6 +681,13 @@ Steam's:
 - `~/homebrew/logs/Moonlight Sync/moonlight-sync.log`: every CLI call with
   its arguments, the CLI's own messages verbatim, and both CLI versions at
   startup.
+- `~/homebrew/data/Moonlight Sync/update/staged/`: a plugin zip the plugin
+  downloaded and checked before handing it to Decky's installer
+  (`Moonlight-Sync-<the first 12 digits of its SHA-256>.zip`), and, only
+  while a download is running, its `.part` file and the release's checksum
+  file. The updater does not download through it yet. The plugin deletes a
+  staged zip the first time it loads more than an hour after the download;
+  deleting the whole directory at any time loses nothing.
 - `~/.local/bin/moonlight-steam-sync` (the CLI install) and the SteamGridDB
   key file above.
 

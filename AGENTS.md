@@ -137,9 +137,13 @@ main.py                     thin decky Plugin: builds Backend, one line per call
                             loader instantiates the class (api_version > 0, ours) or calls
                             through the bare class (api_version 0); passes
                             `getattr(decky, "DECKY_VERSION", "")` as the Backend's
-                            `loader_version`; `_uninstall` is `pass` on purpose (Decky
-                            runs it on every update, hard rule 12, update spec
-                            §2.3 / §3.3)
+                            `loader_version` and `decky.DECKY_PLUGIN_RUNTIME_DIR` as its
+                            `runtime_dir` (never an `update_source`: the downloads
+                            always come from this repository's releases);
+                            `stage_update(tag, sha256, version=None, ref=None)` and
+                            `cancel_update()` (update spec §3.12.3); `_uninstall` is
+                            `pass` on purpose (Decky runs it on every update, hard rule
+                            12, update spec §2.3 / §3.3)
 py_modules/moonlight_sync/  the backend (imports nothing from decky)
   backend.py                every callable, the _spawn seam, NDJSON relay, busy guard,
                             timeouts, pending rules on sync_done. _spawn is where the
@@ -150,8 +154,52 @@ py_modules/moonlight_sync/  the backend (imports nothing from decky)
                             it: $XDG_CACHE_HOME from the child's env, else <home>/.cache) and
                             reset_match_cache() (Advanced's *Reset match cache*: deletes the
                             file whole, pins included, under the busy guard; answers
-                            {removed, titles, pins} for the toast; no CLI)
-  install.py                read_version(), MIN_CLI_VERSION, atomic install/upgrade
+                            {removed, titles, pins} for the toast; no CLI);
+                            the staging (update spec 3.12.3): `runtime_dir`,
+                            `update_source` (an `updates.Source`, the tests' seam),
+                            FETCH_SCRIPT (fetch.py beside it), _fetch() (the
+                            downloader as `[python, "-I", fetch.py, options, "--",
+                            url, dest]` through _child_env(), stderr to /dev/null,
+                            one stdout line of at most FETCH_LINE_LIMIT, killed after
+                            its timeout + FETCH_ANSWER_GRACE; anything but an object
+                            with a boolean `ok` is `io`), stage_update() (the seven
+                            steps; UpdateJob is its "update" busy guard, released on
+                            every exit with the sidecar and any part file removed),
+                            cancel_update() / _cancel_staging() (unload's: kill,
+                            wait, remove *.part), startup's updates.cleanup(),
+                            cli_version()'s `build` (updates.read_build)
+  fetch.py                  the downloader (update spec 3.12.3): a *script* the backend
+                            runs with the system python3 -I, never imported, stdlib
+                            only, Python 3.11. check_url() (the one allowlist, for
+                            the first URL and every redirect: printable ASCII with
+                            no backslash before parsing, `https://` exactly, host
+                            github.com or *.githubusercontent.com, port 443, no user
+                            info; --allow-file admits file:/// and nothing else),
+                            RedirectGuard (checks in http_error_30x and
+                            redirect_request, before the hop is opened; five hops at
+                            most), build_opener() (a hand-built OpenerDirector: https
+                            only, file under --allow-file, no proxy,
+                            ssl.create_default_context()), download() (64 KiB chunks
+                            to DEST.part, O_EXCL | O_NOFOLLOW, 0600, hashed and
+                            counted as it goes, os.replace only on success), run() /
+                            main() (exactly one JSON line and exit 0 whatever
+                            happens; messages carry scheme, host and path only)
+  updates.py                the staging's pure half (update spec 3.12.3): REPO,
+                            DOWNLOAD_BASE, ASSET / ASSET_SHA, the limits, TAG_RE /
+                            REF_RE (always fullmatch), Source, asset_url() (a
+                            validated tag and one of the two assets), parse_sidecar(),
+                            parse_build() / read_build() (the known keys only),
+                            validate_zip() (BadZip(message), one check per rule, the
+                            central-directory checks before testzip(), nothing
+                            extracted), staged_path() (the name from the validated
+                            hash alone), ensure_staged_dir() (0700, no symlinked
+                            steps), cleanup() / remove_parts() (regular files directly
+                            in update/staged/, symlinks removed as links, never
+                            raise), strip_queries(); nothing at its top level is
+                            named `updater`
+  install.py                read_version(), MIN_CLI_VERSION, atomic install/upgrade;
+                            sha256_file(); an equal version with other bytes is
+                            `replaced` (Decision U12), a newer one `kept`
   settings.py               settings.json / ignore.json / owned-apps.json /
                             pending.json / layouts.json, all .tmp + os.replace;
                             pending()'s `synced_hosts` seed for an older file
@@ -267,7 +315,12 @@ src/lib/                    pure modules (vitest)
                             updater's frontend-only codes, update spec §3.6:
                             `update-unsupported`, `rate-limited` with "Try again
                             <timeUntil(retryAt)>" (errorText's optional `now`),
-                            `network`, `bad-release`),
+                            `network`, `bad-release`, which the staging answers
+                            too; its own `hash-mismatch` / `bad-zip` and `busy`
+                            kind `"update"` have no text yet and fall to the
+                            message until PR-U4c), the staging's types
+                            (update spec 3.12.3: `stage_update` / `cancel_update`,
+                            StagedUpdate, BuildInfo, CliVersion's `build`),
                             SGDB_API_PAGE, KeyFetchState, SgdbKeyEventPayload /
                             SgdbKeyDonePayload (its failure `error` narrowed to
                             SgdbKeyFetchError) (spec 3.20)
@@ -560,7 +613,9 @@ src/lib/                    pure modules (vitest)
                             default layout* reads, and what the row's layout text is for)
   __tests__/join.test.ts    the join, every badge/chip, filters, sort, paging (fixtures)
   restart.ts                restartDecision() (the §3.9 table), modal text
-  version.ts                version parsing, the CLI-missing / too-old row
+  version.ts                version parsing, the CLI-missing / too-old row,
+                            BUNDLED_CLI_RULE (About's text for when the bundled CLI
+                            is installed, Decision U12's equal-version replace included)
   format.ts                 relative times (relativeTime(); timeUntil(), the future
                             form: "in 12 minutes", a missing or past time "in a
                             minute"), dateText(), the Last sync line
@@ -702,7 +757,8 @@ src/components/             adoptDefault (inspectLayout -> refusal toasts -> Con
                             disabled, the tab needs no client call), *Reset match
                             cache* (a ConfirmModal, then resetMatchCache(); disabled
                             while a run is going), AboutPage (its rows, *Decky
-                            Loader* = `loader_version`, the log tail),
+                            Loader* = `loader_version`, *Bundled CLI install* =
+                            version.ts's BUNDLED_CLI_RULE, the log tail),
                             EnabledToggle (spec 3.19: the *Enable Sync* on/off
                             ToggleField, at the top of the panel in every state
                             and, while off, the whole settings route; no
@@ -713,7 +769,11 @@ tests/                      pytest: fake_cli.py, fixtures/, conftest.py, test_*.
                             test_install_sh.py (install.sh end to end via
                             MOONLIGHT_SYNC_BASE_URL against a file:// fixture,
                             sudo/systemctl shimmed on PATH), test_cli_install_sh.py
-                            (cli/install.sh the same way, HOME in tmp_path)
+                            (cli/install.sh the same way, HOME in tmp_path);
+                            updatezip.py (build_zip(), good and hostile plugin zips,
+                            and patch_central() for what zipfile never writes),
+                            test_fetch.py, test_updates.py, test_backend_updates.py
+                            (the staging, update spec 3.12.6)
 .github/workflows/release.yml  entrypoint.sh (the CLI from cli/src) + doctor smoke +
                             package.py --require-cli; on a v* tag (which must be
                             v<package.json version>) Moonlight-Sync.zip,
@@ -799,7 +859,8 @@ only layout affordance.
 Every callable returns `{"ok": true, …}` or `{"ok": false, "error": <code>,
 "message": …}` (codes: `cli-missing`, `cli-too-old`, `cli-protocol`,
 `cli-error`, `timeout`, `busy`, `owned-apps-missing`, `owned-apps-empty`,
-`bad-request`, `io`, `no-mac`, `no-debugger`, `cancelled`, `sgdb-page`) and
+`bad-request`, `io`, `no-mac`, `no-debugger`, `cancelled`, `sgdb-page`,
+`network`, `bad-release`, `hash-mismatch`, `bad-zip`) and
 never raises. Argv is `[python3, <installed cli>,
 "--json", <subcommand>, …]` (`doctor`, `--version` and `art --help` have no
 `--json`), `cwd` and `HOME` are the deck user's home, and the child gets
@@ -996,6 +1057,50 @@ by nothing in the frontend). A finished sync and a made-active add each
 stand in for the check (`reachFromRun`, `add_host`'s `count`). The CLI's
 `status`, `host show`, `match`, `search`,
 `art` and `remove` never run Moonlight and are unaffected.
+The staging (update spec 3.12.3, PR-U4a; nothing calls it until PR-U4c)
+needs no CLI. `cli_version()` carries an additive `build`: the plugin
+zip's own `build.json` through `updates.read_build` (the known keys only),
+`null` without one. `stage_update(tag, sha256, version=None, ref=None)`
+checks its whole request first (`tag` against `TAG_RE` and not `.` / `..`,
+`sha256` 64 hex digits, exactly one of `version` (it parses) and `ref`
+(`REF_RE`), strings only: else `bad-request`, with nothing touched or
+spawned), then the busy guards (a run or a `match` as `_busy()` answers,
+`busy` kind `"key"` for a key fetch, kind `"update"` for another
+staging; the staging's own guard is not the runs'), then downloads into
+the runtime directory (`DECKY_PLUGIN_RUNTIME_DIR`, `~/homebrew/data/Moonlight
+Sync`, `update/` and `update/staged/` created `0700` on demand; never the
+plugin directory, hard rule 12): the release's `Moonlight-Sync.zip.sha256`
+sidecar into `staged/sidecar.txt` (removed after every staging), which
+must name `sha256` (Decision U20: GitHub's digest and the uploaded
+checksum agree; a 404 or an unreadable one is `bad-release`, one naming
+another hash `bad-release` "A new build is being published. Try again in a
+minute" for a `ref`, "the release's checksums disagree" for a `version`);
+then the zip to `staged_path(sha256)` unless a regular file there already
+hashes to it (a file that does not is removed), with `--sha256`, the
+downloader's reported hash compared again; then `validate_zip` either way
+(`bad-zip` with its message, the file removed). `hash-mismatch` passes
+through, `too-large` is `bad-zip`, an HTTP 404 `bad-release`, any other
+HTTP status or a network failure `network`. The answer is `{ok, artifact:
+"file://" + <absolute staged path, raw>, hash, build, version}`: the path
+is always `staged_path`, never a string from a response. The downloader is
+`fetch.py`, run as `[<system python3>, "-I", fetch.py, options, "--", url,
+dest]` through `_child_env()` (the system interpreter has SteamOS's CA
+store, Decky's PyInstaller one does not, spec 2.5; `-I` keeps the
+package's directory off `sys.path` and ignores `PYTHON*` variables), its
+stderr discarded, its one stdout line read; it only opens `https` URLs on
+`github.com` or `*.githubusercontent.com` (every redirect checked before
+it is followed, five at most, no proxy, TLS verified), and `--allow-file`
+(a `file:///` URL) is passed only when the backend's `update_source` says
+so, which only the tests' does. Every step is logged with the tag, a size
+and the first 12 hex digits of the hash, never a query string.
+`cancel_update()` kills the downloader (`{ok, running}`) and the
+interrupted `stage_update` answers `cancelled`; `unload()` does the same,
+waits for the child and removes its part file. Every exit releases the
+guard. `startup()` runs `updates.cleanup` (staged files older than an
+hour, every `*.part`; creates nothing). `install.ensure_installed`
+replaces an installed CLI of the bundled one's version whose bytes differ
+(`replaced`, Decision U12: a branch build carries the last release's
+version); a newer installed CLI is still kept and nothing is downgraded.
 
 ## Commands
 
@@ -1165,13 +1270,58 @@ There is no Steam Deck during development; everything else is tested.
   126- and 127-length forms, a fragmented reply, a ping, close, a
   protocol error, a timeout, `navigate()`'s `Page.navigate` with its
   `errorText` and error replies) and `targets()` over a stubbed `urlopen`.
+- The staging (update spec 3.12.6) never opens a socket either: its three
+  modules use `conftest.py`'s `no_network` fixture (`pytestmark`), which
+  fails a test on any `socket.connect` / `connect_ex` off the loopback.
+  `tests/updatezip.py`'s `build_zip(path, *, version, name, top, flags,
+  build, extra, omit)` writes a zip shaped like `package.py`'s; hostile
+  entries go in `extra` as `(ZipInfo, data)`, and `patch_central()`
+  rewrites a central-directory record for what `zipfile` never writes (an
+  encrypted flag, sizes that lie). `tests/test_fetch.py` runs the real
+  `fetch.py` with `sys.executable -I` against `file://` URLs
+  (`--allow-file`): the download and its hash, `--sha256` right and wrong,
+  `--max-bytes`, a missing file (http 404), a stale part file, a symlink
+  at the part path, `DEST` untouched and no part file after every failure,
+  `bad-url` for `http://`, other hosts, `api.github.com` and `file://`
+  without the flag, bad arguments; exactly one stdout line, exit 0 and an
+  empty stderr every time. It loads the script as a module
+  (`spec_from_file_location`) for `check_url` (the accepted and refused
+  URLs), `RedirectGuard` called directly with fake requests (a hop off the
+  allowlist, to `http`, to `file:` with the flag on, the five-hop limit),
+  `build_opener`'s handlers and schemes, `run()` over fake openers (a
+  refused redirect, an HTTP error, a query string that never reaches the
+  output, `Content-Length` over the limit refused unread, the count
+  deciding, an uncaught exception as its class name) and a real
+  `OpenerDirector` over a fake `https_open`, which proves urllib asks the
+  guard before it opens a hop. `tests/test_updates.py` has one test per
+  `validate_zip` rule and `read_build`, `asset_url`, `parse_sidecar`,
+  `staged_path` and `cleanup` cases. `tests/test_backend_updates.py`
+  stages from a `file://` tree through an `updates.Source(download_base,
+  allow_file=True)` with `python=sys.executable`: end to end for a release
+  and a branch, the argv, every `bad-request` (nothing spawned or
+  created), the reuse and the re-validation of a staged file, the
+  sidecar's failures, `hash-mismatch`, `bad-zip`, a downloader that says
+  nothing or hangs (`fake_python` shims, `FETCH_ANSWER_GRACE` patched
+  short), each busy kind, the guard released after an exception,
+  `cancel_update` and `unload` killing a downloader stuck mid-zip (its
+  part file gone), the startup cleanup, `cli_version()`'s `build`, and the
+  plugin directory byte-identical after a staging. `tests/test_install.py`
+  holds the `replaced` case (equal version: equal bytes kept, other bytes
+  replaced atomically, a failed replace leaving the file), and
+  `tests/test_hard_rules.py` that `fetch.py` imports the standard library
+  only and parses as Python 3.11, that nothing under `py_modules` or
+  `main.py` imports it, that no backend file turns TLS verification off
+  (`CERT_NONE`, `_create_unverified_context`, `check_hostname = False`, a
+  `verify_mode` assignment), and that `main.py` names neither
+  `update_source` nor `allow_file` and no `py_modules` file says
+  `allow_file=True`.
 - `tests/test_entrypoint.py` runs `backend/entrypoint.sh` from a sandbox
   copy of `backend/`, `scripts/build_cli.py`, `cli/src` and a
   `package.json` (the zipapp's entries, mode and `--version`; a version
   mismatch, a missing source) and holds the real CLI's `__version__` to
   `package.json`'s; `tests/test_package.py` builds a fixture tree and checks
   the exact zip entry list and modes, with a root `build.json` and without
-  one. `tests/test_build_info.py` runs `scripts/build_info.py` with
+  one, and that `fetch.py` and `updates.py` ship (0755). `tests/test_build_info.py` runs `scripts/build_info.py` with
   `sys.executable` in `tmp_path`: the keys and their order, `built_at`'s
   form, `--out`, and every refusal (one stderr line, nothing written; exit
   3 for the ref alone, 1 for a bad kind, sha or run, the ref bad too or
