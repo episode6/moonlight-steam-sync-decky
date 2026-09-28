@@ -2,8 +2,9 @@
  * The frontend's one store (spec 3.6): CLI state, settings, hosts, the
  * pending flags, the last `status` snapshot and what it derives (counters,
  * the stream map), host reachability, the progress of the current run, the
- * layout results of `layouts.json` (spec 3.10), and the SteamGridDB key's
- * state and the key fetch in flight (spec 3.20.4).
+ * layout results of `layouts.json` (spec 3.10), the SteamGridDB key's
+ * state and the key fetch in flight (spec 3.20.4), and what the updater
+ * knows (update spec 3.6; its texts and the panel's row are `updates.ts`'s).
  *
  * Pure: reducers are plain functions over plain data and `Store` is a tiny
  * subscribe/notify container, so everything here is unit-tested with vitest.
@@ -33,6 +34,7 @@ import type {
 } from "./cli";
 import { relativeTime } from "./format";
 import { defaultLayoutOf, layoutStrategy } from "./layouts";
+import type { UpdateInfo, UpdatePhase } from "./updates";
 import { cliStatus, type CliStatus } from "./version";
 
 // ---------------------------------------------------------------------------
@@ -485,6 +487,14 @@ export interface AppState {
   sgdbKey: KeyState | null;
   /** The key fetch from the Game Mode browser in flight (spec 3.20.4), or `null`. */
   keyFetch: KeyFetch | null;
+  /**
+   * What the updater knows (update spec 3.6): the last successful check's
+   * releases and when, and the last check's failure. `null` while the
+   * plugin is off, and before the load has reached it. Never on disk.
+   */
+  update: UpdateInfo | null;
+  /** What the updater is doing right now. */
+  updatePhase: UpdatePhase;
 }
 
 export function initialState(): AppState {
@@ -513,6 +523,8 @@ export function initialState(): AppState {
     walking: false,
     sgdbKey: null,
     keyFetch: null,
+    update: null,
+    updatePhase: "idle",
   };
 }
 

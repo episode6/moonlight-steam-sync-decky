@@ -7,6 +7,8 @@
  * passes it in), so vitest can load everything under `src/lib/`.
  */
 
+import { timeUntil } from "./format";
+
 // ---------------------------------------------------------------------------
 // events (spec 3.4.6)
 
@@ -258,7 +260,16 @@ export type ErrorCode =
   /** The key fetch was cancelled (the *Cancel* button, or the plugin unloading). */
   | "cancelled"
   /** The key fetch: SteamGridDB's (or Steam's sign-in) page is not what it was measured as. */
-  | "sgdb-page";
+  | "sgdb-page"
+  // The updater's (update spec 3.6): the frontend's own, never the backend's.
+  /** This Decky Loader cannot be asked to install (too old, or no router). */
+  | "update-unsupported"
+  /** GitHub answered 403 / 429 with its rate limit spent; `retryAt` says when to ask again. */
+  | "rate-limited"
+  /** GitHub did not answer, or answered something other than 200. */
+  | "network"
+  /** GitHub answered 200 with something that is not a list of releases. */
+  | "bad-release";
 
 export interface Failure {
   ok: false;
@@ -275,6 +286,8 @@ export interface Failure {
    */
   kind?: RunKind | "match" | "key";
   timeout_s?: number;
+  /** `rate-limited`: when GitHub says to ask again (ISO), `null` when it did not say. */
+  retryAt?: string | null;
 }
 
 export type Result<T extends object = object> = ({ ok: true } & T) | Failure;
@@ -666,7 +679,8 @@ export function makeBackend(callable: CallableFactory): Backend {
 // ---------------------------------------------------------------------------
 // error text (spec 3.8 "Error strings"), mapped once and used everywhere
 
-export function errorText(failure: Failure): string {
+/** `now` only dates `rate-limited`'s "Try again in …". */
+export function errorText(failure: Failure, now: Date = new Date()): string {
   switch (failure.error) {
     case "cli-missing":
       return "CLI not installed — see About";
@@ -701,6 +715,15 @@ export function errorText(failure: Failure): string {
     case "cancelled":
     case "sgdb-page":
       return failure.message;
+    // The updater's (update spec 3.6).
+    case "update-unsupported":
+      return "This Decky Loader cannot install updates from a plugin. Update Decky Loader, or update with install.sh from Desktop Mode";
+    case "rate-limited":
+      return `GitHub is limiting requests from this network. Try again ${timeUntil(failure.retryAt, now)}`;
+    case "network":
+      return `Could not reach GitHub: ${failure.message}`;
+    case "bad-release":
+      return "GitHub's answer could not be read. Check again later";
     case "bad-request":
     case "io":
     default:

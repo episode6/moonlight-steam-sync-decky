@@ -12,7 +12,7 @@ import {
 import { useEffect, useState, type ReactNode } from "react";
 import { FaDesktop, FaGamepad, FaMoon, FaStar, FaSteam } from "react-icons/fa";
 
-import { SETTINGS_ROUTE, controller } from "../instance";
+import { SETTINGS_ROUTE, UPDATES_ROUTE, controller } from "../instance";
 import { lastSyncLine } from "../lib/format";
 import { layoutStrategy } from "../lib/layouts";
 import {
@@ -30,6 +30,7 @@ import {
   type LaunchKey,
 } from "../lib/state";
 import { pluginEnabled } from "../lib/library";
+import { updateRowView } from "../lib/updates";
 import { adoptAsDefault } from "./adoptDefault";
 import { confirmSwitch } from "./confirmSwitch";
 import { EnabledToggle } from "./EnabledToggle";
@@ -298,6 +299,29 @@ function HostRow({ state }: { state: AppState }) {
   );
 }
 
+/**
+ * *Update to 0.12.0* (update spec 3.7): the panel's last row while a newer
+ * release is offered. It only opens Settings → Updates, as the header's
+ * buttons open theirs; the install button is on that page.
+ */
+function UpdateRow({ state }: { state: AppState }) {
+  const view = updateRowView(state);
+  if (!view) return null;
+  return (
+    <PanelSectionRow>
+      <ButtonItem
+        layout="below"
+        onClick={() => {
+          Navigation.Navigate(UPDATES_ROUTE);
+          Navigation.CloseSideMenus();
+        }}
+      >
+        {view.text}
+      </ButtonItem>
+    </PanelSectionRow>
+  );
+}
+
 function RestartRow({ state }: { state: AppState }) {
   const view = restartRowView(state);
   if (!view) return null;
@@ -354,6 +378,7 @@ export function QuickAccess() {
             Open About
           </ButtonItem>
         </PanelSectionRow>
+        <UpdateRow state={state} />
       </PanelSection>
     );
   }
@@ -373,6 +398,7 @@ export function QuickAccess() {
             Retry
           </ButtonItem>
         </PanelSectionRow>
+        <UpdateRow state={state} />
       </PanelSection>
     );
   }
@@ -439,6 +465,7 @@ export function QuickAccess() {
           Settings
         </ButtonItem>
       </PanelSectionRow>
+      <UpdateRow state={state} />
     </PanelSection>
   );
 }

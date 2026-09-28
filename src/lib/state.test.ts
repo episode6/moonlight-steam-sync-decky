@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import { loadFixture } from "../test/fixtures";
-import type { EntryEvent, KeyState, Pending, SyncDonePayload } from "./cli";
+import type { CliVersion, EntryEvent, KeyState, Pending, Settings, SyncDonePayload } from "./cli";
 import { eventsOf } from "./events";
+import { updateRowView, type Release } from "./updates";
 import {
   actionsReady,
   applyRunDone,
@@ -492,5 +493,74 @@ describe("hostSynced", () => {
 
   it("counts an unread pending as synced, so a failed read hides nothing", () => {
     expect(hostSynced(null, "OFFICE-PC")).toBe(true);
+  });
+});
+
+describe("updateRowView, the panel's Update row (update spec 3.7)", () => {
+  const release: Release = {
+    tag: "v0.13.0",
+    kind: "release",
+    version: "0.13.0",
+    publishedAt: "2026-10-20T12:00:00Z",
+    notes: "",
+    size: 1,
+    digest: "a".repeat(64),
+  };
+  const cliVersion: CliVersion = {
+    installed: "0.4.0",
+    bundled: "0.4.0",
+    minimum: "0.4.0",
+    too_old: false,
+    installed_path: "",
+    bundled_path: "",
+    plugin_version: "0.12.0",
+    loader_version: "v3.2.9",
+    log_path: "",
+    install_error: null,
+    capabilities: { art_commit: true },
+  };
+  const offering = () => ({
+    ...initialState(),
+    cliVersion,
+    update: { releases: [release], checkedAt: "2026-10-21T10:00:00Z", error: null },
+  });
+
+  it("offers the newer release while the updater is idle", () => {
+    expect(updateRowView(offering())).toEqual({ text: "Update to 0.13.0", tag: "v0.13.0" });
+  });
+
+  it("is gone while a check or a hand-off is going", () => {
+    expect(updateRowView({ ...offering(), updatePhase: "checking" })).toBeNull();
+    expect(updateRowView({ ...offering(), updatePhase: "asking" })).toBeNull();
+  });
+
+  it("is gone while the plugin is off, or before the updater has state", () => {
+    const off = { ...offering(), settings: { enabled: false } as Settings };
+    expect(updateRowView(off)).toBeNull();
+    expect(updateRowView({ ...offering(), update: null })).toBeNull();
+    expect(updateRowView({ ...offering(), update: { releases: null, checkedAt: null, error: null } })).toBeNull();
+  });
+
+  it("is gone on a loader too old to install", () => {
+    expect(updateRowView({ ...offering(), cliVersion: { ...cliVersion, loader_version: "v2.12.3" } })).toBeNull();
+    // an unknown loader counts as current
+    expect(updateRowView({ ...offering(), cliVersion: { ...cliVersion, loader_version: "" } })).not.toBeNull();
+  });
+
+  it("is gone when nothing newer with a digest exists, or the installed version is unknown", () => {
+    expect(updateRowView({ ...offering(), cliVersion: { ...cliVersion, plugin_version: "0.13.0" } })).toBeNull();
+    expect(updateRowView({ ...offering(), cliVersion: { ...cliVersion, plugin_version: null } })).toBeNull();
+    expect(updateRowView({ ...offering(), cliVersion: null })).toBeNull();
+    const undigested = { releases: [{ ...release, digest: null }], checkedAt: null, error: null };
+    expect(updateRowView({ ...offering(), update: undigested })).toBeNull();
+  });
+
+  it("keeps the offer from the last good check when a later one failed", () => {
+    const failed = { ok: false as const, error: "network" as const, message: "GitHub answered 502", retryAt: null };
+    const state = offering();
+    expect(updateRowView({ ...state, update: { ...state.update, error: failed } })).toEqual({
+      text: "Update to 0.13.0",
+      tag: "v0.13.0",
+    });
   });
 });
