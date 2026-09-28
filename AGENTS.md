@@ -350,8 +350,9 @@ src/lib/                    pure modules (vitest)
                             step, after the finally, never awaited; skipped while off
                             and once `update` is set, so a load re-run after a failed
                             cli_version() does not ask twice; the empty state, then
-                            checkUpdates(false) when update_check is on and the
-                            loader is supported), checkUpdates(manual) (nothing
+                            checkUpdates(false) when the settings were read (a
+                            failed get_settings asks nothing), update_check is on
+                            and the loader is supported), checkUpdates(manual) (nothing
                             unless idle and on; no request before a rate-limited
                             retryAt, nor for Check now within CHECK_MIN_INTERVAL_MS,
                             which toasts the stored failure; the automatic check

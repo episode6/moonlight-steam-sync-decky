@@ -2399,6 +2399,19 @@ describe("the updater (update spec 3.6)", () => {
       expect(ui.bodies).toEqual([]); // a manual check toasts no offer: the page shows it
     });
 
+    it("none when the settings could not be read: the user's choice is unknown", async () => {
+      ui.netAnswer = RELEASES_ANSWER;
+      const controller = await loaded({ get_settings: { ok: false, error: "io", message: "disk" } });
+      expect(controller.state.settings).toBeNull();
+      expect(ui.netCalls).toEqual([]);
+      expect(ui.bodies).toEqual([]);
+      expect(controller.state.update).toEqual({ releases: null, checkedAt: null, error: null });
+      // a press still asks
+      await controller.checkUpdates(true);
+      expect(ui.netCalls).toHaveLength(1);
+      expect(controller.state.update?.releases).toHaveLength(4);
+    });
+
     it("none on a loader too old to install", async () => {
       await loaded({ cli_version: cliVersion("0.12.0", "v2.12.3") });
       expect(ui.netCalls).toEqual([]);

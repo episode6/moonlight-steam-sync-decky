@@ -1014,8 +1014,10 @@ export class Controller {
 
   /**
    * The load's last step, and `setEnabled(true)`'s: the updater's empty
-   * state, then, when *Check for updates automatically* is on and the
-   * loader can install, one check that nobody awaits. Skipped while the
+   * state, then, when the settings were read, *Check for updates
+   * automatically* is on in them and the loader can install, one check
+   * that nobody awaits (unread settings leave the user's choice unknown,
+   * so no request; *Check now* still asks). Skipped while the
    * plugin is off (update spec 3.2), and once the updater already has its
    * state: a load that ran again after a failed `cli_version()` is the
    * same plugin load (Decision U16), so it does not ask GitHub twice.
@@ -1023,7 +1025,8 @@ export class Controller {
   private loadUpdates(): void {
     if (!this.enabled || this.state.update) return;
     this.store.set({ update: { releases: null, checkedAt: null, error: null } });
-    if (updateCheckEnabled(this.state.settings) && loaderSupported(this.state.cliVersion?.loader_version)) {
+    const settings = this.state.settings;
+    if (settings !== null && updateCheckEnabled(settings) && loaderSupported(this.state.cliVersion?.loader_version)) {
       void this.checkUpdates(false);
     }
   }
