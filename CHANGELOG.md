@@ -42,8 +42,14 @@ project uses [semantic versioning](https://semver.org/).
   build only on a branch channel (below). Every zip CI builds, a
   release's included, now carries a `build.json` saying what it was built
   from (`scripts/build_info.py`), except one from a branch whose name has
-  a character like `+` or `@`, which CI still builds. See the README's
-  "Developing".
+  a character like `+` or `@`, which CI still builds. A zip built
+  anywhere else carries one as well: `scripts/package.py` reads the branch
+  and the commit from the git checkout it is run in, so a build made on
+  the Deck from a clone of `main` is recognised as the commit it is, and
+  following `main` offers a switch only when `main` has moved on (until
+  now such a build read as a release, and the switch was always offered).
+  A checkout with uncommitted changes, or on no branch, says nothing
+  about itself, as before. See the README's "Developing".
 - **The plugin can download and check a build before it is installed.**
   The backend can now fetch a release's (or a branch build's) zip from
   this repository on GitHub into `~/homebrew/data/Moonlight Sync/`,

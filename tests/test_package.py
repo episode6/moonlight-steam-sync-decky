@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+import os
+import re
 import stat
 import subprocess
 import sys
@@ -11,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from conftest import ROOT
+from moonlight_sync import updates
 
 SCRIPT = ROOT / "scripts" / "package.py"
 TOP = "Moonlight Sync"
@@ -137,6 +141,182 @@ def test_without_build_json_the_zip_has_none(tree: Path) -> None:
     (tree / "build.json").mkdir()
     assert package(tree).returncode == 0
     assert not any("build.json" in info.filename for info in entries(tree))
+
+
+# ---------------------------------------------------------------------------
+# A build made outside CI: build.json from the git checkout (amendment A5)
+
+
+def git(root: Path, *args: str) -> str:
+    """git in ``root``, blind to the machine's own configuration."""
+    env = {
+        **{key: value for key, value in os.environ.items() if not key.startswith("GIT_")},
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_SYSTEM": os.devnull,
+    }
+    identity = ["-c", "user.name=Test", "-c", "user.email=test@example.invalid"]
+    result = subprocess.run(
+        ["git", "-C", str(root), *identity, "-c", "commit.gpgsign=false", *args],
+        capture_output=True,
+        text=True,
+        check=True,
+        env=env,
+    )
+    return result.stdout.strip()
+
+
+@pytest.fixture
+def checkout(tree: Path) -> Path:
+    """``tree`` as a clone of the repository is: committed on ``main``, with
+    what a build writes ignored, as the repository's own .gitignore has it."""
+    add_cli(tree)
+    (tree / ".gitignore").write_text("out\nbackend/out\n__pycache__/\n*.pyc\n")
+    git(tree, "init", "--quiet", "--initial-branch", "main")
+    git(tree, "add", "--all")
+    git(tree, "commit", "--quiet", "--message", "everything")
+    return tree
+
+
+def packaged_build(root: Path) -> str | None:
+    with zipfile.ZipFile(root / "out" / "Moonlight-Sync.zip") as archive:
+        name = f"{TOP}/build.json"
+        return archive.read(name).decode("utf-8") if name in archive.namelist() else None
+
+
+def test_a_git_checkout_names_its_branch_and_commit(checkout: Path) -> None:
+    sha = git(checkout, "rev-parse", "HEAD")
+    result = package(checkout, "--require-cli", "--list")
+    assert result.returncode == 0, result.stderr
+    names = [info.filename for info in entries(checkout)]
+    assert names[:7] == [
+        f"{TOP}/plugin.json",
+        f"{TOP}/package.json",
+        f"{TOP}/main.py",
+        f"{TOP}/README.md",
+        f"{TOP}/LICENSE",
+        f"{TOP}/build.json",
+        f"{TOP}/dist/",
+    ]
+    assert result.stdout.splitlines()[:-1] == names
+    assert f"package.py: build.json from git: main @ {sha[:12]}" in result.stderr
+    text = packaged_build(checkout)
+    assert text is not None and text.endswith("\n")
+    data = json.loads(text)
+    assert list(data) == ["schema", "kind", "ref", "sha", "built_at", "run"]
+    assert (data["schema"], data["kind"], data["ref"], data["sha"]) == (1, "branch", "main", sha)
+    assert data["run"] is None
+    assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", data["built_at"])
+    modes = {info.filename: stat.S_IMODE(info.external_attr >> 16) for info in entries(checkout)}
+    assert modes[f"{TOP}/build.json"] == 0o644
+    # In the zip only: nothing is left at the root for a later build to package.
+    assert not (checkout / "build.json").exists()
+
+
+def test_the_backend_reads_a_git_build_as_the_branch_s(checkout: Path) -> None:
+    """What the Updates page compares with the published build's build.json."""
+    assert package(checkout).returncode == 0
+    text = packaged_build(checkout)
+    assert text is not None
+    assert updates.parse_build(text) == {
+        "schema": 1,
+        "kind": "branch",
+        "ref": "main",
+        "sha": git(checkout, "rev-parse", "HEAD"),
+        "built_at": json.loads(text)["built_at"],
+        "run": None,
+    }
+
+
+def test_a_second_build_of_the_checkout_says_the_same(checkout: Path) -> None:
+    """The first build's out/ is ignored, so the checkout is still its commit."""
+    assert package(checkout).returncode == 0
+    first = packaged_build(checkout)
+    assert package(checkout).returncode == 0
+    second = packaged_build(checkout)
+    assert first is not None and second is not None
+    assert json.loads(first)["sha"] == json.loads(second)["sha"]
+
+
+def test_another_branch_is_named(checkout: Path) -> None:
+    git(checkout, "switch", "--quiet", "--create", "self-update/u3_builds.v2")
+    assert package(checkout).returncode == 0
+    text = packaged_build(checkout)
+    assert text is not None
+    assert json.loads(text)["ref"] == "self-update/u3_builds.v2"
+
+
+def test_the_root_s_build_json_wins_over_git(checkout: Path) -> None:
+    """CI's file, written by build_info.py before package.py runs."""
+    (checkout / "build.json").write_text('{"schema": 1}\n')
+    result = package(checkout)
+    assert result.returncode == 0, result.stderr
+    assert packaged_build(checkout) == '{"schema": 1}\n'
+    assert "from git" not in result.stderr
+
+
+@pytest.mark.parametrize("change", ["edited", "untracked", "staged"])
+def test_uncommitted_changes_are_not_the_commit(checkout: Path, change: str) -> None:
+    if change == "edited":
+        (checkout / "main.py").write_text("class Plugin: pass\n")
+    else:
+        (checkout / "py_modules" / "moonlight_sync" / "extra.py").write_text("Y = 2\n")
+    if change == "staged":
+        git(checkout, "add", "--all")
+    result = package(checkout)
+    assert result.returncode == 0, result.stderr
+    assert packaged_build(checkout) is None
+    assert "package.py: no build.json: the checkout has uncommitted changes" in result.stderr
+
+
+def test_a_detached_head_names_no_branch(checkout: Path) -> None:
+    git(checkout, "checkout", "--quiet", "--detach")
+    result = package(checkout)
+    assert result.returncode == 0, result.stderr
+    assert packaged_build(checkout) is None
+    assert "package.py: no build.json: HEAD is detached" in result.stderr
+
+
+def test_a_branch_name_build_json_cannot_carry(checkout: Path) -> None:
+    git(checkout, "switch", "--quiet", "--create", "feature+x")
+    result = package(checkout)
+    assert result.returncode == 0, result.stderr
+    assert packaged_build(checkout) is None
+    assert "package.py: no build.json: --ref must match" in result.stderr
+
+
+def test_a_directory_inside_another_checkout_is_not_that_commit(
+    tree: Path, tmp_path: Path
+) -> None:
+    (tmp_path / ".gitignore").write_text("out\n__pycache__/\n*.pyc\n")
+    git(tmp_path, "init", "--quiet", "--initial-branch", "main")
+    git(tmp_path, "add", "--all")
+    git(tmp_path, "commit", "--quiet", "--message", "everything")
+    result = package(tree)
+    assert result.returncode == 0, result.stderr
+    assert packaged_build(tree) is None
+    assert "package.py: no build.json: not the root of a git checkout" in result.stderr
+
+
+def test_a_tree_that_is_no_checkout_has_none(tree: Path) -> None:
+    result = package(tree)
+    assert result.returncode == 0, result.stderr
+    assert packaged_build(tree) is None
+    assert "package.py: no build.json: not the root of a git checkout" in result.stderr
+
+
+def test_without_git_the_zip_is_still_built(checkout: Path, tmp_path: Path) -> None:
+    empty = tmp_path / "no-git-here"
+    empty.mkdir()
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "--root", str(checkout)],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, "PATH": str(empty)},
+    )
+    assert result.returncode == 0, result.stderr
+    assert packaged_build(checkout) is None
+    assert "package.py: no build.json: not the root of a git checkout" in result.stderr
 
 
 def test_without_the_cli_warns_and_packages(tree: Path) -> None:

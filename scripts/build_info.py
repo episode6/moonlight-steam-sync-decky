@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write build.json, what a CI build says about itself (update spec 3.12.1).
+"""Write build.json, what a build says about itself (update spec 3.12.1).
 
     python3 scripts/build_info.py --kind KIND --ref REF --sha SHA --run RUN [--out PATH]
 
@@ -8,6 +8,13 @@ when it exists at the repo root. ``release.yml``'s build job and ``ci.yml``'s
 ``package`` job write it with ``release`` and the tag on a tag, else ``branch``
 and the branch's name; ``builds.yml`` with ``branch`` and the branch it
 builds. The version is not in it: ``package.json`` has it (hard rule 8).
+
+A build made outside CI has no such step, so without the file
+``package.py`` asks :func:`from_git` what the checkout itself says (the
+spec's amendment A5): the branch checked out and its commit, ``run``
+``null``. Then a zip built on a device from a clone of ``main`` names the
+commit the published build of ``main`` names, and the plugin's Updates page
+can tell the two are the same.
 
     {"schema": 1, "kind": "branch", "ref": "main",
      "sha": "<40 hex>", "built_at": "2026-10-02T14:03:11Z", "run": "123456/1"}
@@ -35,6 +42,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -46,20 +54,28 @@ RUN_RE = re.compile(r"[0-9]+/[0-9]+")
 REF_RE = re.compile(r"[A-Za-z0-9._/-]{1,100}")
 EXIT_REFUSED = 1
 EXIT_REF_REFUSED = 3
+GIT_TIMEOUT_S = 30
+#: Where git would look instead of the directory it is pointed at.
+GIT_LOCATION_ENV = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR")
 
 
 class RefRefused(ValueError):
     """The kind, the sha and the run are good; only the ref is outside ``REF_RE``."""
 
 
-def build_info(kind: str, ref: str, sha: str, run: str, now: float | None = None) -> dict:
+class NoGitBuild(ValueError):
+    """The checkout cannot name what it builds; the message says why."""
+
+
+def build_info(kind: str, ref: str, sha: str, run: str | None, now: float | None = None) -> dict:
     """The file's contents, keys in the spec's order; ``ValueError`` on a bad
-    argument, ``RefRefused`` (checked last) when only the ref is bad."""
+    argument, ``RefRefused`` (checked last) when only the ref is bad. ``run``
+    is ``None`` only for a build no workflow ran (:func:`from_git`)."""
     if kind not in KINDS:
         raise ValueError(f"--kind must be one of {', '.join(KINDS)}, not {kind!r}")
     if not SHA_RE.fullmatch(sha):
         raise ValueError(f"--sha must be 40 hex digits, not {sha!r}")
-    if not RUN_RE.fullmatch(run):
+    if run is not None and not RUN_RE.fullmatch(run):
         raise ValueError(f"--run must be <run id>/<run attempt> in digits, not {run!r}")
     if not REF_RE.fullmatch(ref):
         raise RefRefused(f"--ref must match ^[A-Za-z0-9._/-]{{1,100}}$, not {ref!r}")
@@ -72,6 +88,51 @@ def build_info(kind: str, ref: str, sha: str, run: str, now: float | None = None
         "built_at": built_at,
         "run": run,
     }
+
+
+def _git(root: Path, *args: str) -> str | None:
+    """git's answer in ``root``; ``None`` when there is no git or it fails."""
+    env = {key: value for key, value in os.environ.items() if key not in GIT_LOCATION_ENV}
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(root), *args],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+            timeout=GIT_TIMEOUT_S,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
+def from_git(root: Path, now: float | None = None) -> dict:
+    """What a build of the checkout at ``root`` says about itself: ``branch``,
+    the branch checked out and its commit, ``run`` ``None`` (no workflow ran).
+
+    ``NoGitBuild`` unless the zip would be that commit and nothing else:
+    ``root`` must be the top of a git checkout (a directory inside another
+    repository is not labelled with that repository's commit), on a branch
+    (a detached ``HEAD`` names none) and with nothing uncommitted, untracked
+    files included, since ``package.py`` ships what is on disk. ``RefRefused``
+    for a branch name outside ``REF_RE``, as in :func:`build_info`.
+    """
+    top = _git(root, "rev-parse", "--show-toplevel")
+    if not top or Path(top).resolve() != root.resolve():
+        raise NoGitBuild("not the root of a git checkout")
+    ref = _git(root, "symbolic-ref", "--quiet", "--short", "HEAD")
+    if not ref:
+        raise NoGitBuild("HEAD is detached, so no branch names this build")
+    sha = _git(root, "rev-parse", "--verify", "--quiet", "HEAD")
+    if not sha or not SHA_RE.fullmatch(sha):
+        raise NoGitBuild("HEAD names no commit of 40 hex digits")
+    changes = _git(root, "status", "--porcelain", "--untracked-files=normal")
+    if changes is None:
+        raise NoGitBuild("git status failed")
+    if changes:
+        raise NoGitBuild("the checkout has uncommitted changes")
+    return build_info("branch", ref, sha, None, now)
 
 
 def main(argv: list[str] | None = None) -> int:

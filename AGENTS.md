@@ -305,10 +305,20 @@ scripts/build_info.py       build.json (update spec 3.12.1): --kind release|bran
                             ci.yml / release.yml skip build.json on it for a branch,
                             amendment A1; builds.yml fails, so a branch with a `+` or
                             an `@` cannot be published); CI writes it at the root
-                            before package.py, never committed (.gitignore)
+                            before package.py, never committed (.gitignore);
+                            from_git(root) (amendment A5, for a build made outside
+                            CI): {kind: branch, ref: the branch checked out, sha:
+                            HEAD, run: null}, NoGitBuild unless root is the top of
+                            a git checkout, on a branch, with nothing uncommitted
+                            or untracked (`git -C root`, GIT_DIR and its kin
+                            dropped from the environment), RefRefused for a name
+                            outside the pattern
 scripts/package.py          Docker-free zip: out/Moonlight-Sync.zip ("Moonlight Sync/");
                             OPTIONAL_ROOT_FILES (build.json) from the root when it
-                            exists, 0644, after the five root files
+                            exists, 0644, after the five root files; without a root
+                            build.json, build_info.from_git's, written into the zip
+                            only (never to the root, so none goes stale), else no
+                            build.json; one stderr line says which and why
 src/index.tsx               definePlugin: events (sync_event / sync_done, sgdb_key_event /
                             sgdb_key_done), settings route, running-app watch, load()
 src/instance.tsx            the Controller wired to callable / Steam / showModal / toaster;
@@ -1518,7 +1528,14 @@ There is no Steam Deck during development; everything else is tested.
   mismatch, a missing source) and holds the real CLI's `__version__` to
   `package.json`'s; `tests/test_package.py` builds a fixture tree and checks
   the exact zip entry list and modes, with a root `build.json` and without
-  one, and that `fetch.py` and `updates.py` ship (0755). `tests/test_build_info.py` runs `scripts/build_info.py` with
+  one, and that `fetch.py` and `updates.py` ship (0755); its `checkout`
+  fixture commits the tree to a scratch git repository on `main` (the
+  machine's git configuration shut out), for the `build.json` a build
+  outside CI gets: the branch and `HEAD`, `run` `null`, read back through
+  `updates.parse_build`, the root's file winning over git, and none for an
+  edited, untracked or staged change, a detached `HEAD`, a refused branch
+  name, a tree inside another checkout, no checkout, and no `git` on
+  `PATH`. `tests/test_build_info.py` runs `scripts/build_info.py` with
   `sys.executable` in `tmp_path`: the keys and their order, `built_at`'s
   form, `--out`, and every refusal (one stderr line, nothing written; exit
   3 for the ref alone, 1 for a bad kind, sha or run, the ref bad too or

@@ -823,9 +823,18 @@ ruff check . && python3 -m pytest && python3 -m pytest cli
 
 A zip CI builds also carries `Moonlight Sync/build.json`, which says what
 it was built from (`scripts/build_info.py`: `release` and the tag, or
-`branch` and the branch's name, the commit and the run). A local build has
-none unless you write one at the repo root, and a zip without it is a
-release of `package.json`'s version.
+`branch` and the branch's name, the commit and the run). A build made
+anywhere else, on your machine or on the Deck, carries one too:
+`scripts/package.py` reads the branch and the commit from the git checkout
+when the root has no `build.json` (the run is then `null`), and says so on
+stderr. So a zip you built from a clone of `main` names the commit the
+published build of `main` names, and with the *Channel* on `main` the
+Updates page offers a switch only when `main` has moved on. The checkout
+has to be that commit and nothing else: with uncommitted or untracked
+changes, a detached `HEAD`, a branch name with a character outside
+`A-Z a-z 0-9 . _ / -`, or no git checkout at all, the zip carries no
+`build.json`, and a zip without it is a release of `package.json`'s
+version.
 
 ### Branch builds
 
