@@ -139,8 +139,10 @@ def test_without_build_json_the_zip_has_none(tree: Path) -> None:
     """Absent, the zip is what it always was (the exact list above, in
     test_exact_entry_list_with_the_cli); a directory of the name is not the file."""
     (tree / "build.json").mkdir()
-    assert package(tree).returncode == 0
+    result = package(tree)
+    assert result.returncode == 0
     assert not any("build.json" in info.filename for info in entries(tree))
+    assert "package.py: no build.json: the root's is not a file" in result.stderr
 
 
 # ---------------------------------------------------------------------------
@@ -251,7 +253,30 @@ def test_the_root_s_build_json_wins_over_git(checkout: Path) -> None:
     result = package(checkout)
     assert result.returncode == 0, result.stderr
     assert packaged_build(checkout) == '{"schema": 1}\n'
+    assert "package.py: build.json from the root" in result.stderr
     assert "from git" not in result.stderr
+
+
+def test_a_directory_named_build_json_is_not_replaced_by_git_s(checkout: Path) -> None:
+    """Whatever put it there, the root's build.json is the root's to decide."""
+    (checkout / "build.json").mkdir()
+    result = package(checkout)
+    assert result.returncode == 0, result.stderr
+    assert packaged_build(checkout) is None
+    assert "package.py: no build.json: the root's is not a file" in result.stderr
+    assert "from git" not in result.stderr
+
+
+def test_a_tag_named_like_the_branch_does_not_rename_it(checkout: Path) -> None:
+    """``symbolic-ref --short`` answers heads/main then; CI's ref_name is main."""
+    git(checkout, "tag", "main")
+    assert git(checkout, "symbolic-ref", "--short", "HEAD") == "heads/main"
+    result = package(checkout)
+    assert result.returncode == 0, result.stderr
+    text = packaged_build(checkout)
+    assert text is not None
+    assert json.loads(text)["ref"] == "main"
+    assert "package.py: build.json from git: main @ " in result.stderr
 
 
 @pytest.mark.parametrize("change", ["edited", "untracked", "staged"])
@@ -273,7 +298,10 @@ def test_a_detached_head_names_no_branch(checkout: Path) -> None:
     result = package(checkout)
     assert result.returncode == 0, result.stderr
     assert packaged_build(checkout) is None
-    assert "package.py: no build.json: HEAD is detached" in result.stderr
+    # `symbolic-ref --quiet` says nothing of a detached HEAD, so nothing is quoted.
+    assert "package.py: no build.json: HEAD is detached, so no branch names this build\n" in (
+        result.stderr
+    )
 
 
 def test_a_branch_name_build_json_cannot_carry(checkout: Path) -> None:
@@ -301,7 +329,32 @@ def test_a_tree_that_is_no_checkout_has_none(tree: Path) -> None:
     result = package(tree)
     assert result.returncode == 0, result.stderr
     assert packaged_build(tree) is None
-    assert "package.py: no build.json: not the root of a git checkout" in result.stderr
+    assert "package.py: no build.json: not the root of a git checkout (git: fatal: not a git" in (
+        result.stderr
+    )
+
+
+def test_git_s_own_refusal_is_quoted(checkout: Path) -> None:
+    """A clone that belongs to another user ("dubious ownership"), as git
+    itself simulates it; the machine's safe.directory is shut out."""
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "--root", str(checkout)],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={
+            **os.environ,
+            "GIT_TEST_ASSUME_DIFFERENT_OWNER": "1",
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_CONFIG_SYSTEM": os.devnull,
+        },
+    )
+    assert result.returncode == 0, result.stderr
+    assert packaged_build(checkout) is None
+    assert "package.py: no build.json: not the root of a git checkout (git: fatal: " in (
+        result.stderr
+    )
+    assert "dubious ownership" in result.stderr
 
 
 def test_without_git_the_zip_is_still_built(checkout: Path, tmp_path: Path) -> None:
@@ -316,7 +369,10 @@ def test_without_git_the_zip_is_still_built(checkout: Path, tmp_path: Path) -> N
     )
     assert result.returncode == 0, result.stderr
     assert packaged_build(checkout) is None
-    assert "package.py: no build.json: not the root of a git checkout" in result.stderr
+    assert (
+        "package.py: no build.json: not the root of a git checkout"
+        " (git did not run: FileNotFoundError)"
+    ) in result.stderr
 
 
 def test_without_the_cli_warns_and_packages(tree: Path) -> None:

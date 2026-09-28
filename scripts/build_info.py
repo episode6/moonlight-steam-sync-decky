@@ -55,6 +55,8 @@ REF_RE = re.compile(r"[A-Za-z0-9._/-]{1,100}")
 EXIT_REFUSED = 1
 EXIT_REF_REFUSED = 3
 GIT_TIMEOUT_S = 30
+#: A branch's full ref, as ``git symbolic-ref HEAD`` spells it.
+BRANCH_PREFIX = "refs/heads/"
 #: Where git would look instead of the directory it is pointed at.
 GIT_LOCATION_ENV = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR")
 
@@ -90,8 +92,10 @@ def build_info(kind: str, ref: str, sha: str, run: str | None, now: float | None
     }
 
 
-def _git(root: Path, *args: str) -> str | None:
-    """git's answer in ``root``; ``None`` when there is no git or it fails."""
+def _git(root: Path, *args: str) -> tuple[str | None, str]:
+    """git's answer in ``root`` and ``""``, or ``None`` and why there is none:
+    the first line git wrote to stderr (``""`` when it wrote nothing, as
+    ``--quiet`` has it), or that git did not run or did not answer."""
     env = {key: value for key, value in os.environ.items() if key not in GIT_LOCATION_ENV}
     try:
         result = subprocess.run(
@@ -102,9 +106,19 @@ def _git(root: Path, *args: str) -> str | None:
             env=env,
             timeout=GIT_TIMEOUT_S,
         )
-    except (OSError, subprocess.SubprocessError):
-        return None
-    return result.stdout.strip() if result.returncode == 0 else None
+    except subprocess.TimeoutExpired:
+        return None, f"git did not answer in {GIT_TIMEOUT_S} s"
+    except (OSError, subprocess.SubprocessError) as error:
+        return None, f"git did not run: {type(error).__name__}"
+    if result.returncode == 0:
+        return result.stdout.strip(), ""
+    lines = [line.strip() for line in result.stderr.splitlines() if line.strip()]
+    return None, f"git: {lines[0]}" if lines else ""
+
+
+def _because(message: str, why: str) -> str:
+    """``message``, with what git said in brackets when it said something."""
+    return f"{message} ({why})" if why else message
 
 
 def from_git(root: Path, now: float | None = None) -> dict:
@@ -117,19 +131,28 @@ def from_git(root: Path, now: float | None = None) -> dict:
     (a detached ``HEAD`` names none) and with nothing uncommitted, untracked
     files included, since ``package.py`` ships what is on disk. ``RefRefused``
     for a branch name outside ``REF_RE``, as in :func:`build_info`.
+
+    The branch is ``HEAD``'s full ref without ``refs/heads/``, which is what
+    ``github.ref_name`` is in CI: ``symbolic-ref --short`` answers
+    ``heads/main`` when a tag is named ``main`` too. When git itself fails
+    (no git, a checkout it calls dubious, a timeout) the message carries
+    what it said.
     """
-    top = _git(root, "rev-parse", "--show-toplevel")
-    if not top or Path(top).resolve() != root.resolve():
+    top, why = _git(root, "rev-parse", "--show-toplevel")
+    if not top:
+        raise NoGitBuild(_because("not the root of a git checkout", why))
+    if Path(top).resolve() != root.resolve():
         raise NoGitBuild("not the root of a git checkout")
-    ref = _git(root, "symbolic-ref", "--quiet", "--short", "HEAD")
-    if not ref:
-        raise NoGitBuild("HEAD is detached, so no branch names this build")
-    sha = _git(root, "rev-parse", "--verify", "--quiet", "HEAD")
+    head, why = _git(root, "symbolic-ref", "--quiet", "HEAD")
+    if not head or not head.startswith(BRANCH_PREFIX):
+        raise NoGitBuild(_because("HEAD is detached, so no branch names this build", why))
+    ref = head[len(BRANCH_PREFIX) :]
+    sha, why = _git(root, "rev-parse", "--verify", "--quiet", "HEAD")
     if not sha or not SHA_RE.fullmatch(sha):
-        raise NoGitBuild("HEAD names no commit of 40 hex digits")
-    changes = _git(root, "status", "--porcelain", "--untracked-files=normal")
+        raise NoGitBuild(_because("HEAD names no commit of 40 hex digits", why))
+    changes, why = _git(root, "status", "--porcelain", "--untracked-files=normal")
     if changes is None:
-        raise NoGitBuild("git status failed")
+        raise NoGitBuild(_because("git status failed", why))
     if changes:
         raise NoGitBuild("the checkout has uncommitted changes")
     return build_info("branch", ref, sha, None, now)

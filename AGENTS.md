@@ -136,8 +136,9 @@ DEVICE-CHECKLIST.md         every on-device check (PR-0 probes, PR-5/6/7/8 items
                             update spec §3.9, via *Install another version* ->
                             reinstall until a newer release exists; the staged
                             hand-off and the channels §17: V8-V10 of update spec
-                            §3.12.5 and the branch's `build.json` through the
-                            loader's fetch), in order
+                            §3.12.5, the branch's `build.json` through the
+                            loader's fetch and a build made on the device,
+                            amendment A5), in order
 main.py                     thin decky Plugin: builds Backend, one line per callable;
                             no __init__ and `_backend` / `_startup` as class attributes, with
                             `_get` / `_ready` as classmethods, so it is correct whether the
@@ -312,13 +313,20 @@ scripts/build_info.py       build.json (update spec 3.12.1): --kind release|bran
                             a git checkout, on a branch, with nothing uncommitted
                             or untracked (`git -C root`, GIT_DIR and its kin
                             dropped from the environment), RefRefused for a name
-                            outside the pattern
+                            outside the pattern; the branch is `symbolic-ref HEAD`
+                            without BRANCH_PREFIX (`refs/heads/`), what
+                            github.ref_name is, never `--short` (which answers
+                            `heads/main` beside a tag named `main`); a failure of
+                            git's own carries the first line of its stderr, or
+                            that git did not run / did not answer
 scripts/package.py          Docker-free zip: out/Moonlight-Sync.zip ("Moonlight Sync/");
                             OPTIONAL_ROOT_FILES (build.json) from the root when it
                             exists, 0644, after the five root files; without a root
                             build.json, build_info.from_git's, written into the zip
                             only (never to the root, so none goes stale), else no
-                            build.json; one stderr line says which and why
+                            build.json; a root build.json that is not a file is
+                            never replaced by git's; one stderr line in every case
+                            (from the root, from git, or why there is none)
 src/index.tsx               definePlugin: events (sync_event / sync_done, sgdb_key_event /
                             sgdb_key_done), settings route, running-app watch, load()
 src/instance.tsx            the Controller wired to callable / Steam / showModal / toaster;
@@ -1532,10 +1540,13 @@ There is no Steam Deck during development; everything else is tested.
   fixture commits the tree to a scratch git repository on `main` (the
   machine's git configuration shut out), for the `build.json` a build
   outside CI gets: the branch and `HEAD`, `run` `null`, read back through
-  `updates.parse_build`, the root's file winning over git, and none for an
+  `updates.parse_build`, the root's file (or a directory of its name)
+  winning over git, a tag named `main` beside the branch, and none for an
   edited, untracked or staged change, a detached `HEAD`, a refused branch
-  name, a tree inside another checkout, no checkout, and no `git` on
-  `PATH`. `tests/test_build_info.py` runs `scripts/build_info.py` with
+  name, a tree inside another checkout, no checkout, a checkout git calls
+  dubious (`GIT_TEST_ASSUME_DIFFERENT_OWNER=1`, git's own message quoted)
+  and no `git` on `PATH`; each asserts the stderr line.
+  `tests/test_build_info.py` runs `scripts/build_info.py` with
   `sys.executable` in `tmp_path`: the keys and their order, `built_at`'s
   form, `--out`, and every refusal (one stderr line, nothing written; exit
   3 for the ref alone, 1 for a bad kind, sha or run, the ref bad too or

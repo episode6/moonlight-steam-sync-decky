@@ -25,7 +25,10 @@ into the zip only, never to the root, so a later build cannot package a
 stale one. A root that is not a git checkout, a detached ``HEAD``, a branch
 name ``build.json`` cannot carry or uncommitted changes (the zip would not
 be that commit) mean no ``build.json``, and such a zip reads as a release of
-``package.json``'s version. Either way one line on stderr says which.
+``package.json``'s version. One line on stderr says which it was, in every
+case: the root's file, git's branch and commit, or why there is none (with
+git's own message when git failed; a ``build.json`` at the root that is not
+a file is never replaced by git's).
 Standard library only, and ``git`` when there is one.
 """
 
@@ -109,7 +112,13 @@ class Packager:
             source = self.root / name
             if source.is_file():
                 items.append((source, f"{top}/{name}", FILE_MODE))
-            elif name == BUILD_JSON and not source.exists():
+                if name == BUILD_JSON:
+                    print(f"package.py: {BUILD_JSON} from the root", file=sys.stderr)
+            elif name != BUILD_JSON:
+                continue
+            elif source.exists():
+                print(f"package.py: no {BUILD_JSON}: the root's is not a file", file=sys.stderr)
+            else:
                 derived = _git_build(self.root)
                 if derived is not None:
                     items.append((derived, f"{top}/{name}", FILE_MODE))

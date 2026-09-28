@@ -829,12 +829,18 @@ anywhere else, on your machine or on the Deck, carries one too:
 when the root has no `build.json` (the run is then `null`), and says so on
 stderr. So a zip you built from a clone of `main` names the commit the
 published build of `main` names, and with the *Channel* on `main` the
-Updates page offers a switch only when `main` has moved on. The checkout
-has to be that commit and nothing else: with uncommitted or untracked
-changes, a detached `HEAD`, a branch name with a character outside
+Updates page offers a switch only when `main` has moved on. It also means
+the zip is a branch's build to the plugin, as a published one is: with the
+*Channel* left on *Releases*, the Updates page, the panel's last row and
+the toast at load offer **Switch to X**, the newest release, where a local
+build used to read as that release. Follow the branch you built (Settings
+→ Updates → *Channel*) to be offered its builds instead. The checkout has
+to be that commit and nothing else: with uncommitted or untracked changes,
+a detached `HEAD`, a branch name with a character outside
 `A-Z a-z 0-9 . _ / -`, or no git checkout at all, the zip carries no
 `build.json`, and a zip without it is a release of `package.json`'s
-version.
+version. `package.py` says on stderr which it was, with git's own message
+when git refused the checkout (a clone that belongs to another user, say).
 
 ### Branch builds
 

@@ -48,8 +48,12 @@ project uses [semantic versioning](https://semver.org/).
   the Deck from a clone of `main` is recognised as the commit it is, and
   following `main` offers a switch only when `main` has moved on (until
   now such a build read as a release, and the switch was always offered).
-  A checkout with uncommitted changes, or on no branch, says nothing
-  about itself, as before. See the README's "Developing".
+  Such a build is a branch's build on the *Releases* channel too: there
+  the plugin offers **Switch to X**, the newest release, as it does for a
+  published build of a branch, so follow the branch you built to be
+  offered its builds instead. A checkout with uncommitted changes, or on
+  no branch, says nothing about itself, as before. See the README's
+  "Developing".
 - **The plugin can download and check a build before it is installed.**
   The backend can now fetch a release's (or a branch build's) zip from
   this repository on GitHub into `~/homebrew/data/Moonlight Sync/`,
