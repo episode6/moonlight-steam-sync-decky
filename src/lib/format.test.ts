@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Pending, SummaryEvent } from "./cli";
-import { lastSyncLine, relativeTime, summaryLine } from "./format";
+import { dateText, lastSyncLine, relativeTime, summaryLine, timeUntil } from "./format";
 
 const now = new Date(2026, 8, 18, 15, 30);
 const local = (d: number, h: number, m: number) => new Date(2026, 8, d, h, m).toISOString();
@@ -28,6 +28,41 @@ describe("relativeTime", () => {
     expect(relativeTime(local(15, 9, 5), now)).toBe("3 days ago");
     expect(relativeTime(local(1, 9, 5), now)).toBe("2026-09-01");
     expect(relativeTime(null, now)).toBe("never");
+  });
+});
+
+describe("timeUntil and dateText", () => {
+  const at = (h: number, m: number, s = 0) => new Date(2026, 8, 18, h, m, s).toISOString();
+
+  it("minutes, hours, then the date", () => {
+    expect(timeUntil(at(15, 42), now)).toBe("in 12 minutes");
+    expect(timeUntil(at(15, 31, 30), now)).toBe("in 2 minutes");
+    expect(timeUntil(at(16, 30), now)).toBe("in an hour");
+    expect(timeUntil(at(18, 10), now)).toBe("in 3 hours");
+    expect(timeUntil(new Date(2026, 8, 21, 9, 0).toISOString(), now)).toBe("on 2026-09-21");
+  });
+
+  it("hours up to a full day away, the date only from then", () => {
+    const later = (h: number, m: number) => new Date(now.getTime() + (h * 60 + m) * 60_000).toISOString();
+    expect(timeUntil(later(23, 29), now)).toBe("in 23 hours");
+    expect(timeUntil(later(23, 31), now)).toBe("in 24 hours"); // rounded, but not a date
+    expect(timeUntil(later(23, 59), now)).toBe("in 24 hours");
+    expect(timeUntil(later(24, 0), now)).toBe("on 2026-09-19");
+    expect(timeUntil(later(26, 0), now)).toBe("on 2026-09-19");
+  });
+
+  it("a minute when unknown, past, unreadable or under a minute away", () => {
+    expect(timeUntil(null, now)).toBe("in a minute");
+    expect(timeUntil(undefined, now)).toBe("in a minute");
+    expect(timeUntil("soon", now)).toBe("in a minute");
+    expect(timeUntil(at(15, 0), now)).toBe("in a minute");
+    expect(timeUntil(at(15, 30, 40), now)).toBe("in a minute");
+  });
+
+  it("dateText is the local date", () => {
+    expect(dateText(local(1, 9, 5))).toBe("2026-09-01");
+    expect(dateText("")).toBe("");
+    expect(dateText("later")).toBe("later");
   });
 });
 

@@ -1,4 +1,4 @@
-/** Small text helpers for the panel: relative times and the *Last sync* line. */
+/** Small text helpers for the panel: relative times (past and future), dates and the *Last sync* line. */
 
 import type { Pending, SummaryEvent } from "./cli";
 
@@ -20,6 +20,30 @@ export function relativeTime(iso: string | null | undefined, now: Date = new Dat
   if (days <= 0) return `today ${clock}`;
   if (days === 1) return `yesterday ${clock}`;
   if (days < 7) return `${days} days ago`;
+  return `${when.getFullYear()}-${pad(when.getMonth() + 1)}-${pad(when.getDate())}`;
+}
+
+/**
+ * The future counterpart of `relativeTime`: "in 12 minutes", "in 2 hours",
+ * then the date. A time that is missing, unreadable, already past or less
+ * than a minute away reads "in a minute".
+ */
+export function timeUntil(iso: string | null | undefined, now: Date = new Date()): string {
+  const when = iso ? new Date(iso) : null;
+  const ms = when && !Number.isNaN(when.getTime()) ? when.getTime() - now.getTime() : 0;
+  const minutes = Math.ceil(ms / 60_000);
+  if (minutes <= 1) return "in a minute";
+  if (minutes < 60) return `in ${minutes} minutes`;
+  // The date only from a full day away, so it is never today's.
+  if (minutes >= 24 * 60) return `on ${dateText(iso!)}`;
+  const hours = Math.round(minutes / 60);
+  return hours === 1 ? "in an hour" : `in ${hours} hours`;
+}
+
+/** A timestamp's local date, `2026-09-27`; the text itself when it does not parse. */
+export function dateText(iso: string): string {
+  const when = new Date(iso);
+  if (!iso || Number.isNaN(when.getTime())) return iso;
   return `${when.getFullYear()}-${pad(when.getMonth() + 1)}-${pad(when.getDate())}`;
 }
 

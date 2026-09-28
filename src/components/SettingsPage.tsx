@@ -1,7 +1,7 @@
 import { Field, PanelSection, PanelSectionRow, SidebarNavigation, Spinner } from "@decky/ui";
 import { useEffect } from "react";
 
-import { SETTINGS_ROUTE, TITLES_ROUTE, controller } from "../instance";
+import { SETTINGS_ROUTE, TITLES_ROUTE, UPDATES_ROUTE, controller } from "../instance";
 import { pluginEnabled } from "../lib/library";
 import { AboutPage } from "./AboutPage";
 import { AdvancedPage } from "./AdvancedPage";
@@ -9,11 +9,12 @@ import { ArtworkPage } from "./ArtworkPage";
 import { EnabledToggle } from "./EnabledToggle";
 import { HostPage } from "./HostPage";
 import { TitlesPage } from "./TitlesPage";
+import { UpdatesPage } from "./UpdatesPage";
 import { useStore } from "./useStore";
 
 /**
  * The settings route `/moonlight-sync` (spec 3.8): Host, Titles, Artwork,
- * Advanced, About. Pages that only touch plugin files work without a CLI;
+ * Advanced, Updates (update spec 3.7), About. Pages that only touch plugin files work without a CLI;
  * the rest say why they are disabled. While the plugin is off (spec 3.19)
  * the route shows the on/off toggle alone: no page, so no setting can
  * change until it is on again -- and a spinner until the settings have
@@ -51,6 +52,8 @@ export function SettingsPage() {
           { title: "Titles", content: <TitlesPage />, route: TITLES_ROUTE },
           { title: "Artwork", content: <ArtworkPage />, route: `${SETTINGS_ROUTE}/artwork` },
           { title: "Advanced", content: <AdvancedPage />, route: `${SETTINGS_ROUTE}/advanced` },
+          // Only reachable while the plugin is on (update spec 3.2): the branch above has no pages.
+          { title: "Updates", content: <UpdatesPage />, route: UPDATES_ROUTE },
           { title: "About", content: <AboutPage />, route: `${SETTINGS_ROUTE}/about` },
         ]}
       />

@@ -64,6 +64,27 @@ describe("errorText (spec 3.8 error strings)", () => {
     expect(errorText(fail("busy", { kind: "sync" }))).toBe("A sync is already running");
   });
 
+  it("says the updater's failures in its own words (update spec 3.6)", () => {
+    const now = new Date(Date.UTC(2026, 9, 21, 13, 0));
+    expect(errorText(fail("update-unsupported"))).toBe(
+      "This Decky Loader cannot install updates from a plugin. Update Decky Loader, or update with install.sh from Desktop Mode",
+    );
+    expect(errorText(fail("rate-limited", { retryAt: "2026-10-21T13:12:00Z" }), now)).toBe(
+      "GitHub is limiting requests from this network. Try again in 12 minutes",
+    );
+    // no time from GitHub, or one already past: a minute
+    expect(errorText(fail("rate-limited", { retryAt: null }), now)).toBe(
+      "GitHub is limiting requests from this network. Try again in a minute",
+    );
+    expect(errorText(fail("rate-limited", { retryAt: "2026-10-21T12:00:00Z" }), now)).toBe(
+      "GitHub is limiting requests from this network. Try again in a minute",
+    );
+    expect(errorText(fail("network", { message: "no answer from GitHub" }))).toBe(
+      "Could not reach GitHub: no answer from GitHub",
+    );
+    expect(errorText(fail("bad-release"))).toBe("GitHub's answer could not be read. Check again later");
+  });
+
   it("spots the steamid3 mismatch", () => {
     expect(
       isSteamUserMismatch({

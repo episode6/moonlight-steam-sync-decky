@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { loadFixture } from "../test/fixtures";
+import { fixtureText, loadFixture } from "../test/fixtures";
 import type {
   Backend,
   CliEvent,
@@ -25,7 +25,9 @@ import { eventsOf, lastOf } from "./events";
 import type { SteamInput } from "./layouts";
 import { STREAMING_COLLECTION, hiddenPlan, pluginEnabled, streamingTabEnabled, type LibraryPort } from "./library";
 import { SGDB_API_PAGE } from "./cli";
+import type { DeckyInstaller, InstallRequest } from "./decky";
 import { keyFetchText, restartRowView } from "./state";
+import { DOWNLOAD_BASE, RELEASES_API, type HttpAnswer, type NetPort } from "./updates";
 
 const PENDING: Pending = {
   restart_needed: "none",
@@ -275,11 +277,32 @@ class FakeSteam implements SteamPort {
   }
 }
 
+/** GitHub's answer with no release in it: what every test that does not script the updater gets. */
+const NO_RELEASES: HttpAnswer = {
+  status: 200,
+  headers: { "x-ratelimit-remaining": "59", "x-ratelimit-reset": null, "retry-after": null, etag: null },
+  text: "[]",
+};
+
 class FakeUi implements UiPort {
   prompts: RestartPrompt[] = [];
   closed = 0;
   toasts: string[] = [];
   bodies: string[] = [];
+  /** What the updater's GET answers (an `Error` rejects), and every URL it was asked for. */
+  netAnswer: HttpAnswer | Error = NO_RELEASES;
+  netCalls: string[] = [];
+  /** Pending GETs, when `holdNet` is set: resolve one to let its check finish. */
+  holdNet = false;
+  held: (() => void)[] = [];
+  /** Decky's installer: reachable, and taking every request. */
+  installerAvailable = true;
+  requestAnswer = true;
+  requests: InstallRequest[] = [];
+  /** When set, `request` waits until the test lets it answer. */
+  holdInstall = false;
+  heldInstall: (() => void)[] = [];
+  leaves = 0;
   showRestart(prompt: RestartPrompt) {
     this.prompts.push(prompt);
     return { close: () => this.closed++ };
@@ -288,6 +311,31 @@ class FakeUi implements UiPort {
     this.toasts.push(title);
     this.bodies.push(body);
     order.push(`toast:${body}`);
+  }
+  installer(): DeckyInstaller {
+    return {
+      available: () => this.installerAvailable,
+      request: async (req) => {
+        order.push(`install:${req.version}`);
+        this.requests.push(req);
+        if (this.holdInstall) await new Promise<void>((resolve) => this.heldInstall.push(resolve));
+        return this.requestAnswer;
+      },
+    };
+  }
+  net(): NetPort {
+    return {
+      get: async (url) => {
+        this.netCalls.push(url);
+        if (this.holdNet) await new Promise<void>((resolve) => this.held.push(resolve));
+        if (this.netAnswer instanceof Error) throw this.netAnswer;
+        return this.netAnswer;
+      },
+    };
+  }
+  leaveSettings() {
+    this.leaves++;
+    order.push("leave");
   }
 }
 
@@ -2253,5 +2301,430 @@ describe("the SteamGridDB key from the Game Mode browser (spec 3.20.4)", () => {
     const failing = make({ sgdb_key_state: { ok: false, error: "io", message: "no home" } });
     expect(await failing.refreshSgdbKey()).toEqual({ ok: false, error: "io", message: "no home" });
     expect(failing.state.sgdbKey).toBeNull();
+  });
+});
+
+describe("the updater (update spec 3.6)", () => {
+  /** The fixture's releases: v0.13.0 is newer than the installed 0.12.0. */
+  const RELEASES_ANSWER: HttpAnswer = { ...NO_RELEASES, text: fixtureText("update/releases.json") };
+  const RATE_LIMITED: HttpAnswer = {
+    status: 403,
+    headers: { "x-ratelimit-remaining": "0", "x-ratelimit-reset": null, "retry-after": "600", etag: null },
+    text: "{}",
+  };
+  const UNAVAILABLE: HttpAnswer = { ...NO_RELEASES, status: 502, text: "" };
+  const OFFERED = "Version 0.13.0 is available. Settings → Updates";
+  const ZIP_URL = `${DOWNLOAD_BASE}/v0.13.0/Moonlight-Sync.zip`;
+  const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+  /** Backend callables that would run a Moonlight command (Decision 66), or write anything. */
+  const MOONLIGHT_OR_WRITES = ["check_host", "list_apps", "list_cached", "add_host", "start_sync", "start_art_refetch", "start_remove_all", "wake_host"];
+
+  const cliVersion = (plugin: string | null = "0.12.0", loader = "v3.2.9") => ({
+    ok: true,
+    installed: "0.4.0",
+    bundled: "0.4.0",
+    minimum: "0.4.0",
+    too_old: false,
+    installed_path: "~/.local/bin/moonlight-steam-sync",
+    bundled_path: "",
+    plugin_version: plugin,
+    loader_version: loader,
+    log_path: "",
+    install_error: null,
+    capabilities: { art_commit: true },
+  });
+  const setSettings = (patch: Partial<Settings>) => {
+    Object.assign(settingsFile, patch);
+    return { ok: true, settings: { ...settingsFile } };
+  };
+  const make = (answers: Partial<Record<keyof Backend, unknown>> = {}, timing = instantTiming()) =>
+    new Controller(fakeBackend(calls, { cli_version: cliVersion(), set_settings: setSettings, ...answers }), steam, ui, timing);
+
+  /** Loaded, with the load's automatic check finished. */
+  async function loaded(answers: Partial<Record<keyof Backend, unknown>> = {}, timing = instantTiming()) {
+    const controller = make(answers, timing);
+    await controller.load();
+    await flush();
+    calls.length = 0;
+    order = [];
+    return controller;
+  }
+
+  describe("the check", () => {
+    it("the load starts one, last, and does not wait for it", async () => {
+      ui.netAnswer = RELEASES_ANSWER;
+      ui.holdNet = true;
+      const controller = make();
+      await controller.load(); // resolves while GitHub has not answered
+      expect(controller.state.library).toBe("ready");
+      expect(ui.netCalls).toEqual([RELEASES_API]);
+      expect(controller.state.updatePhase).toBe("checking");
+      expect(controller.state.update).toEqual({ releases: null, checkedAt: null, error: null });
+      expect(ui.bodies).toEqual([]);
+      ui.held.forEach((resolve) => resolve());
+      await flush();
+      expect(controller.state.updatePhase).toBe("idle");
+      expect(controller.state.update?.releases?.map((r) => r.tag)).toEqual(["v0.13.0", "v0.12.1", "v0.12.0", "v0.11.0"]);
+      expect(controller.state.update?.checkedAt).not.toBeNull();
+      // the automatic check's one toast: an update was found
+      expect(ui.bodies).toEqual([OFFERED]);
+      // and nothing was installed, nor asked of the backend
+      expect(ui.requests).toEqual([]);
+      expect(ui.leaves).toBe(0);
+    });
+
+    it("the load's own calls are the same with or without the check", async () => {
+      await make().load();
+      await flush();
+      const withCheck = names();
+      calls.length = 0;
+      settingsFile.update_check = false;
+      await make().load();
+      await flush();
+      expect(names()).toEqual(withCheck);
+      for (const name of MOONLIGHT_OR_WRITES) expect(withCheck).not.toContain(name);
+    });
+
+    it("none at load when update_check is off, but the page's state is there", async () => {
+      settingsFile.update_check = false;
+      ui.netAnswer = RELEASES_ANSWER;
+      const controller = await loaded();
+      expect(ui.netCalls).toEqual([]);
+      expect(controller.state.update).toEqual({ releases: null, checkedAt: null, error: null });
+      expect(ui.bodies).toEqual([]);
+      // Check now still asks
+      await controller.checkUpdates(true);
+      expect(ui.netCalls).toHaveLength(1);
+      expect(controller.state.update?.releases).toHaveLength(4);
+      expect(ui.bodies).toEqual([]); // a manual check toasts no offer: the page shows it
+    });
+
+    it("none when the settings could not be read: the user's choice is unknown", async () => {
+      ui.netAnswer = RELEASES_ANSWER;
+      const controller = await loaded({ get_settings: { ok: false, error: "io", message: "disk" } });
+      expect(controller.state.settings).toBeNull();
+      expect(ui.netCalls).toEqual([]);
+      expect(ui.bodies).toEqual([]);
+      expect(controller.state.update).toEqual({ releases: null, checkedAt: null, error: null });
+      // a press still asks
+      await controller.checkUpdates(true);
+      expect(ui.netCalls).toHaveLength(1);
+      expect(controller.state.update?.releases).toHaveLength(4);
+    });
+
+    it("none on a loader too old to install", async () => {
+      await loaded({ cli_version: cliVersion("0.12.0", "v2.12.3") });
+      expect(ui.netCalls).toEqual([]);
+    });
+
+    it("none, no toast and no state while the plugin is off", async () => {
+      settingsFile.enabled = false;
+      ui.netAnswer = RELEASES_ANSWER;
+      const controller = await loaded();
+      expect(ui.netCalls).toEqual([]);
+      expect(controller.state.update).toBeNull();
+      await controller.checkUpdates(true);
+      expect(ui.netCalls).toEqual([]);
+      expect(ui.bodies).toEqual([]);
+    });
+
+    it("the automatic check toasts only an offer", async () => {
+      await loaded(); // no releases at all
+      expect(ui.netCalls).toHaveLength(1);
+      expect(ui.bodies).toEqual([]);
+      ui.netCalls = [];
+      ui.netAnswer = RELEASES_ANSWER;
+      await loaded({ cli_version: cliVersion("0.13.0") }); // up to date
+      expect(ui.netCalls).toHaveLength(1);
+      expect(ui.bodies).toEqual([]);
+    });
+
+    it("a failed automatic check is silent and keeps the error for the page", async () => {
+      ui.netAnswer = UNAVAILABLE;
+      const controller = await loaded();
+      expect(ui.bodies).toEqual([]);
+      expect(controller.state.update?.error).toMatchObject({ error: "network", message: "GitHub answered 502" });
+      ui.netAnswer = new TypeError("Failed to fetch");
+      const offline = await loaded();
+      expect(ui.bodies).toEqual([]);
+      expect(offline.state.update?.error).toMatchObject({ error: "network", message: "no answer from GitHub" });
+    });
+
+    it("a failed check keeps the last good releases; a manual one toasts its text", async () => {
+      const timing = instantTiming();
+      ui.netAnswer = RELEASES_ANSWER;
+      const controller = await loaded({}, timing);
+      const before = controller.state.update!;
+      ui.bodies = [];
+      ui.netAnswer = UNAVAILABLE;
+      await timing.sleep(60_000);
+      await controller.checkUpdates(true);
+      expect(controller.state.update).toMatchObject({ releases: before.releases, checkedAt: before.checkedAt });
+      expect(controller.state.update?.error?.error).toBe("network");
+      expect(ui.bodies).toEqual(["Could not reach GitHub: GitHub answered 502"]);
+      // and a good one clears the error
+      ui.netAnswer = RELEASES_ANSWER;
+      await timing.sleep(60_000);
+      await controller.checkUpdates(true);
+      expect(controller.state.update?.error).toBeNull();
+    });
+
+    it("Check now within a minute of the last attempt asks nothing", async () => {
+      const timing = instantTiming();
+      const controller = await loaded({}, timing);
+      expect(ui.netCalls).toHaveLength(1);
+      await timing.sleep(59_000);
+      await controller.checkUpdates(true);
+      expect(ui.netCalls).toHaveLength(1);
+      expect(ui.bodies).toEqual([]); // nothing stored to say
+      await timing.sleep(1_000);
+      await controller.checkUpdates(true);
+      expect(ui.netCalls).toHaveLength(2);
+    });
+
+    it("within the minute, Check now toasts the stored failure instead", async () => {
+      ui.netAnswer = UNAVAILABLE;
+      const controller = await loaded();
+      await controller.checkUpdates(true);
+      expect(ui.netCalls).toHaveLength(1);
+      expect(ui.bodies).toEqual(["Could not reach GitHub: GitHub answered 502"]);
+    });
+
+    it("rate-limited: no request before retryAt, and Check now says when", async () => {
+      const timing = instantTiming();
+      ui.netAnswer = RATE_LIMITED;
+      const controller = await loaded({}, timing);
+      expect(controller.state.update?.error).toMatchObject({ error: "rate-limited", retryAt: new Date(600_000).toISOString() });
+      expect(ui.bodies).toEqual([]);
+      ui.netAnswer = RELEASES_ANSWER;
+      await timing.sleep(120_000);
+      await controller.checkUpdates(true);
+      await controller.checkUpdates(false);
+      expect(ui.netCalls).toHaveLength(1);
+      expect(ui.bodies).toEqual(["GitHub is limiting requests from this network. Try again in 8 minutes"]);
+      await timing.sleep(480_000);
+      await controller.checkUpdates(true);
+      expect(ui.netCalls).toHaveLength(2);
+      expect(controller.state.update?.error).toBeNull();
+    });
+
+    it("never two at once", async () => {
+      ui.holdNet = true;
+      const controller = make();
+      await controller.load();
+      await controller.checkUpdates(true);
+      expect(ui.netCalls).toHaveLength(1);
+      ui.held.forEach((resolve) => resolve());
+      await flush();
+    });
+
+    it("a load that runs again after a failed cli_version does not ask GitHub twice", async () => {
+      let attempts = 0;
+      const controller = make({
+        cli_version: () => (++attempts === 1 ? { ok: false, error: "io", message: "boom" } : cliVersion()),
+      });
+      await controller.panelOpened();
+      await flush();
+      await controller.panelOpened();
+      await flush();
+      expect(attempts).toBe(2);
+      expect(ui.netCalls).toHaveLength(1);
+    });
+
+    it("the updater calls no backend callable, so no Moonlight command", async () => {
+      ui.netAnswer = RELEASES_ANSWER;
+      const controller = await loaded();
+      await controller.checkUpdates(true);
+      await controller.installUpdate("v0.13.0");
+      expect(names()).toEqual([]);
+    });
+  });
+
+  describe("the toggle", () => {
+    it("setUpdateCheck stores update_check", async () => {
+      const controller = await loaded();
+      expect(await controller.setUpdateCheck(false)).toMatchObject({ ok: true });
+      expect(calls).toEqual([["set_settings", [{ update_check: false }]]]);
+      expect(controller.state.settings?.update_check).toBe(false);
+    });
+
+    it("off clears the updater; on loads it again, with a check", async () => {
+      ui.netAnswer = RELEASES_ANSWER;
+      const controller = await loaded();
+      expect(controller.state.update?.releases).not.toBeNull();
+      await controller.setEnabled(false);
+      expect(controller.state.update).toBeNull();
+      expect(controller.state.updatePhase).toBe("idle");
+      ui.bodies = [];
+      await controller.setEnabled(true);
+      await flush();
+      expect(ui.netCalls).toHaveLength(2);
+      expect(controller.state.update?.releases).toHaveLength(4);
+      expect(ui.bodies).toEqual([OFFERED]);
+    });
+
+    it("a check that was in flight when the plugin went off lands nowhere, silently", async () => {
+      ui.netAnswer = RELEASES_ANSWER;
+      ui.holdNet = true;
+      const controller = make();
+      await controller.load();
+      await controller.setEnabled(false);
+      ui.held.forEach((resolve) => resolve());
+      await flush();
+      expect(controller.state.update).toBeNull();
+      expect(controller.state.updatePhase).toBe("idle");
+      expect(ui.bodies).toEqual([]);
+    });
+  });
+
+  describe("installUpdate", () => {
+    async function offering(answers: Partial<Record<keyof Backend, unknown>> = {}) {
+      ui.netAnswer = RELEASES_ANSWER;
+      const controller = await loaded(answers);
+      ui.bodies = [];
+      return controller;
+    }
+
+    it("leaves the settings page, then asks Decky, with the release's URL and digest", async () => {
+      const controller = await offering();
+      expect(await controller.installUpdate("v0.13.0")).toBe(true);
+      expect(order).toEqual(["leave", "install:0.13.0"]);
+      expect(ui.requests).toEqual([
+        { artifact: ZIP_URL, name: "Moonlight Sync", version: "0.13.0", hash: "a".repeat(64), installType: 2 },
+      ]);
+      expect(ui.bodies).toEqual([]);
+      expect(controller.state.updatePhase).toBe("idle");
+    });
+
+    it("a reinstall and a downgrade carry their install types", async () => {
+      const controller = await offering({ cli_version: cliVersion("0.13.0") });
+      await controller.installUpdate("v0.13.0");
+      await controller.installUpdate("v0.12.0");
+      expect(ui.requests.map((r) => [r.version, r.installType])).toEqual([
+        ["0.13.0", 1],
+        ["0.12.0", 3],
+      ]);
+      // on a loader before 3.1.0 the downgrade is asked as an update
+      ui.requests = [];
+      const older = await offering({ cli_version: cliVersion("0.13.0", "v3.0.4") });
+      await older.installUpdate("v0.12.0");
+      expect(ui.requests[0].installType).toBe(2);
+    });
+
+    it("Decky not taking the request is toasted", async () => {
+      ui.requestAnswer = false;
+      const controller = await offering();
+      expect(await controller.installUpdate("v0.13.0")).toBe(false);
+      expect(order).toEqual(["leave", "install:0.13.0", "toast:Decky did not accept the install. Update with install.sh from Desktop Mode"]);
+      expect(controller.state.updatePhase).toBe("idle");
+    });
+
+    it("while Decky is being asked: the phase is asking, runs are refused, a second press asks nothing", async () => {
+      ui.holdInstall = true;
+      const controller = await offering();
+      const pending = controller.installUpdate("v0.13.0");
+      await flush();
+      expect(controller.state.updatePhase).toBe("asking");
+      expect(await controller.run("sync")).toEqual({ ok: false, error: "bad-request", message: "An update is being installed" });
+      expect(await controller.installUpdate("v0.13.0")).toBe(false);
+      expect(ui.requests).toHaveLength(1);
+      expect(names()).not.toContain("start_sync");
+      ui.heldInstall.forEach((resolve) => resolve());
+      expect(await pending).toBe(true);
+      expect(controller.state.updatePhase).toBe("idle");
+    });
+
+    it("while Decky is being asked, the restart row starts nothing", async () => {
+      ui.holdInstall = true;
+      const controller = await offering();
+      const pending = controller.installUpdate("v0.13.0");
+      await flush();
+      expect(controller.state.updatePhase).toBe("asking");
+      for (const restart_needed of ["write", "art"] as const) {
+        controller.store.set({ pending: { ...PENDING, restart_needed, last_kind: "sync" } });
+        await controller.restartRow();
+      }
+      expect(names()).toEqual([]); // no start_sync, no clear_pending
+      expect(steam.shutdowns).toBe(0);
+      ui.heldInstall.forEach((resolve) => resolve());
+      await pending;
+      // once Decky has taken the request, the row works again
+      controller.store.set({ pending: { ...PENDING, restart_needed: "write", last_kind: "sync" } });
+      await controller.restartRow();
+      expect(names()).toContain("start_sync");
+    });
+
+    const refused = async (controller: Controller, tag: string, text: string) => {
+      order = [];
+      expect(await controller.installUpdate(tag)).toBe(false);
+      expect(ui.requests).toEqual([]);
+      expect(ui.leaves).toBe(0);
+      expect(order).toEqual([`toast:${text}`]);
+    };
+
+    it("refused while the plugin is off", async () => {
+      const controller = await offering();
+      await controller.setEnabled(false);
+      await refused(controller, "v0.13.0", "Moonlight Sync is off");
+    });
+
+    it("refused while a run is going", async () => {
+      const controller = await offering();
+      await controller.sync();
+      await refused(controller, "v0.13.0", "Wait for the run to finish before updating");
+    });
+
+    it("refused during the layout walk", async () => {
+      const controller = await offering();
+      controller.store.set({ walking: true });
+      await refused(controller, "v0.13.0", "Wait for the layouts to be applied");
+    });
+
+    it("refused during a key fetch", async () => {
+      const controller = await offering();
+      controller.onSgdbKeyEvent({ state: "reading" });
+      await refused(controller, "v0.13.0", "Finish or cancel the key fetch first");
+    });
+
+    const UNSUPPORTED =
+      "This Decky Loader cannot install updates from a plugin. Update Decky Loader, or update with install.sh from Desktop Mode";
+
+    it("refused when Decky's installer is not there, or the loader is too old", async () => {
+      ui.installerAvailable = false;
+      const controller = await offering();
+      expect(controller.updatesSupported()).toBe(false);
+      await refused(controller, "v0.13.0", UNSUPPORTED);
+      ui.installerAvailable = true;
+      const old = await offering({ cli_version: cliVersion("0.12.0", "v2.12.3") });
+      expect(old.updatesSupported()).toBe(false);
+      await refused(old, "v0.13.0", UNSUPPORTED);
+    });
+
+    it("refused for a tag that is not installable: no digest, below the minimum, not a release, unknown", async () => {
+      const controller = await offering();
+      for (const tag of ["v0.12.1", "v0.11.0", "v0.14.1", "build-main", "v9.9.9", "../main"]) {
+        await refused(controller, tag, "That version cannot be installed");
+      }
+    });
+
+    it("refused before any check, and when the installed version is unknown", async () => {
+      settingsFile.update_check = false;
+      const controller = await loaded();
+      await refused(controller, "v0.13.0", "That version cannot be installed");
+      settingsFile.update_check = true;
+      ui.netAnswer = RELEASES_ANSWER;
+      const unknown = await loaded({ cli_version: cliVersion(null) });
+      await refused(unknown, "v0.13.0", "That version cannot be installed");
+    });
+
+    it("never offers a release without a digest, even the newest", async () => {
+      const raw = JSON.parse(fixtureText("update/releases.json")) as { tag_name: string; assets: { digest: unknown }[] }[];
+      for (const release of raw) if (typeof release === "object") for (const asset of release.assets) asset.digest = null;
+      ui.netAnswer = { ...NO_RELEASES, text: JSON.stringify(raw) };
+      const controller = await loaded();
+      expect(controller.state.update?.releases?.length).toBeGreaterThan(0);
+      expect(ui.bodies).toEqual([]); // no toast: nothing installable
+      await refused(controller, "v0.13.0", "That version cannot be installed");
+    });
   });
 });

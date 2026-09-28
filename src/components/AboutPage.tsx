@@ -37,6 +37,7 @@ export function AboutPage() {
       {row("Minimum CLI", info?.minimum)}
       {info?.install_error ? row("Install error", info.install_error) : null}
       {row("Plugin version", info?.plugin_version)}
+      {row("Decky Loader", info?.loader_version || null)}
       {row(
         "Re-fetch all art from Game Mode",
         info ? (info.capabilities.art_commit ? "supported" : "needs a newer CLI") : null,

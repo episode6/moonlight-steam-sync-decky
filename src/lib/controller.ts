@@ -3,8 +3,9 @@
  * the load order and first run (spec 3.8), runs and their events, the
  * restart flow (spec 3.9), the Stream press and the default controller
  * layout (spec 3.10, 3.16), host switching (spec 3.12), the SteamGridDB key
- * fetch from the Game Mode browser (spec 3.20) and the settings-page
- * actions.
+ * fetch from the Game Mode browser (spec 3.20), the updater's check and
+ * its hand-off to Decky's installer (update spec 3.6) and the
+ * settings-page actions.
  * `index.tsx` wires it to the real backend (`makeBackend(callable)`), the
  * real Steam client (`steam.ts`) and the real modal/toaster; the tests wire
  * it to fakes.
@@ -64,6 +65,7 @@ import {
   streamingCollectionEnabled,
   type LibraryPort,
 } from "./library";
+import type { DeckyInstaller } from "./decky";
 import { restartDecision, unwrittenMessage, type RestartDecision } from "./restart";
 import {
   applyRunDone,
@@ -80,6 +82,17 @@ import {
   type AppState,
   type HostAppKey,
 } from "./state";
+import {
+  CHECK_MIN_INTERVAL_MS,
+  checkReleases,
+  installable,
+  installRequestOf,
+  loaderSupported,
+  offerOf,
+  updateCheckEnabled,
+  type CheckResult,
+  type NetPort,
+} from "./updates";
 
 export interface SteamPort {
   ownedApps(): Record<string, string> | null;
@@ -120,6 +133,12 @@ export interface PromptHandle {
 export interface UiPort {
   showRestart(prompt: RestartPrompt): PromptHandle;
   toast(title: string, body: string): void;
+  /** Decky's installer (update spec 3.5): `decky.ts`, the one module that touches Decky's globals. */
+  installer(): DeckyInstaller;
+  /** The updater's one request (update spec 3.4), over `@decky/api`'s no-CORS fetch. */
+  net(): NetPort;
+  /** Leave the settings route before Decky unloads the plugin under it. */
+  leaveSettings(): void;
 }
 
 export interface Timing {
@@ -200,6 +219,23 @@ export function appliedToast({ applied, kept, unavailable }: WalkCounts): string
 /** What a write refused while the plugin is off answers (spec 3.19). */
 export const DISABLED_FAILURE: Failure = { ok: false, error: "bad-request", message: "Moonlight Sync is off" };
 
+/** What a run refused while Decky is being asked to install answers (update spec 3.6). */
+export const UPDATING_FAILURE: Failure = { ok: false, error: "bad-request", message: "An update is being installed" };
+
+/** The updater's texts (update spec 3.6), exactly. */
+export const UPDATE_TEXTS = {
+  run: "Wait for the run to finish before updating",
+  walking: "Wait for the layouts to be applied",
+  keyFetch: "Finish or cancel the key fetch first",
+  unknownVersion: "That version cannot be installed",
+  refused: "Decky did not accept the install. Update with install.sh from Desktop Mode",
+} as const;
+
+/** The automatic check's toast when it finds an update (update spec 3.6 step 4). */
+export function updateAvailableToast(label: string): string {
+  return `Version ${label} is available. Settings → Updates`;
+}
+
 const CANNOT_UNSET_TOAST =
   "Default layout cleared. This Steam client cannot unset a layout, so titles keep the one they have.";
 
@@ -254,6 +290,13 @@ export class Controller {
   private keyBrowserOpen = false;
   /** The controller cancelled the fetch itself and has said why; its `cancelled` is not toasted again. */
   private keyCancelQuiet = false;
+  /** When the last update check was attempted (`timing.now()`), for *Check now*'s minimum interval. */
+  private lastUpdateCheck: number | null = null;
+  /**
+   * Bumped when the plugin is turned off: a check that was in flight then
+   * lands in a store that has moved on, and must leave it alone.
+   */
+  private updateEpoch = 0;
 
   constructor(
     private readonly backend: Backend,
@@ -292,6 +335,8 @@ export class Controller {
       // through refreshCli(), which finishes the order in place.)
       if (this.state.cli === null) this.loading = null;
     }
+    // Last (update spec 3.6), and not awaited: the load is done without it.
+    this.loadUpdates();
   }
 
   private async loadOrder(): Promise<void> {
@@ -518,6 +563,10 @@ export class Controller {
   /** A user-initiated run (Sync now, Re-fetch all art, Remove everything); refused while the plugin is off. */
   run(kind: RunKind): Promise<Failure | null> {
     if (!this.enabled) return Promise.resolve(DISABLED_FAILURE);
+    // During the hand-off to Decky only: its install route resolves
+    // once Decky has shown its dialog, before the user confirms, so a run
+    // started behind the open dialog is not refused (update spec 3.8).
+    if (this.state.updatePhase === "asking") return Promise.resolve(UPDATING_FAILURE);
     this.mismatchRetried = false;
     return this.startRun(kind);
   }
@@ -671,6 +720,8 @@ export class Controller {
     // while a game is running (the row itself is disabled, `restartRowView`).
     // Off (spec 3.19): the row is not shown, and the write it would start is refused.
     if (this.state.inGame || !this.enabled) return;
+    // A press, like run(): nothing starts during the hand-off to Decky.
+    if (this.state.updatePhase === "asking") return;
     if (pending.restart_needed === "art") {
       await this.restartForArt();
       return;
@@ -960,6 +1011,123 @@ export class Controller {
     this.ui.toast("Moonlight Sync", Controller.keySavedToast(payload.hint));
     const tested = await this.backend.test_sgdb_key();
     this.ui.toast("Moonlight Sync", isFailure(tested) ? errorText(tested) : Controller.KEY_ACCEPTED);
+  }
+
+  // -------------------------------------------------------------------------
+  // the updater (update spec 3.6)
+
+  /**
+   * The load's last step, and `setEnabled(true)`'s: the updater's empty
+   * state, then, when the settings were read, *Check for updates
+   * automatically* is on in them and the loader can install, one check
+   * that nobody awaits (unread settings leave the user's choice unknown,
+   * so no request; *Check now* still asks). Skipped while the
+   * plugin is off (update spec 3.2), and once the updater already has its
+   * state: a load that ran again after a failed `cli_version()` is the
+   * same plugin load (Decision U16), so it does not ask GitHub twice.
+   */
+  private loadUpdates(): void {
+    if (!this.enabled || this.state.update) return;
+    this.store.set({ update: { releases: null, checkedAt: null, error: null } });
+    const settings = this.state.settings;
+    if (settings !== null && updateCheckEnabled(settings) && loaderSupported(this.state.cliVersion?.loader_version)) {
+      void this.checkUpdates(false);
+    }
+  }
+
+  /**
+   * Ask GitHub for the releases (`manual`: *Check now*). Nothing while a
+   * check or a hand-off is going, or while the plugin is off. No request
+   * before a stored `rate-limited` failure's `retryAt`, nor for a manual
+   * check within `CHECK_MIN_INTERVAL_MS` of the last attempt; a manual one
+   * then toasts the stored failure, if any. An automatic check toasts only
+   * an update it found, a manual one only its failure. The updater makes
+   * no backend call at all, so no Moonlight command (Decision 66).
+   */
+  async checkUpdates(manual: boolean): Promise<void> {
+    const update = this.state.update;
+    if (!this.enabled || !update || this.state.updatePhase !== "idle") return;
+    const now = this.timing.now();
+    const error = update.error;
+    const retryAt = error?.error === "rate-limited" && error.retryAt ? Date.parse(error.retryAt) : NaN;
+    const waiting = now < retryAt;
+    const tooSoon = manual && this.lastUpdateCheck !== null && now - this.lastUpdateCheck < CHECK_MIN_INTERVAL_MS;
+    if (waiting || tooSoon) {
+      if (manual && error) this.ui.toast("Moonlight Sync", errorText(error, new Date(now)));
+      return;
+    }
+    this.lastUpdateCheck = now;
+    const epoch = this.updateEpoch;
+    this.store.set({ updatePhase: "checking" });
+    let result: CheckResult;
+    try {
+      result = await checkReleases(this.ui.net(), () => this.timing.now());
+    } finally {
+      if (epoch === this.updateEpoch) this.store.set({ updatePhase: "idle" });
+    }
+    // Turned off meanwhile: the updater is silent, and its state is gone.
+    const current = this.state.update;
+    if (epoch !== this.updateEpoch || !current) return;
+    if (result.ok) {
+      const checkedAt = new Date(this.timing.now()).toISOString();
+      this.store.set({ update: { releases: result.releases, checkedAt, error: null } });
+      const offer = offerOf(this.state.cliVersion?.plugin_version, result.releases);
+      if (!manual && offer) this.ui.toast("Moonlight Sync", updateAvailableToast(offer.label));
+    } else {
+      this.store.set({ update: { ...current, error: result } });
+      if (manual) this.ui.toast("Moonlight Sync", errorText(result, new Date(this.timing.now())));
+    }
+  }
+
+  /** Can this loader be asked to install at all? The Updates page shows only why not when it cannot. */
+  updatesSupported(): boolean {
+    return loaderSupported(this.state.cliVersion?.loader_version) && this.ui.installer().available();
+  }
+
+  /** *Check for updates automatically* (the `update_check` setting). */
+  setUpdateCheck(on: boolean): Promise<Result> {
+    return this.setSettings({ update_check: on });
+  }
+
+  /**
+   * *Update to …* and *Install another version* (update spec 3.6): only
+   * ever on a press, and only for a release `installable()` lists, which
+   * has GitHub's sha256. Refused with a toast, and nothing asked of Decky,
+   * while off, while a run is going, during the layout walk, during a key
+   * fetch, and when this loader cannot install. Otherwise the settings page
+   * is left first (Decision U4: Decky unloads the plugin under it), then
+   * Decky is asked to show its own dialog, whose OK is the user's. Whether
+   * they confirmed is never known here: when they did, this frontend is
+   * gone within seconds. `true` when Decky took the request.
+   */
+  async installUpdate(tag: string): Promise<boolean> {
+    const refuse = (text: string) => {
+      this.ui.toast("Moonlight Sync", text);
+      return false;
+    };
+    if (!this.enabled) return refuse(errorText(DISABLED_FAILURE));
+    // The page's buttons are disabled then: one request at a time.
+    if (this.state.updatePhase !== "idle") return false;
+    if (this.state.run?.running || this.starting) return refuse(UPDATE_TEXTS.run);
+    if (this.state.walking) return refuse(UPDATE_TEXTS.walking);
+    if (this.state.keyFetch) return refuse(UPDATE_TEXTS.keyFetch);
+    if (!this.updatesSupported()) return refuse(errorText({ ok: false, error: "update-unsupported", message: "" }));
+    const loader = this.state.cliVersion?.loader_version;
+    const installer = this.ui.installer();
+    const offer = installable(this.state.cliVersion?.plugin_version, this.state.update?.releases ?? null).find(
+      (candidate) => candidate.tag === tag,
+    );
+    if (!offer) return refuse(UPDATE_TEXTS.unknownVersion);
+    const request = installRequestOf(offer, loader);
+    this.store.set({ updatePhase: "asking" });
+    try {
+      this.ui.leaveSettings();
+      const asked = await installer.request(request);
+      if (!asked) this.ui.toast("Moonlight Sync", UPDATE_TEXTS.refused);
+      return asked;
+    } finally {
+      this.store.set({ updatePhase: "idle" });
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -1350,7 +1518,11 @@ export class Controller {
     if (on) {
       await this.reconcileLibrary();
       void this.layoutWalk();
+      this.loadUpdates();
     } else {
+      // The updater is silent while off (update spec 3.2): no row, no page, no check.
+      this.updateEpoch++;
+      this.store.set({ update: null, updatePhase: "idle" });
       if (streamingCollectionEnabled(result.settings)) await this.retireCollection();
       await this.reconcileLibrary();
     }

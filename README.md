@@ -31,8 +31,13 @@ and needs CLI 0.4.0 or newer.
 
 ## Install
 
-There is no store listing yet; install from the GitHub release with the
-one-liner below, or by hand ("Manual install"). To run something newer than
+Moonlight Sync is not in the Decky plugin store and will not be: the
+store does not accept plugins written mostly with generative AI, which
+this one was, and it does not list plugins that can update themselves
+(see Decky's wiki, *Submitting plugins* and *Plugin safety*). So the
+first install is a manual one: from the GitHub release with the one-liner
+below, or by hand ("Manual install"). From 0.12.0 on, the plugin then
+updates itself from Game Mode ("Updating"). To run something newer than
 the latest release, build from source (see "Developing") or use the
 `Moonlight-Sync` artifact of a CI run as the manual zip.
 
@@ -87,6 +92,67 @@ state directories if you want those gone as well (see
 None of this has been run on a real Steam Deck yet; see
 [`DEVICE-CHECKLIST.md`](DEVICE-CHECKLIST.md) for the full list of on-device
 checks to run once you have one.
+
+## Updating
+
+From 0.12.0 on, the plugin updates itself through Decky's own installer,
+from Game Mode, with no terminal. Releases before 0.12.0 have no updater:
+update those once with `install.sh` (above), and every later release is
+offered in the plugin.
+
+**The check.** Each time the plugin loads (once per Steam start, and once
+more whenever Decky reloads it) it asks GitHub for the list of releases.
+When one is newer than the installed version, a toast says "Version X is
+available. Settings → Updates", and the last row of the Quick Access
+panel reads **Update to X**; it opens Settings → **Updates**. Turn the
+check off with *Check for updates automatically* on that page; *Check
+now* still asks whenever you press it. Nothing is ever installed without
+your say-so, and while the plugin is toggled off there is no check, no
+toast, no row and no Updates page.
+
+**Installing.** Settings → Updates shows the installed version, the
+latest release, what is new in it, and **Update to X**. Pressing it
+closes the settings page and Decky asks "Are you sure you want to update
+Moonlight Sync to version X?". That dialog is Decky's and is the only
+confirmation: **Cancel** changes nothing; **Confirm** has Decky download
+the release's `Moonlight-Sync.zip`, remove the old copy, unpack the new
+one and load it, showing its progress in its own tab. Only the plugin
+reloads: no loader restart and no Steam restart. The plugin hands Decky
+the release's download address on this repository, built from the
+release's tag, and the SHA-256 GitHub reports for that zip; a release
+without one is never offered. The update is refused, with a toast, while
+a sync is running, while layouts are being applied and during a
+SteamGridDB key fetch.
+
+**Install another version** on the same page lists every release from
+0.12.0 on (older ones have no updater, so installing one would leave
+`install.sh` as the only way forward): the installed one again
+(*reinstall*), an older one (Decky asks to *downgrade*), or a newer one.
+It goes through the same dialog.
+
+Settings, the ignore list, the SteamGridDB key, the CLI and its caches,
+your shortcuts and artwork live outside the plugin's directory and are
+untouched by an update. After an update Moonlight Sync moves to the end
+of Decky's plugin list; put it back where you want it in Decky's
+settings.
+
+**What is sent.** The check is one unauthenticated request to GitHub's
+API for this repository's public list of releases; nothing about your
+device or your library goes with it. On an install, Decky itself reports
+the plugin's name and version to its store, as it does for any plugin
+installed from a URL. GitHub allows 60 such requests an hour per network;
+when it says the limit is spent, the Updates page says when to try again.
+
+**When it goes wrong:**
+
+| What happened | What you have | What to do |
+|---|---|---|
+| The device was offline, or GitHub did not answer 200 | The old version, working. Decky's progress may stay on screen | Close it; try again |
+| The bytes did not match the hash, or the zip was broken | **No Moonlight Sync.** Settings, key, caches and library untouched | `install.sh` from Desktop Mode |
+
+When this Decky Loader is too old to install from a plugin (before
+v3.0.0), or its installer cannot be reached, the Updates page says so;
+update Decky Loader, or update with `install.sh` from Desktop Mode.
 
 ## The bundled CLI
 
@@ -199,6 +265,8 @@ was packaged without the CLI)" and you can install the CLI on its own (see
   games you own), **Shortcuts**, **Unmatched**, **Ignored**; and **Last
   sync** ("Today 14:02 · 2 added, 1 removed"). The two host apps count
   toward none of the first three.
+- **Update to X**, the last row, only while a newer release is offered
+  (see "Updating"): it opens Settings → Updates.
 
 On the very first run there is no host yet: the panel says "No host yet" and
 **Add a host** opens the Host page.
@@ -615,6 +683,8 @@ Steam's:
 which has no UI: it is the hand-editable switch described under
 "Controller layouts", for trying the fallback on a device;
 `enabled` (the panel's on/off toggle, `true` by default);
+`update_check` (Updates → *Check for updates automatically*, `true` by
+default; nothing about a check is kept on disk);
 `hide_stream_shortcuts` / `streaming_collection` (the *Streaming tab*
 toggle: the key kept its name), the two Advanced toggles above; and
 `default_layout` (`null`, or `{"url", "title", "when"}`, the

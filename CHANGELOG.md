@@ -6,6 +6,28 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Updates from inside the plugin.** Moonlight Sync is not in the Decky
+  store, so it now updates itself through Decky's own installer, from
+  Game Mode. When the plugin loads it asks GitHub for the list of
+  releases (one unauthenticated request, nothing about the device); a
+  newer release gets a toast and an **Update to X** row at the bottom of
+  the Quick Access panel, which opens the new **Settings → Updates**
+  page. There, **Update to X** closes the settings page and Decky's own
+  dialog asks to confirm; nothing is installed without that. Decky is
+  handed the release's download address on this repository and the
+  SHA-256 GitHub reports for the zip, and a release without one is never
+  offered. The page also shows the installed and latest versions, the
+  release notes, **Check now**, **Check for updates automatically** (the
+  new `update_check` setting, on by default) and **Install another
+  version** (every release from 0.12.0 on: reinstall, downgrade or
+  update). Updating is refused while a sync runs, while layouts are being
+  applied and during a SteamGridDB key fetch, and the whole updater is
+  silent while the plugin is toggled off. Settings → About gains a
+  **Decky Loader** row. Releases before this one have no updater: update
+  them once with `install.sh`. See the README's "Updating".
+
 ## [0.11.0] - 2026-09-27
 
 ### Changed

@@ -65,10 +65,9 @@ class Plugin:
         # only on a real uninstall (its installer stops the old copy with
         # ``stop(uninstall=True)`` before extracting the new one), so anything
         # here would wipe the user's settings, key or pending state on each
-        # update. The update spec's hard rule 12 (its section 3.2, which
-        # arrives in AGENTS.md with PR-U2) holds it empty;
-        # ``tests/test_main.py`` holds it to writing, removing and spawning
-        # nothing.
+        # update. Hard rule 12 (AGENTS.md; the update spec's section 3.2)
+        # holds it empty; ``tests/test_main.py`` holds it to writing,
+        # removing and spawning nothing.
         pass
 
     # -- versions, diagnostics -------------------------------------------

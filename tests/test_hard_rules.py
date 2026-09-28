@@ -56,6 +56,47 @@ def test_the_client_library_is_only_touched_in_steam_ts() -> None:
     assert users == {"src/lib/steam.ts"}
 
 
+def files_naming(text: str) -> set[str]:
+    """Every file under src/ whose text contains `text`, comments and tests included."""
+    return {str(path.relative_to(ROOT)) for path in source_files() if text in path.read_text()}
+
+
+def test_the_plugin_never_names_decky_s_confirmation() -> None:
+    """Hard rule 12: the confirmation is the user's, in Decky's dialog, so the
+    route that answers it is spelled nowhere in the frontend."""
+    assert files_naming("confirm_plugin_install") == set()
+
+
+def test_decky_s_globals_are_only_touched_in_decky_ts() -> None:
+    """Hard rule 12: `src/lib/decky.ts` is the only place that touches Decky's
+    globals (its router and its install route)."""
+    allowed = {"src/lib/decky.ts", "src/lib/decky.test.ts"}
+    assert files_naming("DeckyBackend") == allowed
+    assert files_naming("utilities/") == allowed
+
+
+def test_the_releases_api_is_only_named_in_updates_ts() -> None:
+    assert files_naming("api.github.com") == {"src/lib/updates.ts", "src/lib/updates.test.ts"}
+
+
+def test_the_no_cors_fetch_is_only_wired_in_instance_tsx() -> None:
+    """The updater's one request goes through `NetPort`; `instance.tsx` is the
+    one place that wires it to the loader's fetch, so `src/lib` stays pure."""
+    assert files_naming("fetchNoCors") == {"src/instance.tsx"}
+
+
+def test_the_repository_is_spelled_only_in_the_updater_and_its_allowlist() -> None:
+    """Update spec 3.4 / 3.5: `REPO` in `updates.ts` and the allowlist's own
+    literal in `decky.ts` (plus their tests), so a download URL cannot be
+    built anywhere else."""
+    assert files_naming("episode6/moonlight-steam-sync-decky") == {
+        "src/lib/updates.ts",
+        "src/lib/updates.test.ts",
+        "src/lib/decky.ts",
+        "src/lib/decky.test.ts",
+    }
+
+
 def test_backend_never_names_config_toml_for_writing() -> None:
     """keys.py reads config.toml with tomllib; nothing opens it for writing."""
     for path in (ROOT / "py_modules").rglob("*.py"):
