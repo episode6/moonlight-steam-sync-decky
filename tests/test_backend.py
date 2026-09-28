@@ -97,6 +97,7 @@ def test_startup_creates_settings_and_ignore(backend) -> None:
     assert settings["hide_stream_shortcuts"] is True
     assert settings["streaming_collection"] is True
     assert settings["update_check"] is True
+    assert settings["update_channel"] == "stable"
     assert json.loads(Path(settings_path(backend, "ignore.json")).read_text()) == []
 
 
@@ -1248,6 +1249,56 @@ def test_settings_round_trip_and_validation(backend) -> None:
         run(backend.set_settings({"layout_strategy": "picker"}))["settings"]["layout_strategy"]
         == "picker"
     )
+
+
+def test_set_settings_update_channel(backend) -> None:
+    """update spec 3.12.4: "stable", or "branch:" and a ref matching REF_RE."""
+    assert run(backend.get_settings())["settings"]["update_channel"] == "stable"
+    for channel in ("branch:main", "branch:feature/x-1.2_b", "branch:" + "a" * 100, "stable"):
+        result = run(backend.set_settings({"update_channel": channel}))
+        assert result["ok"] is True, channel
+        assert result["settings"]["update_channel"] == channel
+        assert run(backend.get_settings())["settings"]["update_channel"] == channel
+    run(backend.set_settings({"update_channel": "branch:main"}))
+    for bad in (
+        None,
+        True,
+        1,
+        ["stable"],
+        {"channel": "stable"},
+        "",
+        "Stable",
+        "nightly",
+        "main",
+        "branch:",
+        "branch",
+        "branch: main",
+        "branch:main ",
+        " stable",
+        "stable\n",
+        "branch:main\n",
+        "branch:a b",
+        "branch:a+b",
+        "branch:a@b",
+        "branch:" + "a" * 101,
+        "release:v0.12.0",
+    ):
+        failed = run(backend.set_settings({"update_channel": bad}))
+        assert failed["ok"] is False, bad
+        assert failed["error"] == "bad-request"
+    # every refusal left the stored channel alone
+    assert run(backend.get_settings())["settings"]["update_channel"] == "branch:main"
+
+
+def test_hand_broken_update_channel_reads_as_stable(backend) -> None:
+    path = Path(settings_path(backend, "settings.json"))
+    for broken in ("nightly", "branch:", "branch:a b", 7, None, {"ref": "main"}, " stable"):
+        path.write_text(json.dumps({"version": 1, "update_channel": broken}))
+        result = run(backend.get_settings())
+        assert result["ok"] is True
+        assert result["settings"]["update_channel"] == "stable", broken
+    path.write_text(json.dumps({"version": 1, "update_channel": "branch:main"}))
+    assert run(backend.get_settings())["settings"]["update_channel"] == "branch:main"
 
 
 def test_get_ignored_is_sorted(backend) -> None:
