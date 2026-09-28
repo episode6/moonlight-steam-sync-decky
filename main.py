@@ -38,6 +38,7 @@ class Plugin:
                 plugin_dir=decky.DECKY_PLUGIN_DIR,
                 home=decky.DECKY_USER_HOME,
                 plugin_version=getattr(decky, "DECKY_PLUGIN_VERSION", ""),
+                loader_version=getattr(decky, "DECKY_VERSION", ""),
                 emit=decky.emit,
                 logger=decky.logger,
             )
@@ -60,6 +61,14 @@ class Plugin:
             await self._backend.unload()
 
     async def _uninstall(self):
+        # Deliberately nothing. Decky runs ``_uninstall`` on every update, not
+        # only on a real uninstall (its installer stops the old copy with
+        # ``stop(uninstall=True)`` before extracting the new one), so anything
+        # here would wipe the user's settings, key or pending state on each
+        # update. The update spec's hard rule 12 (its section 3.2, which
+        # arrives in AGENTS.md with PR-U2) holds it empty;
+        # ``tests/test_main.py`` holds it to writing, removing and spawning
+        # nothing.
         pass
 
     # -- versions, diagnostics -------------------------------------------

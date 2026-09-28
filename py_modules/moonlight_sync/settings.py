@@ -44,6 +44,9 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     # collection while Stream shortcuts are shown; the key kept its name
     "streaming_collection": True,
     "default_layout": None,
+    # check for a newer release when the plugin loads (update spec 3.3);
+    # the check is the frontend's, this is only its switch
+    "update_check": True,
 }
 
 #: Keys an older settings.json may carry that nothing reads any more; they
@@ -65,6 +68,7 @@ BOOL_SETTINGS = (
     "retry_missing",
     "hide_stream_shortcuts",
     "streaming_collection",
+    "update_check",
 )
 
 #: What one layout copy (or *Choose layout*) can record (spec 3.10 / 3.16).

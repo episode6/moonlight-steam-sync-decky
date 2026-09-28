@@ -216,6 +216,7 @@ class Backend:
         plugin_dir: str,
         home: str,
         plugin_version: str = "",
+        loader_version: str = "",
         emit: Emit | None = None,
         logger: Any = None,
         cli: list[str] | None = None,
@@ -227,6 +228,9 @@ class Backend:
         self.plugin_dir = plugin_dir
         self.home = home
         self.plugin_version = plugin_version
+        #: Decky Loader's version as ``decky.DECKY_VERSION`` spells it
+        #: (``"v3.2.9"``), ``""`` when unknown (update spec 3.3).
+        self.loader_version = loader_version
         self.emit = emit
         self.logger = logger
         self.python = python or shutil.which("python3") or "/usr/bin/python3"
@@ -749,6 +753,7 @@ class Backend:
             "installed_path": self.installed_cli,
             "bundled_path": self.bundled_cli,
             "plugin_version": self.plugin_version or self._package_field("version"),
+            "loader_version": self.loader_version,
             "log_path": self.log_path,
             "install_error": self.install_error,
             "capabilities": dict(self._capabilities or {"art_commit": False}),
