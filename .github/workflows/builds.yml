@@ -16,11 +16,19 @@
 #            to a branch whose release already exists; else false. So a
 #            branch publishes once it was asked to (`gh workflow run
 #            builds.yml --ref <branch>`) and with every push from then on.
+#            The slug is lossy (`a/b` and `a-b` are both `build-a-b`), so a
+#            release belongs to the branch its title names (amendment A2):
+#            a push to a branch whose tag another branch's release holds is
+#            false with a notice, and `main` or a dispatch in that case fails,
+#            naming the holder. The first branch asked keeps the tag.
 #   build    release.yml's build job, repeated rather than shared (Decision
-#            U11), with build.json written before package.py.
-#   publish  moves the tag to the commit built, creates or edits the release,
-#            uploads the four files, then build.json.
-#   cleanup  on a branch's deletion, deletes its release and its tag.
+#            U11), with build.json written before package.py. A branch name
+#            build_info.py refuses fails here: it cannot have a build.
+#   publish  checks the title again (a same-slug branch may have published
+#            since the gate), moves the tag to the commit built, creates or
+#            edits the release, uploads the four files, then build.json.
+#   cleanup  on a branch's deletion, deletes its release and its tag, only
+#            when the release's title is that branch's name.
 #
 # Rules (AGENTS.md "CI and release outline"):
 # - Only push, workflow_dispatch and delete trigger this. Never a pull-request
@@ -77,15 +85,33 @@ jobs:
             echo "::error::no build tag can be made from this branch's name (slug '${slug}')"
             exit 1
           fi
+          asked=false
           if [ "${GITHUB_REF}" = refs/heads/main ] || [ "${GITHUB_EVENT_NAME}" = workflow_dispatch ]; then
-            publish=true
-          elif out=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName 2>&1); then
-            publish=true
-          elif [[ "$out" == *"release not found"* ]]; then
-            publish=false
+            asked=true
+          fi
+          err=$(mktemp)
+          if title=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json name --jq .name 2> "$err"); then
+            exists=true
+          elif grep -q 'release not found' "$err"; then
+            exists=false
           else
-            echo "::error::could not tell whether ${tag} exists: ${out}"
+            echo "::error::could not tell whether ${tag} exists: $(head -n 1 "$err")"
             exit 1
+          fi
+          if [ "$exists" = true ] && [ "$title" != "$BRANCH" ]; then
+            # The slug is lossy (a/b and a-b are both build-a-b): the release
+            # is the branch's its title names (amendment A2).
+            holder="${title//[^A-Za-z0-9._\/@+-]/?}"
+            if [ "$asked" = true ]; then
+              echo "::error::${tag} belongs to the branch '${holder}': delete that release or rename this branch"
+              exit 1
+            fi
+            echo "::notice::${tag} belongs to the branch '${holder}'; not publishing this one"
+            publish=false
+          elif [ "$asked" = true ]; then
+            publish=true
+          else
+            publish="$exists"
           fi
           echo "${tag}: publish=${publish}"
           echo "publish=${publish}" >> "$GITHUB_OUTPUT"
@@ -184,6 +210,18 @@ jobs:
             echo "::error::refusing to move the tag '${tag}'"
             exit 1
           fi
+          # gate checked the title, but another branch's run with the same
+          # slug may have published since (amendment A2): look again before
+          # anything is written.
+          if title=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json name --jq .name 2> view.err); then
+            if [ "$title" != "$BRANCH" ]; then
+              echo "::error::${tag} was published by another branch since the gate ran"
+              exit 1
+            fi
+          elif ! grep -q 'release not found' view.err; then
+            cat view.err >&2
+            exit 1
+          fi
           if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag}" --silent 2> ref.err; then
             gh api --method PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/${tag}" \
               -f sha="$GITHUB_SHA" -F force=true --silent
@@ -207,14 +245,19 @@ jobs:
             exit 1
           fi
           body="Build of \`${BRANCH}\` at \`${GITHUB_SHA}\`. Untested: installed from Moonlight Sync's Updates page."
-          if out=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName 2>&1); then
+          # The edit never retitles another branch's release (amendment A2).
+          if title=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json name --jq .name 2> view.err); then
+            if [ "$title" != "$BRANCH" ]; then
+              echo "::error::${tag} was published by another branch since the gate ran"
+              exit 1
+            fi
             gh release edit "$tag" --repo "$GITHUB_REPOSITORY" \
               --title "$BRANCH" --notes "$body" --prerelease --latest=false
-          elif [[ "$out" == *"release not found"* ]]; then
+          elif grep -q 'release not found' view.err; then
             gh release create "$tag" --repo "$GITHUB_REPOSITORY" --verify-tag \
               --title "$BRANCH" --notes "$body" --prerelease --latest=false
           else
-            echo "$out" >&2
+            cat view.err >&2
             exit 1
           fi
 
@@ -249,11 +292,26 @@ jobs:
             echo "::error::no build tag can be made from this branch's name (slug '${slug}')"
             exit 1
           fi
-          if out=$(gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes 2>&1); then
+          err=$(mktemp)
+          if title=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json name --jq .name 2> "$err"); then
+            if [ "$title" != "$BRANCH" ]; then
+              # Another branch with the same slug holds it (amendment A2).
+              holder="${title//[^A-Za-z0-9._\/@+-]/?}"
+              echo "::notice::${tag} belongs to the branch '${holder}'; left alone"
+              exit 0
+            fi
+          elif grep -q 'release not found' "$err"; then
+            echo "No release ${tag}; nothing to delete"
+            exit 0
+          else
+            head -n 1 "$err" >&2
+            exit 1
+          fi
+          if gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes 2> "$err"; then
             echo "Deleted ${tag} and its tag"
-          elif [[ "$out" == *"release not found"* ]]; then
+          elif grep -q 'release not found' "$err"; then
             echo "No release ${tag}; nothing to delete"
           else
-            echo "$out" >&2
+            cat "$err" >&2
             exit 1
           fi

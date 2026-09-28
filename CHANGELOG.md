@@ -36,7 +36,9 @@ project uses [semantic versioning](https://semver.org/).
   updater still see releases only; nothing in the plugin installs a build
   yet, that arrives with the channel picker. Every zip CI builds, a
   release's included, now carries a `build.json` saying what it was built
-  from (`scripts/build_info.py`). See the README's "Developing".
+  from (`scripts/build_info.py`), except one from a branch whose name has
+  a character like `+` or `@`, which CI still builds. See the README's
+  "Developing".
 
 ## [0.11.0] - 2026-09-27
 

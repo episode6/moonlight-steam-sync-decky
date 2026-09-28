@@ -776,10 +776,15 @@ into `-`, cut to 80). Deleting the branch deletes its build. Builds are
 prereleases and are never "latest", so a release is what `install.sh` and
 the plugin's own updater still see; nothing in the plugin installs a build
 yet. A branch can only be built once `builds.yml` is on it, so a branch cut
-before the workflow reached `main` needs a rebase first, and a branch whose
+before the workflow reached `main` needs a rebase first. A branch whose
 name has a character outside `A-Z a-z 0-9 . _ / -` (a `+` or an `@`, say)
-cannot have a build: `build_info.py` refuses the name and the build fails.
-Pull requests never publish a build.
+cannot have a published build: `build_info.py` refuses the name and
+`builds.yml` fails. CI still passes for it; its zip just carries no
+`build.json`, with a notice saying so. Two branches whose names give the
+same slug (`a/b` and `a-b`) share one tag, and the first one asked holds
+it: the release's title names its branch, pushes to the other publish
+nothing, asking for the other fails naming the holder, and deleting the
+other leaves the build alone. Pull requests never publish a build.
 
 Then copy `out/Moonlight-Sync.zip` to the Deck and install it as above.
 `decky plugin build` (Docker) still works through `backend/Dockerfile` and

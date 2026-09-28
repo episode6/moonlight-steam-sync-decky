@@ -366,3 +366,173 @@ def test_builds_yml_uploads_build_json_last() -> None:
     assert "- name: Upload build.json, last" in first
     assert "out/build.json" in last
     assert publish.count("--prerelease --latest=false") == 2
+
+
+def build_json_step(path) -> str:
+    """The "Write build.json" step of ci.yml or release.yml, as text."""
+    lines = path.read_text().splitlines()
+    start = lines.index("      - name: Write build.json")
+    end = next(
+        number
+        for number in range(start + 1, len(lines))
+        if lines[number].startswith("      - ") or not lines[number].startswith("      ")
+    )
+    return "\n".join(lines[start:end]).rstrip()
+
+
+def test_ci_and_release_write_build_json_with_one_step() -> None:
+    step = build_json_step(WORKFLOWS / "ci.yml")
+    assert step == build_json_step(WORKFLOWS / "release.yml")
+    assert "BUILD_REF: ${{ github.head_ref || github.ref_name }}" in step
+
+
+def run_build_json_step(tmp_path, *, ref: str, ref_type: str = "branch", sha: str = "a" * 40):
+    """The step's script in a scratch checkout holding a stale build.json."""
+    (tmp_path / "scripts").mkdir(exist_ok=True)
+    (tmp_path / "scripts" / "build_info.py").write_bytes(
+        (ROOT / "scripts" / "build_info.py").read_bytes()
+    )
+    (tmp_path / "build.json").write_text('{"stale": true}\n')
+    (script,) = run_scripts(build_json_step(WORKFLOWS / "ci.yml"))
+    env = {
+        **os.environ,
+        "BUILD_REF": ref,
+        "GITHUB_REF_TYPE": ref_type,
+        "GITHUB_SHA": sha,
+        "GITHUB_RUN_ID": "42",
+        "GITHUB_RUN_ATTEMPT": "1",
+    }
+    return subprocess.run(
+        ["bash", "-c", script], cwd=tmp_path, env=env, capture_output=True, text=True, check=False
+    )
+
+
+def test_the_build_json_step_writes_the_branch(tmp_path) -> None:
+    result = run_build_json_step(tmp_path, ref="self-update/u3-builds")
+    assert result.returncode == 0, result.stderr
+    data = json.loads((tmp_path / "build.json").read_text())
+    assert (data["kind"], data["ref"], data["run"]) == ("branch", "self-update/u3-builds", "42/1")
+
+
+def test_the_build_json_step_writes_the_tag(tmp_path) -> None:
+    result = run_build_json_step(tmp_path, ref="v1.2.3", ref_type="tag")
+    assert result.returncode == 0, result.stderr
+    data = json.loads((tmp_path / "build.json").read_text())
+    assert (data["kind"], data["ref"]) == ("release", "v1.2.3")
+
+
+def test_the_build_json_step_skips_an_unusual_branch_name(tmp_path) -> None:
+    """Amendment A1: a notice and no build.json, the stale one included, so
+    package.py (which packages the file only when it exists) ships none."""
+    result = run_build_json_step(tmp_path, ref="feature+x@y")
+    assert result.returncode == 0, result.stderr
+    assert "::notice::this branch's name cannot be in a build.json" in result.stdout
+    assert not (tmp_path / "build.json").exists()
+
+
+def test_the_build_json_step_fails_on_anything_else(tmp_path) -> None:
+    assert run_build_json_step(tmp_path, ref="v1+x", ref_type="tag").returncode == 3
+    assert run_build_json_step(tmp_path, ref="main", sha="nope").returncode == 1
+    assert run_build_json_step(tmp_path, ref="a+b", sha="nope").returncode == 1
+
+
+FAKE_GH = """#!/bin/sh
+printf '%s\\n' "$*" >> "$FAKE_GH_LOG"
+case "$1 $2" in
+  "release view")
+    case "$FAKE_GH_RELEASE" in
+      none) echo "release not found" >&2; exit 1 ;;
+      fail) echo "HTTP 502: Bad Gateway" >&2; exit 1 ;;
+      title=*) printf '%s\\n' "${FAKE_GH_RELEASE#title=}"; exit 0 ;;
+    esac ;;
+  "release delete") exit 0 ;;
+esac
+echo "unexpected: gh $*" >&2
+exit 64
+"""
+
+
+def run_job(tmp_path, job: str, *, branch: str, release: str, event: str = "push"):
+    """`job`'s one script under bash with a fake `gh` answering `release`
+    (`none`, `fail` or `title=<name>`): (exit code, outputs, gh calls, stdout)."""
+    (script,) = run_scripts("\n".join(jobs_of(BUILDS.read_text().splitlines())[job]))
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    gh = bin_dir / "gh"
+    gh.write_text(FAKE_GH)
+    gh.chmod(0o755)
+    log, output = tmp_path / "gh.log", tmp_path / "output"
+    log.write_text("")
+    output.write_text("")
+    env = {
+        **os.environ,
+        "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+        "LC_ALL": "C.UTF-8",
+        "BRANCH": branch,
+        "GITHUB_REF_TYPE": "branch",
+        "GITHUB_REF": f"refs/heads/{branch}",
+        "GITHUB_EVENT_NAME": event,
+        "GITHUB_REPOSITORY": "owner/repo",
+        "GITHUB_OUTPUT": str(output),
+        "FAKE_GH_LOG": str(log),
+        "FAKE_GH_RELEASE": release,
+    }
+    result = subprocess.run(
+        ["bash", "-c", script], cwd=tmp_path, env=env, capture_output=True, text=True, check=False
+    )
+    outputs = dict(line.split("=", 1) for line in output.read_text().splitlines())
+    return result.returncode, outputs, log.read_text().splitlines(), result.stdout
+
+
+def gate(tmp_path, **kwargs):
+    code, outputs, calls, stdout = run_job(tmp_path, "gate", **kwargs)
+    assert all(call.startswith("release view build-") for call in calls), calls
+    return code, outputs.get("publish"), stdout
+
+
+def test_the_gate_publishes_main_and_a_branch_s_own_release(tmp_path) -> None:
+    assert gate(tmp_path, branch="main", release="none")[:2] == (0, "true")
+    assert gate(tmp_path, branch="main", release="title=main")[:2] == (0, "true")
+    assert gate(tmp_path, branch="a/b", release="title=a/b")[:2] == (0, "true")
+    dispatched = gate(tmp_path, branch="a/b", release="none", event="workflow_dispatch")
+    assert dispatched[:2] == (0, "true")
+    assert gate(tmp_path, branch="a/b", release="none")[:2] == (0, "false")
+
+
+def test_the_gate_leaves_another_branch_s_release_alone(tmp_path) -> None:
+    """Amendment A2: `a/b` and `a-b` share `build-a-b`; its title says whose."""
+    code, publish, stdout = gate(tmp_path, branch="a/b", release="title=a-b")
+    assert (code, publish) == (0, "false")
+    assert "::notice::build-a-b belongs to the branch 'a-b'" in stdout
+    code, publish, stdout = gate(
+        tmp_path, branch="a/b", release="title=a-b", event="workflow_dispatch"
+    )
+    assert (code, publish) == (1, None)
+    assert "::error::build-a-b belongs to the branch 'a-b': delete that release" in stdout
+    assert gate(tmp_path, branch="main", release="title=other")[:2] == (1, None)
+    # The title is text somebody chose: it is shown, never obeyed.
+    _, _, stdout = gate(tmp_path, branch="a/b", release="title=x::warning::y")
+    assert "branch 'x??warning??y'" in stdout
+
+
+def test_the_gate_fails_when_github_does_not_answer(tmp_path) -> None:
+    assert gate(tmp_path, branch="a/b", release="fail")[:2] == (1, None)
+    assert gate(tmp_path, branch="main", release="fail")[:2] == (1, None)
+
+
+def cleanup(tmp_path, **kwargs):
+    code, _, calls, stdout = run_job(tmp_path, "cleanup", event="delete", **kwargs)
+    deletes = [call for call in calls if call.startswith("release delete")]
+    return code, deletes, stdout
+
+
+def test_cleanup_deletes_only_the_branch_s_own_release(tmp_path) -> None:
+    assert cleanup(tmp_path, branch="a/b", release="title=a/b")[:2] == (
+        0,
+        ["release delete build-a-b --repo owner/repo --cleanup-tag --yes"],
+    )
+    assert cleanup(tmp_path, branch="a/b", release="none")[:2] == (0, [])
+    code, deletes, stdout = cleanup(tmp_path, branch="a/b", release="title=a-b")
+    assert (code, deletes) == (0, [])
+    assert "::notice::build-a-b belongs to the branch 'a-b'; left alone" in stdout
+    assert cleanup(tmp_path, branch="a/b", release="fail")[:2] == (1, [])
