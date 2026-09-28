@@ -29,8 +29,7 @@ export const PLUGIN_NAME = "Moonlight Sync";
 /**
  * The oldest release offered: an older one has no updater, so installing it
  * would leave `install.sh` as the only way forward (Decision U5).
- * [verify] at release time that the release carrying the updater is 0.12.0;
- * if it gets another number, change this in that release's PR.
+ * 0.12.0 is the first release that carries the updater.
  */
 export const MIN_UPDATER_VERSION: Version = [0, 12, 0];
 export const MIN_LOADER_VERSION: Version = [3, 0, 0];
