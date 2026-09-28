@@ -13,11 +13,19 @@ builds. The version is not in it: ``package.json`` has it (hard rule 8).
      "sha": "<40 hex>", "built_at": "2026-10-02T14:03:11Z", "run": "123456/1"}
 
 ``KIND`` is ``release`` or ``branch``; ``SHA`` is 40 hex digits (written
-lower-cased); ``REF`` matches ``^[A-Za-z0-9._/-]{1,100}$``, so a branch name
-GitHub allows but that pattern refuses (one with ``+`` or ``@``) cannot have
-a build. Anything else is refused with exit 1, one line on stderr and
-nothing written. ``built_at`` is the current time in UTC. Standard library
-only.
+lower-cased); ``REF`` matches ``^[A-Za-z0-9._/-]{1,100}$``. A refusal writes
+nothing and prints one line on stderr. Its exit code:
+
+- ``3`` (``EXIT_REF_REFUSED``): the kind and the sha are good and only the
+  ``REF`` is outside the pattern. A branch name GitHub allows but the
+  pattern refuses (one with ``+`` or ``@``) ends here. ``ci.yml`` and
+  ``release.yml`` treat exactly this code, on a branch, as "no build.json
+  for this zip" (a notice, amendment A1); ``builds.yml`` fails on it, so
+  such a branch cannot have a published build.
+- ``1``: a bad ``KIND`` or ``SHA`` (checked first), always a failure.
+- ``2``: argparse's own, a missing or unknown option.
+
+``built_at`` is the current time in UTC. Standard library only.
 """
 
 from __future__ import annotations
@@ -34,16 +42,23 @@ SCHEMA = 1
 KINDS = ("release", "branch")
 SHA_RE = re.compile(r"[0-9a-fA-F]{40}")
 REF_RE = re.compile(r"[A-Za-z0-9._/-]{1,100}")
+EXIT_REFUSED = 1
+EXIT_REF_REFUSED = 3
+
+
+class RefRefused(ValueError):
+    """The kind and the sha are good; only the ref is outside ``REF_RE``."""
 
 
 def build_info(kind: str, ref: str, sha: str, run: str, now: float | None = None) -> dict:
-    """The file's contents, keys in the spec's order; ``ValueError`` on a bad argument."""
+    """The file's contents, keys in the spec's order; ``ValueError`` on a bad
+    argument, ``RefRefused`` (checked last) when only the ref is bad."""
     if kind not in KINDS:
         raise ValueError(f"--kind must be one of {', '.join(KINDS)}, not {kind!r}")
     if not SHA_RE.fullmatch(sha):
         raise ValueError(f"--sha must be 40 hex digits, not {sha!r}")
     if not REF_RE.fullmatch(ref):
-        raise ValueError(f"--ref must match ^[A-Za-z0-9._/-]{{1,100}}$, not {ref!r}")
+        raise RefRefused(f"--ref must match ^[A-Za-z0-9._/-]{{1,100}}$, not {ref!r}")
     built_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now))
     return {
         "schema": SCHEMA,
@@ -69,7 +84,7 @@ def main(argv: list[str] | None = None) -> int:
         info = build_info(args.kind, args.ref, args.sha, args.run)
     except ValueError as error:
         print(f"build_info.py: {error}", file=sys.stderr)
-        return 1
+        return EXIT_REF_REFUSED if isinstance(error, RefRefused) else EXIT_REFUSED
     tmp = args.out.with_name(args.out.name + ".tmp")
     tmp.write_text(json.dumps(info) + "\n", encoding="utf-8")
     os.replace(tmp, args.out)

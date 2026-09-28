@@ -99,7 +99,9 @@ def test_a_hundred_character_ref_is_allowed(tmp_path: Path) -> None:
 )
 def test_refuses_a_bad_argument(tmp_path: Path, override: dict[str, str], message: str) -> None:
     result = build_info(tmp_path, *valid(**override))
-    assert result.returncode == 1
+    # 3 for the ref alone (ci.yml and release.yml skip build.json on it,
+    # amendment A1), 1 for anything else.
+    assert result.returncode == (3 if message.startswith("--ref") else 1)
     assert result.stdout == ""
     lines = result.stderr.splitlines()
     assert len(lines) == 1
@@ -111,3 +113,15 @@ def test_a_refusal_leaves_an_existing_file_alone(tmp_path: Path) -> None:
     (tmp_path / "build.json").write_text("old\n")
     assert build_info(tmp_path, *valid(kind="nightly")).returncode == 1
     assert (tmp_path / "build.json").read_text() == "old\n"
+
+
+def test_a_bad_kind_or_sha_is_not_a_ref_refusal(tmp_path: Path) -> None:
+    """Exit 3 means the ref alone: with a bad kind or sha as well, it is 1."""
+    assert build_info(tmp_path, *valid(kind="tag", ref="a+b")).returncode == 1
+    assert build_info(tmp_path, *valid(sha="x", ref="a+b")).returncode == 1
+    assert build_info(tmp_path, *valid(ref="a+b")).returncode == 3
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_a_missing_option_is_argparse_s_exit_2(tmp_path: Path) -> None:
+    assert build_info(tmp_path, "--kind", "branch").returncode == 2
