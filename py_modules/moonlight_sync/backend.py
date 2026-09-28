@@ -888,7 +888,7 @@ class Backend:
     def _note_added(self, entries: list[dict[str, Any]]) -> dict[str, str | None]:
         """``status``'s additive ``added``: ``{<Moonlight name>: <iso time>}``
         over the entries just read, from ``added.json``, for the Titles
-        page's *Recently added* order (the user's decision of 2026-09-28).
+        page's *Recently added* order (spec 3.21).
         Never the client entry nor a host app (``Desktop`` / ``Steam Big
         Picture``): the order is for the games a sync brought in, and a new
         host's pair would sit among them.

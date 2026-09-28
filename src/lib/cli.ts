@@ -347,7 +347,7 @@ export interface Settings {
   update_channel?: string;
   /**
    * The Titles page lists the titles added last first, instead of by name
-   * (its *Recently added* chip; the user's decision of 2026-09-28). Absent
+   * (its *Recently added* chip, spec 3.21). Absent
    * reads as off.
    */
   titles_recent_first?: boolean;

@@ -58,7 +58,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     # or "branch:<ref>" (that branch's rolling build); set by the Updates
     # page's Channel picker (update spec 3.12.5)
     "update_channel": "stable",
-    # the Titles page's order (the user's decision of 2026-09-28): the
+    # the Titles page's order (spec 3.21): the
     # titles added last first, instead of by name; the page's
     # *Recently added* chip is the one thing that sets it
     "titles_recent_first": False,

@@ -728,7 +728,7 @@ src/lib/                    pure modules (vitest)
                             `realAppid` is `null` for a hidden host-app row;
                             layoutSourceOf() (any non-parked entry: what *Use as the
                             default layout* reads, and what the row's layout text is for);
-                            the order (the user's decision of 2026-09-28): a row's
+                            the order (spec 3.21): a row's
                             `added` (status's time for its entry's name, own keys
                             only), TitleSort, titleSortOf(settings)
                             (`titles_recent_first`, absent = by name), sortRows()
@@ -1108,8 +1108,8 @@ counts and bumps `titlesEpoch`, so a Titles page still mounted re-lists (a
 fresh one lists on mount); the next `sync` re-resolves every title. The
 button is disabled while a run is going; a `match` still in flight is only
 caught by the backend's busy answer (the frontend has no signal for it).
-The Titles page's *Recently added* order (the user's decision of
-2026-09-28, not in the spec) is the plugin's own record, since nothing
+The Titles page's *Recently added* order (spec 3.21, the user's
+decision of 2026-09-28) is the plugin's own record, since nothing
 else has one: the CLI keeps no time per shortcut, `shortcuts.vdf` has
 none, and a run's `title` events name the titles that were already there
 too (the art phase covers every owned entry), so they cannot say what a
