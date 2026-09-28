@@ -4,7 +4,10 @@
 Reproduces the layout of the Decky CLI's ``zip_plugin()``: everything under
 one top-level directory named after ``plugin.json``'s ``name`` (``Moonlight
 Sync/``, which is the directory decky-loader installs the plugin into), the
-five root files, ``dist/`` (mandatory), ``py_modules/`` (0755, no
+five root files, ``build.json`` from the root when it exists (update spec
+3.12.1: what a CI build says about itself, written by
+``scripts/build_info.py``; absent, the zip is a release of ``package.json``'s
+version), ``dist/`` (mandatory), ``py_modules/`` (0755, no
 ``__pycache__``), ``backend/out/*`` as ``bin/*`` (0755), and the contents of
 ``defaults/`` at the root when that directory exists.
 
@@ -30,6 +33,8 @@ import zipfile
 from pathlib import Path
 
 ROOT_FILES = ("plugin.json", "package.json", "main.py", "README.md", "LICENSE")
+#: Root files packaged when they exist, after ROOT_FILES, mode 0644.
+OPTIONAL_ROOT_FILES = ("build.json",)
 PYZ = "moonlight-steam-sync.pyz"
 EXEC_MODE = 0o755
 FILE_MODE = 0o644
@@ -74,6 +79,10 @@ class Packager:
             if not source.exists():
                 raise SystemExit(f"package.py: {name} is missing")
             items.append((source, f"{top}/{name}", FILE_MODE))
+        for name in OPTIONAL_ROOT_FILES:
+            source = self.root / name
+            if source.is_file():
+                items.append((source, f"{top}/{name}", FILE_MODE))
         for sub, mode in (("dist", FILE_MODE), ("py_modules", EXEC_MODE)):
             directory = self.root / sub
             if not directory.exists():

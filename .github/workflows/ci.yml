@@ -115,6 +115,36 @@ jobs:
           path: dist/
       - name: Build the CLI from cli/src
         run: backend/entrypoint.sh
+      - name: Write build.json
+        # Update spec 3.12.1: what this build says about itself, packaged as
+        # Moonlight Sync/build.json -- `release` and the tag on a tag, else
+        # `branch` and the branch's name. On a pull request the sha is the
+        # head commit's, not the synthetic merge commit GITHUB_SHA names
+        # there (amendment A4). The ref and the sha reach the script through
+        # the environment, never interpolated into it. This workflow
+        # publishes nothing from a branch, so a branch name build_info.py
+        # refuses (its exit 3, the ref alone) is a notice and a zip without
+        # build.json, not a failure (amendment A1); any other failure, and
+        # any refusal on a tag, fails. The rm makes sure no build.json but
+        # this step's can be packaged (the file is ignored and uncommitted,
+        # so a checkout has none either). Same text in ci.yml and
+        # release.yml (tests/test_hard_rules.py).
+        env:
+          BUILD_REF: ${{ github.head_ref || github.ref_name }}
+          BUILD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          rm -f build.json
+          kind=branch
+          if [ "${GITHUB_REF_TYPE}" = tag ]; then kind=release; fi
+          status=0
+          python3 scripts/build_info.py --kind "$kind" --ref "$BUILD_REF" \
+            --sha "$BUILD_SHA" --run "$GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT" || status=$?
+          if [ "$status" -eq 3 ] && [ "$kind" = branch ]; then
+            echo "::notice::this branch's name cannot be in a build.json, so the zip carries none"
+          elif [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
       - run: python3 scripts/package.py --require-cli --list
       - uses: actions/upload-artifact@v7
         with:

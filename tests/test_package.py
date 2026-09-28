@@ -101,6 +101,44 @@ def test_modes(tree: Path) -> None:
             assert info.compress_type == zipfile.ZIP_DEFLATED
 
 
+def test_build_json_is_packaged_after_the_root_files(tree: Path) -> None:
+    """Update spec 3.12.1: a CI build's build.json, from the root, 0644."""
+    add_cli(tree)
+    (tree / "build.json").write_text('{"schema": 1}\n')
+    result = package(tree, "--require-cli", "--list")
+    assert result.returncode == 0, result.stderr
+    names = [info.filename for info in entries(tree)]
+    assert names == [
+        f"{TOP}/plugin.json",
+        f"{TOP}/package.json",
+        f"{TOP}/main.py",
+        f"{TOP}/README.md",
+        f"{TOP}/LICENSE",
+        f"{TOP}/build.json",
+        f"{TOP}/dist/",
+        f"{TOP}/dist/index.js",
+        f"{TOP}/py_modules/",
+        f"{TOP}/py_modules/moonlight_sync/",
+        f"{TOP}/py_modules/moonlight_sync/__init__.py",
+        f"{TOP}/py_modules/moonlight_sync/backend.py",
+        f"{TOP}/bin/",
+        f"{TOP}/bin/moonlight-steam-sync.pyz",
+    ]
+    assert result.stdout.splitlines()[:-1] == names
+    modes = {info.filename: stat.S_IMODE(info.external_attr >> 16) for info in entries(tree)}
+    assert modes[f"{TOP}/build.json"] == 0o644
+    with zipfile.ZipFile(tree / "out" / "Moonlight-Sync.zip") as archive:
+        assert archive.read(f"{TOP}/build.json") == b'{"schema": 1}\n'
+
+
+def test_without_build_json_the_zip_has_none(tree: Path) -> None:
+    """Absent, the zip is what it always was (the exact list above, in
+    test_exact_entry_list_with_the_cli); a directory of the name is not the file."""
+    (tree / "build.json").mkdir()
+    assert package(tree).returncode == 0
+    assert not any("build.json" in info.filename for info in entries(tree))
+
+
 def test_without_the_cli_warns_and_packages(tree: Path) -> None:
     result = package(tree)
     assert result.returncode == 0
