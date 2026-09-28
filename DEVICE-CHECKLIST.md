@@ -1116,3 +1116,19 @@ SSH session for V10's `moonlight-steam-sync --version` and `sha256sum
       says "Could not reach GitHub: …", nothing downloads, Decky's dialog
       never opens. Back online, press it and at once the page's *Cancel*
       under *Downloading…*: no toast, no dialog, and a second press works.
+- [ ] **A build made on the device is the commit it is** (update spec
+      amendment A5). On the device, clone `main` afresh, build it (`pnpm
+      install`, `pnpm run build`, `backend/entrypoint.sh`,
+      `scripts/package.py --require-cli`) and install the zip by hand
+      (README "Manual install"). `package.py` must print `package.py:
+      build.json from git: main @ <sha12>`; if it prints `no build.json:
+      …` instead, the text in brackets is git's own reason (a clone that
+      belongs to another user is "dubious ownership"): report it. Then,
+      with the *Channel* on `main` and `build-main` published from that
+      same commit: *Installed* reads `<version> · main @ <sha7> · built
+      …`, *Latest* says "Up to date · checked …" and there is no install
+      button; Settings → About's *Built from* reads `main @ <sha7> · built
+      …` and *Commit* is the whole commit, the one `git rev-parse HEAD`
+      printed in the clone. Before this, such a build always showed *Switch to main @
+      <sha7>* (found 2026-09-28). With the *Channel* on *Releases* the
+      page offers *Switch to <version>* instead, as for any branch build.

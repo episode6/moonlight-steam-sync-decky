@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 
 import { backend, controller } from "../instance";
 import { isFailure } from "../lib/cli";
+import { builtFromText } from "../lib/updates";
 import { BUNDLED_CLI_RULE, bundledLine } from "../lib/version";
 import { useStore } from "./useStore";
 
@@ -38,6 +39,8 @@ export function AboutPage() {
       {row("Minimum CLI", info?.minimum)}
       {info?.install_error ? row("Install error", info.install_error) : null}
       {row("Plugin version", info?.plugin_version)}
+      {row("Built from", info ? builtFromText(info.build) : null)}
+      {info?.build ? row("Commit", info.build.sha) : null}
       {row("Decky Loader", info?.loader_version || null)}
       {row(
         "Re-fetch all art from Game Mode",

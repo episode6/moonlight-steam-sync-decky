@@ -136,8 +136,9 @@ DEVICE-CHECKLIST.md         every on-device check (PR-0 probes, PR-5/6/7/8 items
                             update spec §3.9, via *Install another version* ->
                             reinstall until a newer release exists; the staged
                             hand-off and the channels §17: V8-V10 of update spec
-                            §3.12.5 and the branch's `build.json` through the
-                            loader's fetch), in order
+                            §3.12.5, the branch's `build.json` through the
+                            loader's fetch and a build made on the device,
+                            amendment A5), in order
 main.py                     thin decky Plugin: builds Backend, one line per callable;
                             no __init__ and `_backend` / `_startup` as class attributes, with
                             `_get` / `_ready` as classmethods, so it is correct whether the
@@ -305,10 +306,30 @@ scripts/build_info.py       build.json (update spec 3.12.1): --kind release|bran
                             ci.yml / release.yml skip build.json on it for a branch,
                             amendment A1; builds.yml fails, so a branch with a `+` or
                             an `@` cannot be published); CI writes it at the root
-                            before package.py, never committed (.gitignore)
+                            before package.py, never committed (.gitignore);
+                            from_git(root) (amendment A5, for a build made outside
+                            CI): {kind: branch, ref: the branch checked out, sha:
+                            HEAD, run: null}, NoGitBuild unless root is the top of
+                            a git checkout, on a branch, with nothing uncommitted
+                            or untracked (`git -C root`, GIT_DIR and its kin
+                            dropped from the environment), RefRefused for a name
+                            outside the pattern; the branch is `symbolic-ref HEAD`
+                            without BRANCH_PREFIX (`refs/heads/`), what
+                            github.ref_name is, never `--short` (which answers
+                            `heads/main` beside a tag named `main`); a failure of
+                            git's own carries the first line of its stderr, or
+                            that git did not run / did not answer; git's bytes
+                            are read as UTF-8 with errors="replace" whatever the
+                            locale, so a branch named in other bytes is a refused
+                            name, never a UnicodeDecodeError
 scripts/package.py          Docker-free zip: out/Moonlight-Sync.zip ("Moonlight Sync/");
                             OPTIONAL_ROOT_FILES (build.json) from the root when it
-                            exists, 0644, after the five root files
+                            exists, 0644, after the five root files; without a root
+                            build.json, build_info.from_git's, written into the zip
+                            only (never to the root, so none goes stale), else no
+                            build.json; a root build.json that is not a file is
+                            never replaced by git's; one stderr line in every case
+                            (from the root, from git, or why there is none)
 src/index.tsx               definePlugin: events (sync_event / sync_done, sgdb_key_event /
                             sgdb_key_done), settings route, running-app watch, load()
 src/instance.tsx            the Controller wired to callable / Steam / showModal / toaster;
@@ -407,7 +428,9 @@ src/lib/                    pure modules (vitest)
                             shape decky.ts accepts), and the texts:
                             updateRowView() (the panel's row, on the channel),
                             installedText() (a branch build's ref, sha7 and built
-                            time), latestText(…, channel) ("No build of <ref> is
+                            time), builtFromText() (About's *Built from*: the
+                            same for a release's build.json too, the tag its
+                            ref; BUILD_UNKNOWN_TEXT without one), latestText(…, channel) ("No build of <ref> is
                             published"; a branch offer's "built <when>"),
                             versionLabel(), installButtonText() (`Switch to` for a
                             switch; `Downloading…` / `Waiting for Decky…`)
@@ -879,7 +902,10 @@ src/components/             adoptDefault (inspectLayout -> refusal toasts -> Con
                             cache* (a ConfirmModal, then resetMatchCache(); disabled
                             while a run is going), AboutPage (its rows, *Decky
                             Loader* = `loader_version`, *Bundled CLI install* =
-                            version.ts's BUNDLED_CLI_RULE, the log tail),
+                            version.ts's BUNDLED_CLI_RULE, *Built from* =
+                            updates.ts's builtFromText over `cli_version().build`
+                            and, when there is one, *Commit* = its whole sha;
+                            the log tail),
                             EnabledToggle (spec 3.19: the *Enable Sync* on/off
                             ToggleField, at the top of the panel in every state
                             and, while off, the whole settings route; no
@@ -1518,7 +1544,18 @@ There is no Steam Deck during development; everything else is tested.
   mismatch, a missing source) and holds the real CLI's `__version__` to
   `package.json`'s; `tests/test_package.py` builds a fixture tree and checks
   the exact zip entry list and modes, with a root `build.json` and without
-  one, and that `fetch.py` and `updates.py` ship (0755). `tests/test_build_info.py` runs `scripts/build_info.py` with
+  one, and that `fetch.py` and `updates.py` ship (0755); its `checkout`
+  fixture commits the tree to a scratch git repository on `main` (the
+  machine's git configuration shut out), for the `build.json` a build
+  outside CI gets: the branch and `HEAD`, `run` `null`, read back through
+  `updates.parse_build`, the root's file (or a directory of its name)
+  winning over git, a tag named `main` beside the branch, and none for an
+  edited, untracked or staged change, a detached `HEAD`, a refused branch
+  name (one in UTF-8 and one in Latin-1 bytes too, under `LC_ALL=C` with
+  `PYTHONUTF8=0`), a tree inside another checkout, no checkout, a checkout git calls
+  dubious (`GIT_TEST_ASSUME_DIFFERENT_OWNER=1`, git's own message quoted)
+  and no `git` on `PATH`; each asserts the stderr line.
+  `tests/test_build_info.py` runs `scripts/build_info.py` with
   `sys.executable` in `tmp_path`: the keys and their order, `built_at`'s
   form, `--out`, and every refusal (one stderr line, nothing written; exit
   3 for the ref alone, 1 for a bad kind, sha or run, the ref bad too or

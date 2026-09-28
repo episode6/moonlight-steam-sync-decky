@@ -150,7 +150,9 @@ It downloads and goes through the same dialog.
   from a branch checks GitHub again first, so what is downloaded is the
   build that is there now. Decky's dialog names it as, say, "0.12.0 (main
   @ abc1234)", since a branch's build carries the last release's version
-  number. *Installed* then reads `0.12.0 · main @ abc1234 · built …`.
+  number. *Installed* then reads `0.12.0 · main @ abc1234 · built …`, and
+  Settings → About's **Built from** and **Commit** rows say the same with
+  the whole commit.
 - **Back to Releases**: pick *Releases*; the page then offers **Switch to
   X**, the newest release, which installs it over the branch's build
   (Decky asks to *overwrite*). *Install another version* works from a
@@ -224,7 +226,10 @@ through the link, so the file it pointed to is left as it was.
 The plugin always runs the copy in `~/.local/bin`, through `python3`, so a
 shortcut made from Game Mode and one made from a terminal belong to the same
 tool. Settings → **About** shows both versions, the minimum the plugin
-needs (0.4.0) and any install error. If the installed CLI
+needs (0.4.0) and any install error, and what the plugin itself was built
+from: **Built from** (`main @ abc1234 · built …` for a build of a branch,
+`v0.12.0 @ abc1234 · built …` for a release, "not recorded in this build"
+for a zip that does not say) and **Commit**, the whole commit. If the installed CLI
 is missing or older than 0.4.0 the panel shows a single row, "CLI not
 installed — see About" or "CLI too old (0.2.0, needs 0.4.0) — see About",
 and every CLI action is disabled; the settings pages that only touch the
@@ -823,9 +828,24 @@ ruff check . && python3 -m pytest && python3 -m pytest cli
 
 A zip CI builds also carries `Moonlight Sync/build.json`, which says what
 it was built from (`scripts/build_info.py`: `release` and the tag, or
-`branch` and the branch's name, the commit and the run). A local build has
-none unless you write one at the repo root, and a zip without it is a
-release of `package.json`'s version.
+`branch` and the branch's name, the commit and the run). A build made
+anywhere else, on your machine or on the Deck, carries one too:
+`scripts/package.py` reads the branch and the commit from the git checkout
+when the root has no `build.json` (the run is then `null`), and says so on
+stderr. So a zip you built from a clone of `main` names the commit the
+published build of `main` names, and with the *Channel* on `main` the
+Updates page offers a switch only when `main` has moved on. It also means
+the zip is a branch's build to the plugin, as a published one is: with the
+*Channel* left on *Releases*, the Updates page, the panel's last row and
+the toast at load offer **Switch to X**, the newest release, where a local
+build used to read as that release. Follow the branch you built (Settings
+→ Updates → *Channel*) to be offered its builds instead. The checkout has
+to be that commit and nothing else: with uncommitted or untracked changes,
+a detached `HEAD`, a branch name with a character outside
+`A-Z a-z 0-9 . _ / -`, or no git checkout at all, the zip carries no
+`build.json`, and a zip without it is a release of `package.json`'s
+version. `package.py` says on stderr which it was, with git's own message
+when git refused the checkout (a clone that belongs to another user, say).
 
 ### Branch builds
 

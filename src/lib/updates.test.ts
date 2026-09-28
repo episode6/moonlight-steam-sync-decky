@@ -8,6 +8,8 @@ import {
   branchEntryOf,
   branchVersionText,
   BUILD_MAX_BYTES,
+  BUILD_UNKNOWN_TEXT,
+  builtFromText,
   channelOf,
   channelRef,
   channelsOf,
@@ -848,6 +850,20 @@ describe("the texts (update spec 3.7)", () => {
     expect(installedText(at("0.11.0", main), now)).toBe("0.11.0 · main @ abc1234 · built today 13:03");
     expect(installedText(at("0.11.0", { ...main, built_at: null }), now)).toBe("0.11.0 · main @ abc1234");
     expect(installedText(at(null, main), now)).toBe("unknown · main @ abc1234 · built today 13:03");
+  });
+
+  it("builtFromText: About's row, for a branch's build, a release's and a zip that says nothing", () => {
+    const main = buildInfo("main", MAIN_SHA, "branch", local(9, 21, 13, 3));
+    expect(builtFromText(main, now)).toBe("main @ abc1234 · built today 13:03");
+    // a build made outside CI: no run, the same text
+    expect(builtFromText({ ...main, run: null }, now)).toBe("main @ abc1234 · built today 13:03");
+    expect(builtFromText({ ...main, built_at: null }, now)).toBe("main @ abc1234");
+    expect(builtFromText({ ...main, sha: MAIN_SHA.toUpperCase() }, now)).toBe("main @ abc1234 · built today 13:03");
+    expect(builtFromText(buildInfo("v0.11.0", MAIN_SHA, "release", local(9, 21, 13, 3)), now)).toBe(
+      "v0.11.0 @ abc1234 · built today 13:03",
+    );
+    expect(builtFromText(null, now)).toBe(BUILD_UNKNOWN_TEXT);
+    expect(builtFromText(undefined, now)).toBe(BUILD_UNKNOWN_TEXT);
   });
 
   it("latestText, row by row", () => {
