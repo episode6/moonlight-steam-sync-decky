@@ -1848,7 +1848,12 @@ added* order and Settings listing Artwork before Titles; the CLI takes
 carries the updater, which is the version `updates.ts`'s
 `MIN_UPDATER_VERSION` names (`0.12.0`, update spec §3.4's [verify],
 settled by this release); every release before it is updated once with
-`install.sh`.
+`install.sh`. Once it is out, the user installs it with `install.sh` and
+walks DEVICE-CHECKLIST §16 and §17 (the human gate after PR-U2, moved
+after the release because nothing older than `0.12.0` has an updater and
+nothing newer exists yet: V1-V5 reinstall it through *Install another
+version*); anything found there ships as `0.12.1`, the first update the
+updater itself delivers.
 
 Once everything intended for the release has merged to `main`
 (substitute the version being cut for `X.Y.Z`):
