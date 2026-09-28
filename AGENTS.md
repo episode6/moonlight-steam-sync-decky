@@ -212,7 +212,11 @@ py_modules/moonlight_sync/  the backend (imports nothing from decky)
                             sha256_file(); an equal version with other bytes is
                             `replaced` (Decision U12), a newer one `kept`
   settings.py               settings.json / ignore.json / owned-apps.json /
-                            pending.json / layouts.json, all .tmp + os.replace;
+                            pending.json / layouts.json / added.json, all .tmp +
+                            os.replace; added() / note_titles() (`added.json`,
+                            `{version: 1, titles: {<Moonlight name>: <when> | null}}`:
+                            the names `status` lists, a new one stamped, a known one
+                            kept, a gone one dropped, the first call all `null`);
                             pending()'s `synced_hosts` seed for an older file
                             (the last plan's host, stamped `since`);
                             `update_channel` (update spec 3.12.4): is_channel()
@@ -746,7 +750,14 @@ src/lib/                    pure modules (vitest)
                             candidate `art only`) and layoutTargetOf(), whose
                             `realAppid` is `null` for a hidden host-app row;
                             layoutSourceOf() (any non-parked entry: what *Use as the
-                            default layout* reads, and what the row's layout text is for)
+                            default layout* reads, and what the row's layout text is for);
+                            the order (spec 3.21): a row's
+                            `added` (status's time for its entry's name, own keys
+                            only), TitleSort, titleSortOf(settings)
+                            (`titles_recent_first`, absent = by name), sortRows()
+                            (`recent`: rows with a time first, the latest on top,
+                            ties and the rest by name; a new array), sortText() (the
+                            headline's), addedText() ("added today 14:02")
   __tests__/join.test.ts    the join, every badge/chip, filters, sort, paging (fixtures)
   restart.ts                restartDecision() (the §3.9 table), modal text
   version.ts                version parsing, the CLI-missing / too-old row,
@@ -872,7 +883,12 @@ src/components/             adoptDefault (inspectLayout -> refusal toasts -> Con
                             !updatesSupported(); no confirm of its own before an
                             install, Decky's dialog is it), HostPage (no MAC field since
                             2026-09-26: Moonlight's list is the one Wake source),
-                            TitlesPage (layout text; the *Layout* menu:
+                            TitlesPage (the *Recently added* chip beside *Show
+                            parked*: setSettings({titles_recent_first}), the rows
+                            through sortRows() after the filter, each with
+                            addedText() while it is on, the headline's sortText(),
+                            during a sync only for `recent`;
+                            layout text; the *Layout* menu:
                             *Choose layout…* and *Use as the default layout*, which
                             inspects, toasts the refusal texts or confirms), ChangeMatchModal,
                             Pill, StreamButton (renders only when streamMap has the
@@ -1118,6 +1134,47 @@ counts and bumps `titlesEpoch`, so a Titles page still mounted re-lists (a
 fresh one lists on mount); the next `sync` re-resolves every title. The
 button is disabled while a run is going; a `match` still in flight is only
 caught by the backend's busy answer (the frontend has no signal for it).
+The Titles page's *Recently added* order (spec 3.21, the user's
+decision of 2026-09-28) is the plugin's own record, since nothing
+else has one: the CLI keeps no time per shortcut, `shortcuts.vdf` has
+none, and a run's `title` events name the titles that were already there
+too (the art phase covers every owned entry), so they cannot say what a
+sync added. `status()` therefore carries an additive `added`
+(`{<Moonlight name>: <iso time> | null}` over the entries it just read,
+never the client entry nor a `host_app` one: a new host's `Desktop` /
+`Steam Big Picture` would otherwise sit among the games its first sync
+added, PR 68's review) and keeps it in `added.json`
+(`Backend._note_added` -> `Store.note_titles`): a name seen for the first
+time is stamped with `iso_now()`, a known one keeps its time, one that is
+gone is dropped (so a title removed and synced again counts as added
+again), and the very first call, with no readable file, records every
+name with `null`, "there before the plugin kept track". The stamp is the
+first `status` after the sync that added the title (the frontend asks for
+one when a run ends and at every load), not the commit itself; the titles
+of one sync share it. A kind flip keeps the name, so a replaced entry is
+not new; a sync run from the bare CLI is stamped at the plugin's next
+`status`. The record is by Moonlight name, across hosts, not per host or
+per entry, which is the shortcut's own identity (its appid is `crc32(Exe
++ AppName)`): `status` lists every host's entries, so a name another
+host's parked entry already carries is known, and the active host
+publishing it later unparks that entry and stamps nothing. Nothing is
+awaited between `note_titles`'s read and its write, so two `status` calls
+in flight at once (`refreshStatus` and `loadTitles` when a run ends with
+the Titles page open) record one after the other and the second keeps
+the first's stamp. A file that cannot be written fails nothing (`status` answers
+the times it has), a broken one reads as no file, and a failed `status`
+records nothing. No CLI flag, event or file is involved (hard rules 1 and
+7 stand). `settings.titles_recent_first` (default `false`,
+`BOOL_SETTINGS`, a plain `set_settings` key) is the chip's state, so the
+page reopens in the order last chosen; the frontend reads it through
+`join.ts`'s `titleSortOf` and sorts with `sortRows` after the filter,
+before the pages of 50. `tests/test_backend.py` holds the record (the
+baseline, the stamp, the drop, a host app never stamped, two calls at
+once, the unchanged file not rewritten, broken files, a refused write),
+`__tests__/join.test.ts` the order, and
+`controller.test.ts` that `loadTitles` hands `added` on (`{}` from a
+backend without it or a failed `status`) and that the setting moves
+nothing in the library.
 The on/off toggle (spec 3.19) is one boolean, `settings.enabled` (default
 `true`, `BOOL_SETTINGS` in `settings.py`, a plain `set_settings` key): the
 backend knows nothing else of it, the frontend reads it everywhere it

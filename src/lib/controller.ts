@@ -16,6 +16,7 @@ import {
   errorText,
   isFailure,
   isSteamUserMismatch,
+  type AddedTitles,
   type AppEvent,
   type Backend,
   type CliEvent,
@@ -161,6 +162,8 @@ export interface TitlesData {
   apps: AppEvent[];
   /** `status`'s entries (empty when `status` failed; `statusError` says why). */
   entries: EntryEvent[];
+  /** `status`'s `added`, for the *Recently added* order (empty when `status` failed). */
+  added: AddedTitles;
   /** `ignore.json`. */
   ignored: string[];
   host: string;
@@ -878,6 +881,7 @@ export class Controller {
       data: {
         apps,
         entries: isFailure(status) ? [] : status.entries,
+        added: isFailure(status) ? {} : (status.added ?? {}),
         ignored: ignoredNames,
         host: active,
         source,

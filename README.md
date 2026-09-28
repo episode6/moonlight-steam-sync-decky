@@ -467,7 +467,8 @@ count and when it was last seen, the active one marked:
 ## The Titles page
 
 The list button in the panel's header (or Settings → **Titles**) opens
-every title the active host publishes, sorted by name, with what the next
+every title the active host publishes, sorted by name (or the newest first,
+see **Recently added** below), with what the next
 sync does with it. Each row has Steam's library capsule when the title is
 matched to a Steam game (a striped placeholder otherwise), the name, the
 match line (`Balatro · Steam 2379780`, `Sea of Stars · SGDB 5322710`, or
@@ -508,6 +509,20 @@ or adding it cached its list: the page says so and offers **Sync now**
 itself. While a sync is
 running it shows the same cached listing ("refreshes when the sync
 finishes") and re-lists on its own as soon as the run ends.
+
+**Recently added**, beside the filters, lists the titles added last first,
+so the games your latest sync brought in are at the top; each row then
+says when it was added ("added today 14:02"), and the titles of one sync
+are in name order among themselves. Press it again for the order by name.
+The page remembers the choice (the `titles_recent_first` setting). The
+plugin notes when it first sees a title, so the titles that were already
+there when this feature arrived have no time and come after the dated
+ones, by name; so do the rows without a shortcut (ignored, duplicate) and
+the host apps (`Desktop`, `Steam Big Picture`), which are never dated. A
+title that is removed and synced again later counts as added again. The
+time goes with the title's name, as its shortcut does: a title another
+host already has parked is known, so it is not new when the active host
+starts publishing it too.
 
 **Change match** searches Steam's store and SteamGridDB (prefilled with
 the title's name; edit it and **Search** again) and shows the results as
@@ -733,7 +748,12 @@ Steam's:
   "applied"}}}`; `real_appid` is `null` for an entry with no Steam game
   behind it, such as Desktop / Steam Big Picture or the Moonlight client;
   `applied` is the last layout URL the plugin itself put on that shortcut,
-  or `null` when the selection is one you made).
+  or `null` when the selection is one you made), `added.json` (when the
+  plugin first saw each title, for the Titles page's *Recently added*
+  order: `{"version": 1, "titles": {"<Moonlight name>": "<time>"}}`, the
+  time `null` for a title that was there before the plugin kept track,
+  and neither the Moonlight client nor a host app in it;
+  deleting the file starts over, with every title undated).
 - `~/homebrew/logs/Moonlight Sync/moonlight-sync.log`: every CLI call with
   its arguments, the CLI's own messages verbatim, and both CLI versions at
   startup.

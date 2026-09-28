@@ -7,6 +7,8 @@
 - ``pending.json``    the restart/walk flags of spec 3.9, the *Last sync*
   row and ``synced_hosts`` (every host a sync has planned for)
 - ``layouts.json``    per-shortcut layout results (PR-7)
+- ``added.json``      when each title was first seen in ``status``, for the
+  Titles page's *Recently added* order
 
 Every write is ``.tmp`` + ``os.replace``. None of these files is under the
 Steam directory, and ``config.toml`` is never touched.
@@ -19,6 +21,7 @@ import copy
 import json
 import os
 import re
+from collections.abc import Iterable
 from typing import Any
 
 from .updates import REF_RE
@@ -28,6 +31,7 @@ IGNORE_FILE = "ignore.json"
 OWNED_APPS_FILE = "owned-apps.json"
 PENDING_FILE = "pending.json"
 LAYOUTS_FILE = "layouts.json"
+ADDED_FILE = "added.json"
 
 #: Defaults for ``settings.json``. ``hosts`` is deliberately absent from the
 #: file until it has been seeded once from ``host show`` (spec 3.7); readers
@@ -54,6 +58,10 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     # or "branch:<ref>" (that branch's rolling build); set by the Updates
     # page's Channel picker (update spec 3.12.5)
     "update_channel": "stable",
+    # the Titles page's order (spec 3.21): the
+    # titles added last first, instead of by name; the page's
+    # *Recently added* chip is the one thing that sets it
+    "titles_recent_first": False,
 }
 
 #: Keys an older settings.json may carry that nothing reads any more; they
@@ -80,6 +88,7 @@ BOOL_SETTINGS = (
     "hide_stream_shortcuts",
     "streaming_collection",
     "update_check",
+    "titles_recent_first",
 )
 
 #: What one layout copy (or *Choose layout*) can record (spec 3.10 / 3.16).
@@ -435,6 +444,47 @@ class Store:
     def delete_layouts(self) -> None:
         with contextlib.suppress(FileNotFoundError):
             os.unlink(self.path(LAYOUTS_FILE))
+
+    # -- added.json ------------------------------------------------------
+
+    def added(self) -> dict[str, str | None] | None:
+        """``added.json``'s ``titles``: ``{<Moonlight name>: <iso time>}``,
+        the time ``None`` for a title that was there before the plugin kept
+        track. ``None`` when nothing was recorded yet: no file, or one that
+        is unparsable or not of that shape (a record, not a source of truth,
+        as ``layouts.json`` is). Entries of another shape are dropped.
+        """
+        try:
+            data = read_json(self.path(ADDED_FILE), None)
+        except (OSError, ValueError):
+            return None
+        titles = data.get("titles") if isinstance(data, dict) else None
+        if not isinstance(titles, dict):
+            return None
+        return {
+            name: when
+            for name, when in titles.items()
+            if isinstance(name, str) and (when is None or isinstance(when, str))
+        }
+
+    def note_titles(self, names: Iterable[str], *, when: str) -> dict[str, str | None]:
+        """Record ``names``, the titles ``status`` lists right now; returns
+        the new ``titles`` map, which has exactly those names.
+
+        A name already recorded keeps its time, a new one gets ``when``,
+        and one that is gone is dropped, so a title removed and synced again
+        later counts as added again. The first call (``added()`` is
+        ``None``) records every name with ``None``: those titles were there
+        before the plugin kept track, and nothing says when they came. The
+        file is only rewritten when the map changed.
+        """
+        known = self.added()
+        titles: dict[str, str | None] = {}
+        for name in names:
+            titles[name] = None if known is None else known.get(name, when)
+        if titles != known:
+            write_json_atomic(self.path(ADDED_FILE), {"version": 1, "titles": titles})
+        return titles
 
 
 def _sanitize_default_layout(value: Any) -> dict[str, Any] | None:

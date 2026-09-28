@@ -8,6 +8,7 @@ import type { TitlesData, TitlesLoad } from "../lib/controller";
 import { relativeTime } from "../lib/format";
 import { layoutStrategy } from "../lib/layouts";
 import {
+  addedText,
   applyPin,
   FILTERS,
   filterCounts,
@@ -17,8 +18,12 @@ import {
   pageOf,
   parkedCount,
   publishedCount,
+  sortRows,
+  sortText,
+  titleSortOf,
   type TitleFilter,
   type TitleRow,
+  type TitleSort,
 } from "../lib/join";
 import { actionsReady } from "../lib/state";
 import { adoptAsDefault } from "./adoptDefault";
@@ -60,6 +65,7 @@ function Thumb({ url }: { url: string | null }) {
 
 function Row({
   row,
+  showAdded,
   locked,
   ignoring,
   canChooseLayout,
@@ -69,6 +75,8 @@ function Row({
   rowRef,
 }: {
   row: TitleRow;
+  /** The order is *Recently added*: the row says when its title was added. */
+  showAdded: boolean;
   /** A run is going: both edits are held until it finishes. */
   locked: boolean;
   ignoring: boolean;
@@ -83,6 +91,7 @@ function Row({
 }) {
   const chooseLayout = row.layoutTarget && canChooseLayout ? row.layoutTarget : null;
   const useAsDefaultSource = canSetDefault ? row.layoutSource : null;
+  const added = showAdded ? addedText(row) : null;
   // The *Layout* menu (Decision 50): both layout actions in one button.
   const layoutMenu = (event: MouseEvent) =>
     showContextMenu(
@@ -130,6 +139,7 @@ function Row({
             </Pill>
           ))}
           {row.layout ? <span style={{ marginLeft: 2 }}>· layout: {row.layout}</span> : null}
+          {added ? <span style={{ marginLeft: 2 }}>· {added}</span> : null}
         </div>
       </div>
       <Pill tone={row.badge.tone}>{row.badge.text}</Pill>
@@ -161,13 +171,15 @@ function Row({
  * Decision 66), so the headline says when it was listed; *Sync now* is
  * what refreshes it.
  */
-function headline(data: TitlesData, rows: readonly TitleRow[]): string {
+function headline(data: TitlesData, rows: readonly TitleRow[], sort: TitleSort): string {
   const published = publishedCount(rows);
   const when = data.cachedWhen ? ` · listed ${relativeTime(data.cachedWhen)}` : "";
   if (data.source === "syncing") {
-    return `${published} published by ${data.host}${when} · refreshes when the sync finishes`;
+    // the rows below are in the chosen order during a sync too; by name goes unsaid, as before
+    const order = sort === "recent" ? ` · ${sortText(sort)}` : "";
+    return `${published} published by ${data.host}${when} · refreshes when the sync finishes${order}`;
   }
-  return `${published} published by ${data.host}${when} · sorted by name`;
+  return `${published} published by ${data.host}${when} · ${sortText(sort)}`;
 }
 
 /**
@@ -180,7 +192,10 @@ function headline(data: TitlesData, rows: readonly TitleRow[]): string {
  * "unavailable", spec 3.10, 3.16) and has a *Layout* menu: *Choose
  * layout…*, Steam's own picker for the hidden shortcut (hidden when the
  * client lacks it), and *Use as the default layout*, which adopts this
- * title's layout for every entry (spec 3.16.5). Nothing here restarts Steam: a pin or
+ * title's layout for every entry (spec 3.16.5). The *Recently added* chip
+ * (the `titles_recent_first` setting, so the page reopens in the order last
+ * chosen) lists the titles added last first, each with when it was added,
+ * instead of by name. Nothing here restarts Steam: a pin or
  * an ignore takes effect on the next sync. While a run is going the list
  * comes from the CLI's per-host cache (no live `list` racing the run), both
  * row edits are locked, and the page refreshes when the run starts (its
@@ -230,12 +245,16 @@ export function TitlesPage() {
   const data = load?.ok && load.data.host === active ? load.data : null;
   const layouts = state.layouts;
   const rows = useMemo(
-    () => (data ? joinTitles(data.apps, data.entries, data.ignored, layouts) : []),
+    () => (data ? joinTitles(data.apps, data.entries, data.ignored, layouts, data.added) : []),
     [data, layouts],
   );
+  const sort = titleSortOf(state.settings);
   const canChooseLayout = controller.canChooseLayout();
   const canSetDefault = layoutStrategy(state.settings) === "copy";
-  const shown = useMemo(() => filterRows(rows, filter, showParked), [rows, filter, showParked]);
+  const shown = useMemo(
+    () => sortRows(filterRows(rows, filter, showParked), sort),
+    [rows, filter, showParked, sort],
+  );
   const counts = useMemo(() => filterCounts(rows, showParked), [rows, showParked]);
   const page = pageOf(shown, pages);
 
@@ -254,6 +273,13 @@ export function TitlesPage() {
   const choose = (next: TitleFilter) => {
     setFilter(next);
     setPages(1);
+  };
+
+  const toggleRecent = async () => {
+    setNote(null);
+    setPages(1);
+    const result = await controller.setSettings({ titles_recent_first: sort !== "recent" });
+    if (isFailure(result)) setNote(errorText(result));
   };
 
   const onPinned = (pinned: PinnedEvent, matchedName: string | null) => {
@@ -346,7 +372,7 @@ export function TitlesPage() {
   return (
     <div>
       <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 8, display: "flex", gap: 8, alignItems: "center" }}>
-        <span>{headline(data, rows)}</span>
+        <span>{headline(data, rows, sort)}</span>
         {loading ? <Spinner style={{ width: 14, height: 14 }} /> : null}
       </div>
       {data.statusError ? (
@@ -375,6 +401,9 @@ export function TitlesPage() {
             Show parked ({parked})
           </DialogButton>
         ) : null}
+        <DialogButton style={chipStyle(sort === "recent")} onClick={() => void toggleRecent()}>
+          Recently added
+        </DialogButton>
         <DialogButton style={chipStyle(false)} disabled={loading} onClick={() => void refresh()}>
           Refresh
         </DialogButton>
@@ -386,6 +415,7 @@ export function TitlesPage() {
             key={row.name}
             rowRef={index === page.rows.length - 1 ? lastRowRef : undefined}
             row={row}
+            showAdded={sort === "recent"}
             locked={running}
             ignoring={ignoring === row.name}
             canChooseLayout={canChooseLayout}
