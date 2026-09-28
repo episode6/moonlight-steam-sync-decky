@@ -6,34 +6,7 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Fixed
-
-- **The Stream button is focused in the order it is drawn, beside other
-  plugins' additions to the game page.** With ProtonDB Badges installed,
-  going up from *Play* reached the ProtonDB badge first and the Stream
-  button after it, though the badge is drawn above the button. The Stream
-  row is now placed directly above the page's own play section, behind
-  whatever another plugin adds under the header.
-- **Get key from SteamGridDB…** no longer fails at once on a page that is
-  not the API page. A failed fetch used to leave its last page in Steam's
-  browser, and every later attempt read that stale page in the instant
-  before the browser loaded the API page afresh, failing with "no key"
-  until Steam was restarted. The plugin now gives a page at the API URL
-  that has not rendered ten seconds, reloads it once, waits ten more, and
-  only then reports "SteamGridDB's API page did not load; try again or
-  enter the key by hand".
-- Before each **Get key from SteamGridDB…** the plugin also resets the
-  page Steam's browser kept from the last attempt (the browser keeps its
-  tab after you leave it), so the fetch only ever reads the page it opens.
-
-### Removed
-
-- The *Wake-on-LAN MAC* field under each host on Settings → Host. The
-  panel's **Wake** now sends to the MAC in Moonlight's own host list
-  alone; a host Moonlight has no MAC for has no Wake button. The
-  `set_wake_mac` callable is gone and `wake_macs` in `settings.json` is
-  read by nothing (an older file keeps it; changing it through the
-  settings is refused).
+## [0.11.0] - 2026-09-27
 
 ### Changed
 
@@ -65,6 +38,35 @@ project uses [semantic versioning](https://semver.org/).
   each host a sync has run for (`synced_hosts` in `pending.json`); on
   upgrade the host of the last recorded sync counts as synced, and any
   other host counts from its next sync.
+
+### Removed
+
+- The *Wake-on-LAN MAC* field under each host on Settings → Host. The
+  panel's **Wake** now sends to the MAC in Moonlight's own host list
+  alone; a host Moonlight has no MAC for has no Wake button. The
+  `set_wake_mac` callable is gone and `wake_macs` in `settings.json` is
+  read by nothing (an older file keeps it; changing it through the
+  settings is refused).
+
+### Fixed
+
+- **The Stream button is focused in the order it is drawn, beside other
+  plugins' additions to the game page.** With ProtonDB Badges installed,
+  going up from *Play* reached the ProtonDB badge first and the Stream
+  button after it, though the badge is drawn above the button. The Stream
+  row is now placed directly above the page's own play section, behind
+  whatever another plugin adds under the header.
+- **Get key from SteamGridDB…** no longer fails at once on a page that is
+  not the API page. A failed fetch used to leave its last page in Steam's
+  browser, and every later attempt read that stale page in the instant
+  before the browser loaded the API page afresh, failing with "no key"
+  until Steam was restarted. The plugin now gives a page at the API URL
+  that has not rendered ten seconds, reloads it once, waits ten more, and
+  only then reports "SteamGridDB's API page did not load; try again or
+  enter the key by hand".
+- Before each **Get key from SteamGridDB…** the plugin also resets the
+  page Steam's browser kept from the last attempt (the browser keeps its
+  tab after you leave it), so the fetch only ever reads the page it opens.
 
 ## [0.10.0] - 2026-09-24
 
