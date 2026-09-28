@@ -5,9 +5,11 @@
 # backend/entrypoint.sh builds the CLI zipapp from cli/src
 # (scripts/build_cli.py, which refuses a CLI __version__ that is not
 # package.json's "version"), then scripts/package.py --require-cli bundles it
-# into out/Moonlight-Sync.zip. The zipapp is also a release asset of its own,
-# moonlight-steam-sync.pyz, which cli/install.sh downloads for a CLI-only
-# install. Both are smoke-run and checksummed.
+# into out/Moonlight-Sync.zip, with the build.json scripts/build_info.py
+# writes (update spec 3.12.1) inside it rather than as an asset of its own.
+# The zipapp is also a release asset of its own, moonlight-steam-sync.pyz,
+# which cli/install.sh downloads for a CLI-only install. Both are smoke-run
+# and checksummed.
 #
 # The build job also runs on pull_request and workflow_dispatch, so the
 # release path is exercised by ordinary CI rather than sitting untested until
@@ -70,6 +72,20 @@ jobs:
         # `doctor` always exits 0 (it reports what it finds, it does not
         # require a Steam install or a moonlight binary to run in CI).
         run: python3 backend/out/moonlight-steam-sync.pyz doctor
+
+      - name: Write build.json
+        # Update spec 3.12.1: what this build says about itself, packaged as
+        # Moonlight Sync/build.json -- `release` and the tag on a tag, else
+        # `branch` and the branch's name. The ref reaches the script through
+        # the environment, never interpolated into it.
+        env:
+          BUILD_REF: ${{ github.head_ref || github.ref_name }}
+        run: |
+          set -euo pipefail
+          kind=branch
+          if [ "${GITHUB_REF_TYPE}" = tag ]; then kind=release; fi
+          python3 scripts/build_info.py --kind "$kind" --ref "$BUILD_REF" \
+            --sha "$GITHUB_SHA" --run "$GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT"
 
       - name: Package the zip
         run: python3 scripts/package.py --require-cli

@@ -63,3 +63,6 @@ decky_plugin.py
 out
 out/*
 /cli/decky
+# What a CI build says about itself (scripts/build_info.py), packaged into the
+# zip when it is at the root; written by CI, never committed.
+/build.json

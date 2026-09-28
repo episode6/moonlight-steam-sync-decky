@@ -1,0 +1,259 @@
+# Branch builds (update spec 3.12.2): a rolling prerelease per branch, so a
+# build of `main` or of another branch can be installed from the plugin.
+#
+# The release of branch B is tagged `build-<slug>`, where the slug is B with
+# every character outside [A-Za-z0-9._-] replaced by `-`, cut to 80
+# characters; its title is B as it is. It is always a prerelease and never
+# "latest" (`--prerelease --latest=false` on create and on every edit), so
+# `releases/latest` keeps naming the newest v* release. Its five assets are
+# release.yml's four (the zip, the CLI, their .sha256 sidecars) plus
+# build.json, uploaded last: `gh release upload --clobber` deletes an asset
+# before it uploads the new one, so build.json's presence says the other four
+# are in place (update spec 3.12.3).
+#
+# Jobs:
+#   gate     publish=true for `main`, for a workflow_dispatch, and for a push
+#            to a branch whose release already exists; else false. So a
+#            branch publishes once it was asked to (`gh workflow run
+#            builds.yml --ref <branch>`) and with every push from then on.
+#   build    release.yml's build job, repeated rather than shared (Decision
+#            U11), with build.json written before package.py.
+#   publish  moves the tag to the commit built, creates or edits the release,
+#            uploads the four files, then build.json.
+#   cleanup  on a branch's deletion, deletes its release and its tag.
+#
+# Rules (AGENTS.md "CI and release outline"):
+# - Only push, workflow_dispatch and delete trigger this. Never a pull-request
+#   event of any kind: code from a fork never reaches a release.
+#   tests/test_hard_rules.py holds the triggers and the permissions.
+# - A branch name is text anyone who can push chooses. No `${{ }}` expression
+#   is ever written into a `run:` script: each value reaches the script
+#   through `env:` and is used as a quoted shell variable.
+# - The slug is computed by one line, spelled identically in `gate` and in
+#   `cleanup` (which cannot use gate's output); every tag this workflow moves
+#   or deletes is `build-<slug>`, checked before any `gh` call, so it can never
+#   touch a v* release.
+# - A tag made with GITHUB_TOKEN starts no workflow, and release.yml listens
+#   for v* tags only.
+# - Immutable releases must stay off for the repository: a rolling release
+#   cannot exist with them.
+name: Builds
+
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+  delete:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: builds-${{ github.event_name }}-${{ github.event.ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: Decide whether this branch publishes
+    if: github.event_name != 'delete'
+    runs-on: ubuntu-24.04
+    outputs:
+      publish: ${{ steps.decide.outputs.publish }}
+      slug: ${{ steps.decide.outputs.slug }}
+    steps:
+      - id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_REF_TYPE}" != branch ]; then
+            echo "::error::builds.yml builds branches; this run is on a ${GITHUB_REF_TYPE}"
+            exit 1
+          fi
+          slug="${BRANCH//[^A-Za-z0-9._-]/-}"; slug="${slug:0:80}"
+          tag="build-${slug}"
+          if ! [[ "$slug" =~ ^[A-Za-z0-9._-]{1,80}$ && "$tag" == build-?* ]] || ! git check-ref-format "refs/tags/${tag}"; then
+            echo "::error::no build tag can be made from this branch's name (slug '${slug}')"
+            exit 1
+          fi
+          if [ "${GITHUB_REF}" = refs/heads/main ] || [ "${GITHUB_EVENT_NAME}" = workflow_dispatch ]; then
+            publish=true
+          elif out=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName 2>&1); then
+            publish=true
+          elif [[ "$out" == *"release not found"* ]]; then
+            publish=false
+          else
+            echo "::error::could not tell whether ${tag} exists: ${out}"
+            exit 1
+          fi
+          echo "${tag}: publish=${publish}"
+          echo "publish=${publish}" >> "$GITHUB_OUTPUT"
+          echo "slug=${slug}" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build and package
+    needs: gate
+    if: needs.gate.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+
+      - uses: actions/setup-python@v7
+        with:
+          # The exact Python a stock SteamOS ships, as in release.yml.
+          python-version: "3.13.5"
+
+      - name: Build the CLI from cli/src (smoke-runs --version)
+        run: backend/entrypoint.sh
+
+      - name: Smoke test the CLI -- doctor
+        run: python3 backend/out/moonlight-steam-sync.pyz doctor
+
+      - name: Write build.json
+        # A ref build_info.py refuses (one with `+` or `@`, say) fails the
+        # build: such a branch cannot have one.
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          python3 scripts/build_info.py --kind branch --ref "$BRANCH" \
+            --sha "$GITHUB_SHA" --run "$GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT"
+
+      - name: Package the zip
+        run: python3 scripts/package.py --require-cli
+
+      - name: Checksums
+        # Against the bare filenames, as release.yml's.
+        run: |
+          set -euo pipefail
+          cp backend/out/moonlight-steam-sync.pyz build.json out/
+          cd out
+          sha256sum Moonlight-Sync.zip | tee Moonlight-Sync.zip.sha256
+          sha256sum moonlight-steam-sync.pyz | tee moonlight-steam-sync.pyz.sha256
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Moonlight-Sync-build
+          path: |
+            out/Moonlight-Sync.zip
+            out/Moonlight-Sync.zip.sha256
+            out/moonlight-steam-sync.pyz
+            out/moonlight-steam-sync.pyz.sha256
+            out/build.json
+          if-no-files-found: error
+
+  publish:
+    name: Publish the branch's prerelease
+    needs: [gate, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BRANCH: ${{ github.ref_name }}
+      SLUG: ${{ needs.gate.outputs.slug }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: Moonlight-Sync-build
+          path: out
+
+      - name: Move the tag to the commit built
+        # GITHUB_SHA is the commit this run checked out and built, not
+        # wherever the branch points by now. GET git/ref/... is the exact
+        # match (git/refs/... would match by prefix).
+        run: |
+          set -euo pipefail
+          slug="$SLUG"
+          tag="build-${slug}"
+          if ! [[ "$slug" =~ ^[A-Za-z0-9._-]{1,80}$ && "$tag" == build-?* ]] || ! git check-ref-format "refs/tags/${tag}"; then
+            echo "::error::refusing to move the tag '${tag}'"
+            exit 1
+          fi
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag}" --silent 2> ref.err; then
+            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/${tag}" \
+              -f sha="$GITHUB_SHA" -F force=true --silent
+            echo "Moved ${tag} to ${GITHUB_SHA}"
+          elif grep -q 'HTTP 404' ref.err; then
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref="refs/tags/${tag}" -f sha="$GITHUB_SHA" --silent
+            echo "Created ${tag} at ${GITHUB_SHA}"
+          else
+            cat ref.err >&2
+            exit 1
+          fi
+
+      - name: Create or edit the release
+        run: |
+          set -euo pipefail
+          slug="$SLUG"
+          tag="build-${slug}"
+          if ! [[ "$slug" =~ ^[A-Za-z0-9._-]{1,80}$ && "$tag" == build-?* ]] || ! git check-ref-format "refs/tags/${tag}"; then
+            echo "::error::refusing to publish the release '${tag}'"
+            exit 1
+          fi
+          body="Build of \`${BRANCH}\` at \`${GITHUB_SHA}\`. Untested: installed from Moonlight Sync's Updates page."
+          if out=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName 2>&1); then
+            gh release edit "$tag" --repo "$GITHUB_REPOSITORY" \
+              --title "$BRANCH" --notes "$body" --prerelease --latest=false
+          elif [[ "$out" == *"release not found"* ]]; then
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --verify-tag \
+              --title "$BRANCH" --notes "$body" --prerelease --latest=false
+          else
+            echo "$out" >&2
+            exit 1
+          fi
+
+      - name: Upload the zip, the CLI and their checksums
+        run: |
+          set -euo pipefail
+          gh release upload "build-${SLUG}" --repo "$GITHUB_REPOSITORY" --clobber \
+            out/Moonlight-Sync.zip out/Moonlight-Sync.zip.sha256 \
+            out/moonlight-steam-sync.pyz out/moonlight-steam-sync.pyz.sha256
+
+      - name: Upload build.json, last
+        # Only once the other four are in place (spec 3.12.3).
+        run: gh release upload "build-${SLUG}" --repo "$GITHUB_REPOSITORY" --clobber out/build.json
+
+  cleanup:
+    name: Delete the deleted branch's build
+    if: github.event_name == 'delete' && github.event.ref_type == 'branch'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Delete the release and its tag
+        # On `delete`, github.event.ref is the deleted branch's bare name.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.event.ref }}
+        run: |
+          set -euo pipefail
+          slug="${BRANCH//[^A-Za-z0-9._-]/-}"; slug="${slug:0:80}"
+          tag="build-${slug}"
+          if ! [[ "$slug" =~ ^[A-Za-z0-9._-]{1,80}$ && "$tag" == build-?* ]] || ! git check-ref-format "refs/tags/${tag}"; then
+            echo "::error::no build tag can be made from this branch's name (slug '${slug}')"
+            exit 1
+          fi
+          if out=$(gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes 2>&1); then
+            echo "Deleted ${tag} and its tag"
+          elif [[ "$out" == *"release not found"* ]]; then
+            echo "No release ${tag}; nothing to delete"
+          else
+            echo "$out" >&2
+            exit 1
+          fi

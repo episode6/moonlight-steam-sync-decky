@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
+import subprocess
 
 from conftest import ROOT, run
 from moonlight_sync import sgdbpage
@@ -187,3 +189,180 @@ def test_the_cli_has_no_runtime_dependencies() -> None:
     pyproject = (ROOT / "cli" / "pyproject.toml").read_text()
     assert "dependencies = []" in pyproject
     assert not (ROOT / "cli" / "requirements.txt").exists()
+
+
+# builds.yml (update spec 3.12.2) has write permission over releases and runs
+# on any branch anyone with push access names, so its shape is held here.
+# There is no YAML parser among the dev dependencies and this does not add
+# one: the checks read the file's lines, which the workflow keeps simple
+# (two-space indents, block `run: |` scripts).
+WORKFLOWS = ROOT / ".github" / "workflows"
+BUILDS = WORKFLOWS / "builds.yml"
+SLUG_LINE = 'slug="${BRANCH//[^A-Za-z0-9._-]/-}"; slug="${slug:0:80}"'
+TAG_LINE = 'tag="build-${slug}"'
+TAG_GUARD = '"$tag" == build-?*'
+
+
+def top_level_block(lines: list[str], key: str) -> list[str]:
+    """The lines under a top-level `key:`, up to the next top-level line."""
+    start = lines.index(f"{key}:") + 1
+    block = []
+    for line in lines[start:]:
+        if line and not line.startswith(" "):
+            break
+        block.append(line)
+    return block
+
+
+def jobs_of(lines: list[str]) -> dict[str, list[str]]:
+    """Each job's lines, by its name (the two-space keys under `jobs:`)."""
+    jobs: dict[str, list[str]] = {}
+    current = None
+    for line in top_level_block(lines, "jobs"):
+        match = re.fullmatch(r"  ([A-Za-z0-9_-]+):", line)
+        if match:
+            current = match.group(1)
+            jobs[current] = []
+        elif current is not None:
+            jobs[current].append(line)
+    return jobs
+
+
+def run_scripts(text: str) -> list[str]:
+    """Every `run:` script of a workflow, inline or block."""
+    scripts = []
+    lines = text.splitlines()
+    for number, line in enumerate(lines):
+        match = re.match(r"(\s*)(?:- )?run:\s*(.*)$", line)
+        if not match:
+            continue
+        indent, rest = len(match.group(1)), match.group(2)
+        if rest not in ("|", "|-", ">", ">-"):
+            scripts.append(rest)
+            continue
+        body = []
+        for following in lines[number + 1 :]:
+            if following.strip() and len(following) - len(following.lstrip()) <= indent:
+                break
+            body.append(following)
+        scripts.append("\n".join(body))
+    return scripts
+
+
+def code_lines(lines: list[str]) -> list[str]:
+    return [line for line in lines if not line.lstrip().startswith("#")]
+
+
+def test_builds_yml_runs_on_push_dispatch_and_delete_only() -> None:
+    """Never a pull-request event: code from a fork never reaches a release."""
+    lines = BUILDS.read_text().splitlines()
+    triggers = [
+        match.group(1)
+        for line in top_level_block(lines, "on")
+        if (match := re.fullmatch(r"  ([A-Za-z_]+):.*", line))
+    ]
+    assert triggers == ["push", "workflow_dispatch", "delete"]
+    assert not any("pull_request" in line for line in code_lines(lines))
+
+
+def test_builds_yml_writes_releases_from_publish_and_cleanup_only() -> None:
+    lines = BUILDS.read_text().splitlines()
+    assert [line for line in top_level_block(lines, "permissions") if line.strip()] == [
+        "  contents: read"
+    ]
+    jobs = jobs_of(lines)
+    assert set(jobs) == {"gate", "build", "publish", "cleanup"}
+    writers = {
+        name
+        for name, body in jobs.items()
+        if any(re.fullmatch(r"\s+contents:\s*write\s*", line) for line in body)
+    }
+    assert writers == {"publish", "cleanup"}
+    assert sum("write" in line for line in code_lines(lines)) == 2
+    for name in ("publish", "cleanup"):
+        assert "    permissions:\n      contents: write\n" in "\n".join(jobs[name])
+
+
+def test_no_workflow_writes_an_expression_into_a_script() -> None:
+    """A ref, a branch name or an event field reaches a `run:` script through
+    `env:` only, never as `${{ }}` text inside it (script injection)."""
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        for script in run_scripts(path.read_text()):
+            assert "${{" not in script, path.name
+
+
+def test_builds_yml_spells_the_slug_one_way_and_touches_build_tags_only() -> None:
+    """`gate` and `cleanup` each compute the slug with the same line; every
+    tag the workflow names is `build-<slug>`, guarded before `gh` runs."""
+    text = BUILDS.read_text()
+    lines = text.splitlines()
+    jobs = jobs_of(lines)
+    assert [line.strip() for line in lines if "${BRANCH//" in line] == [SLUG_LINE, SLUG_LINE]
+    assert SLUG_LINE in "\n".join(jobs["gate"]) and SLUG_LINE in "\n".join(jobs["cleanup"])
+    tag_lines = [line.strip() for line in lines if re.search(r"\btag=", line)]
+    assert tag_lines and set(tag_lines) == {TAG_LINE}
+    for script in run_scripts(text):
+        if TAG_LINE in script:
+            guard = script.index(TAG_GUARD)
+            assert script.index(TAG_LINE) < guard
+            assert "gh " not in script[:guard]
+        elif "gh " in script:
+            # The two upload steps, after the guarded ones in the same job.
+            assert re.findall(r'gh release upload "([^"]*)"', script) == ["build-${SLUG}"]
+
+
+def test_the_slug_line_and_its_guard() -> None:
+    """Spec 3.12.2: every character outside [A-Za-z0-9._-] becomes `-`, cut
+    to 80; a slug that makes no valid `build-` tag is refused."""
+    guard = next(line.strip() for line in BUILDS.read_text().splitlines() if TAG_GUARD in line)
+    script = "\n".join(
+        ["set -euo pipefail", SLUG_LINE, TAG_LINE, guard, "  exit 3", "fi", 'echo "$tag"']
+    )
+
+    def slug(branch: str) -> tuple[int, str]:
+        result = subprocess.run(
+            ["bash", "-c", script],
+            env={**os.environ, "BRANCH": branch, "LC_ALL": "C.UTF-8"},
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return result.returncode, result.stdout.strip()
+
+    assert slug("main") == (0, "build-main")
+    assert slug("self-update/u3-builds") == (0, "build-self-update-u3-builds")
+    assert slug("feature+x@y") == (0, "build-feature-x-y")
+    assert slug("v1.2.3") == (0, "build-v1.2.3")
+    assert slug("a" * 85) == (0, "build-" + "a" * 80)
+    assert slug("") == (3, "")
+    assert slug("a" * 79 + ".x") == (3, "")  # cut to end in "."
+
+
+def test_builds_yml_scripts_parse() -> None:
+    """`bash -n` over every script: CI's shellcheck job lints the repo's .sh
+    files, not a workflow's inline scripts."""
+    for script in run_scripts(BUILDS.read_text()):
+        result = subprocess.run(
+            ["bash", "-n", "-c", script], capture_output=True, text=True, check=False
+        )
+        assert result.returncode == 0, (script, result.stderr)
+
+
+def test_builds_yml_uploads_build_json_last() -> None:
+    """Spec 3.12.3: `--clobber` deletes an asset before it uploads the new
+    one, so build.json goes up in a step of its own after the other four."""
+    publish = "\n".join(jobs_of(BUILDS.read_text().splitlines())["publish"])
+    uploads = [match.start() for match in re.finditer(r"gh release upload", publish)]
+    assert len(uploads) == 2
+    first, last = publish[uploads[0] : uploads[1]], publish[uploads[1] :]
+    for asset in (
+        "out/Moonlight-Sync.zip ",
+        "out/Moonlight-Sync.zip.sha256",
+        "out/moonlight-steam-sync.pyz ",
+        "out/moonlight-steam-sync.pyz.sha256",
+    ):
+        assert asset in first
+    assert "build.json" not in first.split("- name:")[0]
+    assert "- name: Upload build.json, last" in first
+    assert "out/build.json" in last
+    assert publish.count("--prerelease --latest=false") == 2
