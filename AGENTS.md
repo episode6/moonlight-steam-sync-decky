@@ -1188,9 +1188,9 @@ There is no Steam Deck during development; everything else is tested.
   `build.json` is uploaded in a step of its own after the other four.
   It also holds `ci.yml`'s and `release.yml`'s "Write build.json" steps
   identical and runs that step under `bash` in `tmp_path` over a copy of
-  `build_info.py` and a stale `build.json`: a branch and a tag are
-  written, a refused branch name is a notice with no `build.json` left,
-  a refused tag or a bad sha fails. And it runs `gate`'s and `cleanup`'s
+  `build_info.py` and a stale `build.json`: a branch (with `BUILD_SHA`,
+  never `GITHUB_SHA`) and a tag are written, a refused branch name is a
+  notice with no `build.json` left, a refused tag or a bad sha fails. And it runs `gate`'s and `cleanup`'s
   scripts under `bash` with a fake `gh` on `PATH` (a shell script
   answering `release view` from `FAKE_GH_RELEASE`: `none`, `fail` or
   `title=<name>`, and logging its argv) and the `GITHUB_*` variables set:
@@ -1220,8 +1220,10 @@ On-device checks are not merge criteria; they are collected in
   `scripts/build_cli.py` and the zipapp's `--version` and `doctor` smoke
   runs), `package` (after all three: `backend/entrypoint.sh`, then
   `scripts/build_info.py` -- `release` and the tag on a tag, else `branch`
-  and `github.head_ref || github.ref_name`, passed through `env:`; on a
-  branch, `build_info.py`'s exit 3 (the name is outside the `ref`
+  and `github.head_ref || github.ref_name`, with the sha
+  `github.event.pull_request.head.sha || github.sha` (a pull request's
+  head commit, not the merge commit `GITHUB_SHA` names there, amendment
+  A4), both passed through `env:`; on a branch, `build_info.py`'s exit 3 (the name is outside the `ref`
   pattern) is a `::notice::` and a zip without `build.json`, since this
   workflow publishes nothing from a branch (amendment A1), and any other
   failure fails; the step first removes any `build.json` at the root --

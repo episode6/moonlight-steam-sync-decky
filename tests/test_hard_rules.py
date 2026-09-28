@@ -384,6 +384,9 @@ def test_ci_and_release_write_build_json_with_one_step() -> None:
     step = build_json_step(WORKFLOWS / "ci.yml")
     assert step == build_json_step(WORKFLOWS / "release.yml")
     assert "BUILD_REF: ${{ github.head_ref || github.ref_name }}" in step
+    # Amendment A4: a pull request's head commit, not its merge commit.
+    assert "BUILD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}" in step
+    assert "GITHUB_SHA" not in "\n".join(run_scripts(step))
 
 
 def run_build_json_step(tmp_path, *, ref: str, ref_type: str = "branch", sha: str = "a" * 40):
@@ -398,7 +401,9 @@ def run_build_json_step(tmp_path, *, ref: str, ref_type: str = "branch", sha: st
         **os.environ,
         "BUILD_REF": ref,
         "GITHUB_REF_TYPE": ref_type,
-        "GITHUB_SHA": sha,
+        "BUILD_SHA": sha,
+        # What a pull request's GITHUB_SHA names: its merge commit, not written.
+        "GITHUB_SHA": "f" * 40,
         "GITHUB_RUN_ID": "42",
         "GITHUB_RUN_ATTEMPT": "1",
     }
@@ -412,6 +417,7 @@ def test_the_build_json_step_writes_the_branch(tmp_path) -> None:
     assert result.returncode == 0, result.stderr
     data = json.loads((tmp_path / "build.json").read_text())
     assert (data["kind"], data["ref"], data["run"]) == ("branch", "self-update/u3-builds", "42/1")
+    assert data["sha"] == "a" * 40
 
 
 def test_the_build_json_step_writes_the_tag(tmp_path) -> None:
