@@ -21,8 +21,9 @@ project uses [semantic versioning](https://semver.org/).
   settings page close and Decky's own dialog ask to confirm, with that
   checked zip. Nothing is installed without the confirmation, a release
   without a SHA-256 is never offered, and every failure before the dialog
-  leaves the installed version as it was, with a toast saying why: no
-  install can leave you without the plugin. The page also shows the
+  leaves the installed version as it was, with a toast saying why: a
+  download that is wrong is found out before Decky removes anything. The
+  page also shows the
   installed and latest versions, the release notes, **Check now**, the
   **Channel** (below), **Check for updates automatically** (the
   new `update_check` setting, on by default) and **Install another

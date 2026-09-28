@@ -89,13 +89,12 @@ Breaking any of these is a blocker, not a judgement call.
     plugin never writes its own plugin directory. It hands Decky
     (`utilities/install_plugin`) a zip its backend staged and verified,
     always with a non-empty sha256, the name `Moonlight Sync` and a
-    version that is
-    never `dev`. It never calls `utilities/confirm_plugin_install`: the
-    confirmation is the user's, in Decky's dialog. Download URLs are
-    built from constants and a validated tag, never taken from a
-    response. `main.py`'s `_uninstall` does nothing, since Decky runs it
-    on every update. `src/lib/decky.ts` is the only place that touches
-    Decky's globals.
+    version that is never `dev`. It never calls
+    `utilities/confirm_plugin_install`: the confirmation is the user's,
+    in Decky's dialog. Download URLs are built from constants and a
+    validated tag, never taken from a response. `main.py`'s `_uninstall`
+    does nothing, since Decky runs it on every update.
+    `src/lib/decky.ts` is the only place that touches Decky's globals.
 
 The updater's further invariants (update spec §3.2), each held by a
 test: nothing is installed unasked (a check may run on its own, a
