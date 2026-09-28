@@ -210,8 +210,10 @@ def validate_zip(path: str, *, version: str | None, ref: str | None) -> dict[str
         _check_entry_count(infos)
         _check_entry_kinds(infos)
         _check_sizes(infos)
-        _check_integrity(archive)
         _check_names(infos)
+        # The first check that inflates anything: every rule that can be
+        # judged from the central directory alone has already run.
+        _check_integrity(archive)
         names = {info.filename: info for info in infos}
         plugin = _read_json(archive, names, "plugin.json")
         _check_plugin_json(plugin)

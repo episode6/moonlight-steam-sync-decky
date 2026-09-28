@@ -272,6 +272,22 @@ def test_a_damaged_entry(tmp_path) -> None:
     refused(path, "damaged")
 
 
+def test_the_names_are_judged_before_anything_is_inflated(tmp_path) -> None:
+    """A zip both misnamed and damaged reports the name: the names are read
+    from the central directory, before testzip()."""
+    info = zipfile.ZipInfo("Elsewhere/data.bin")
+    info.compress_type = zipfile.ZIP_DEFLATED
+    info.external_attr = (stat.S_IFREG | 0o644) << 16
+    path = build_zip(tmp_path / "z.zip", version="0.12.0", extra=[(info, b"payload" * 50)])
+    data = bytearray(path.read_bytes())
+    header = data.find(b"Elsewhere/data.bin")
+    data[header + len("Elsewhere/data.bin") + 5] ^= 0xFF
+    path.write_bytes(bytes(data))
+    with zipfile.ZipFile(path) as archive:
+        assert archive.testzip() == "Elsewhere/data.bin"  # really damaged
+    refused(path, "outside Moonlight Sync/")
+
+
 @pytest.mark.parametrize(
     ("name", "message"),
     [

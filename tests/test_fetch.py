@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import email.message
 import hashlib
+import http.client
 import importlib.util
 import io
 import json
@@ -639,3 +640,75 @@ def test_urllib_refuses_a_downgrade_to_http(dest) -> None:
     answer = fetch.run([URL, str(dest)], opener_factory=chained_opener(fake))
     assert answer["error"] == "bad-url"
     assert fake.opened == [URL]
+
+
+# ---------------------------------------------------------------------------
+# a body cut short is the network's; a failed write is the file's
+
+
+class CutShort(FakeResponse):
+    """Gives one chunk, then fails the next read with ``error``."""
+
+    def __init__(self, error: BaseException) -> None:
+        super().__init__(PAYLOAD, URL, length=str(len(PAYLOAD)))
+        self.error = error
+        self.reads = 0
+
+    def read(self, *args):
+        self.reads += 1
+        if self.reads > 1:
+            raise self.error
+        return super().read(*args)
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        http.client.IncompleteRead(b"partial", 1000),
+        OSError(5, "Input/output error"),
+        ConnectionResetError(104, "Connection reset by peer"),
+    ],
+)
+def test_a_body_cut_short_is_network(dest, error) -> None:
+    dest.write_bytes(b"the previous file")
+    answer = fetch.run([URL, str(dest)], opener_factory=opener_answering(lambda r: CutShort(error)))
+    assert answer["ok"] is False and answer["error"] == "network"
+    assert answer["message"].startswith("reading https://github.com/")
+    assert dest.read_bytes() == b"the previous file"
+    assert not os.path.exists(part_of(dest))
+
+
+def test_a_failed_write_is_io(dest, monkeypatch) -> None:
+    dest.write_bytes(b"the previous file")
+
+    def full(fd, data):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(fetch.os, "write", full)
+    answer = fetch.run(
+        [URL, str(dest)], opener_factory=opener_answering(lambda r: FakeResponse(PAYLOAD, URL))
+    )
+    assert answer == {
+        "ok": False,
+        "error": "io",
+        "status": None,
+        "message": "could not write the download: No space left on device",
+    }
+    assert dest.read_bytes() == b"the previous file"
+    assert not os.path.exists(part_of(dest))
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root can write a read-only directory")
+def test_a_read_only_destination_is_io(dest) -> None:
+    dest.write_bytes(b"the previous file")
+    dest.parent.chmod(0o555)
+    try:
+        answer = fetch.run(
+            [URL, str(dest)],
+            opener_factory=opener_answering(lambda r: FakeResponse(PAYLOAD, URL)),
+        )
+    finally:
+        dest.parent.chmod(0o755)
+    assert answer["error"] == "io"
+    assert answer["message"].startswith("could not write the download")
+    assert dest.read_bytes() == b"the previous file"

@@ -1291,7 +1291,7 @@ There is no Steam Deck during development; everything else is tested.
   `build_opener`'s handlers and schemes, `run()` over fake openers (a
   refused redirect, an HTTP error, a query string that never reaches the
   output, `Content-Length` over the limit refused unread, the count
-  deciding, an uncaught exception as its class name) and a real
+  deciding, a body cut short (`IncompleteRead`, an `OSError`) as `network` and a failed write as `io`, an uncaught exception as its class name) and a real
   `OpenerDirector` over a fake `https_open`, which proves urllib asks the
   guard before it opens a hop. `tests/test_updates.py` has one test per
   `validate_zip` rule and `read_build`, `asset_url`, `parse_sidecar`,

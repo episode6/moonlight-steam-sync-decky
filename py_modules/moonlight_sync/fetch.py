@@ -49,6 +49,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import hashlib
+import http.client
 import json
 import os
 import re
@@ -309,6 +310,33 @@ def _reason(reason: object) -> str:
     return type(reason).__name__
 
 
+def _read_chunk(response, final: str) -> bytes:
+    """The next chunk of the body. Every failure of the read is the
+    network's (``network``): a connection closed early is an
+    ``http.client.IncompleteRead``, a reset or a timeout an ``OSError``.
+    Kept apart from the file's side so neither is mistaken for the other."""
+    try:
+        return response.read(CHUNK)
+    except (OSError, http.client.HTTPException) as exc:
+        raise Failed("network", f"reading {safe_url(final)}: {_reason(exc)}") from None
+
+
+def _write_all(fd: int, chunk: bytes) -> None:
+    view = memoryview(chunk)
+    while view:
+        written = os.write(fd, view)
+        view = view[written:]
+
+
+def _file_side(step, *args):
+    """``step(*args)`` on the file's side (create, write, fsync, replace):
+    an ``OSError`` there is ``io``, never the network's."""
+    try:
+        return step(*args)
+    except OSError as exc:
+        raise Failed("io", f"could not write the download: {_reason(exc)}") from None
+
+
 def download(
     url: str,
     dest: str,
@@ -339,31 +367,25 @@ def download(
             declared = _content_length(response)
             if declared is not None and declared > max_bytes:
                 raise Failed("too-large", f"{safe_url(final)} is larger than {max_bytes} bytes")
-            fd = _create_part(part)
+            fd = _file_side(_create_part, part)
             digest = hashlib.sha256()
             size = 0
             while True:
-                try:
-                    chunk = response.read(CHUNK)
-                except (TimeoutError, ConnectionError, ssl.SSLError) as exc:
-                    raise Failed("network", f"reading {safe_url(final)}: {_reason(exc)}") from None
+                chunk = _read_chunk(response, final)
                 if not chunk:
                     break
                 size += len(chunk)
                 if size > max_bytes:
                     raise Failed("too-large", f"{safe_url(final)} is larger than {max_bytes} bytes")
                 digest.update(chunk)
-                view = memoryview(chunk)
-                while view:
-                    written = os.write(fd, view)
-                    view = view[written:]
-        os.fsync(fd)
+                _file_side(_write_all, fd, chunk)
+        _file_side(os.fsync, fd)
         os.close(fd)
         fd = -1
         got = digest.hexdigest()
         if sha256 is not None and got != sha256.lower():
             raise Failed("hash-mismatch", f"{safe_url(url)} does not have the expected sha256", 200)
-        os.replace(part, dest)
+        _file_side(os.replace, part, dest)
         return {"ok": True, "status": 200, "bytes": size, "sha256": got}
     except BaseException:
         if fd >= 0:
@@ -441,7 +463,8 @@ def run(argv: list[str], *, opener_factory=build_opener) -> dict:
     except Failed as exc:
         return _failure(exc.code, exc.message, exc.status)
     except OSError as exc:
-        return _failure("io", f"could not write the download: {_reason(exc)}", None)
+        # Neither a read nor a write (those are Failed): say no more than that.
+        return _failure("io", f"the download failed: {_reason(exc)}", None)
     except Exception as exc:
         return _failure("io", type(exc).__name__, None)
 

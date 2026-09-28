@@ -485,6 +485,30 @@ def test_the_guard_is_released_after_a_failure(stager, releases) -> None:
     assert backend._update is None
 
 
+CUT_SHORT_ZIP = """
+argv = sys.argv[1:]
+if argv[-1].endswith('.zip'):
+    # What fetch.py answers for a body cut short (an IncompleteRead).
+    print('{"ok": false, "error": "network", "status": null, "message": '
+          '"reading https://objects.githubusercontent.com/x: IncompleteRead"}')
+    sys.exit(0)
+os.execv(sys.executable, [sys.executable] + argv)
+"""
+
+
+def test_a_download_cut_short_is_network(stager, releases, runtime, tmp_path) -> None:
+    digest = releases.publish(TAG, version=VERSION)
+    backend = stager(python=fake_python(tmp_path, CUT_SHORT_ZIP))
+    result = run(backend.stage_update(TAG, digest, VERSION, None))
+    assert result == {
+        "ok": False,
+        "error": "network",
+        "message": "reading https://objects.githubusercontent.com/x: IncompleteRead",
+    }
+    assert staged_files(runtime) == []
+    assert backend._update is None
+
+
 # ---------------------------------------------------------------------------
 # cancel_update and unload
 
