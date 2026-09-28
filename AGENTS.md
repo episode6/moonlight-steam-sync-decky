@@ -365,7 +365,11 @@ src/lib/                    pure modules (vitest)
                             tag not in installable(); silently while not idle; else
                             `asking`, leaveSettings(), then installer().request(), a
                             toast when Decky did not take it, `idle`), run() answers
-                            "An update is being installed" while `asking`,
+                            "An update is being installed" and restartRow() starts
+                            nothing while `asking`, i.e. during the hand-off only:
+                            `utilities/install_plugin` resolves once Decky has shown
+                            its dialog, before the user confirms, so a run started
+                            behind the open dialog is not refused (update spec 3.8),
                             setEnabled(false) clears `update`, setEnabled(true) runs
                             loadUpdates(). The updater calls no backend callable but
                             set_settings,
@@ -640,8 +644,10 @@ src/components/             adoptDefault (inspectLayout -> refusal toasts -> Con
                             the Field then leaves out; then *Check* + *Wake*
                             whenever the host is not known reachable, the latter
                             only when `wakeInfoOf` finds a MAC; UpdateRow, the
-                            panel's very last row in every panel state with the
-                            plugin on and no run going: *Update to X* over
+                            panel's very last row in the main panel and the
+                            CLI-missing / too-old one (not the Retry panel, where
+                            `cliVersion` is null and nothing can be offered, nor
+                            during a run): *Update to X* over
                             `updateRowView`, opening UPDATES_ROUTE and closing the
                             side menus as the header's buttons do), SyncProgress,
                             RestartModal, SettingsPage (Host, Titles, Artwork,

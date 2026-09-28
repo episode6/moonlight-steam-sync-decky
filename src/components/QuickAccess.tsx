@@ -398,7 +398,7 @@ export function QuickAccess() {
             Retry
           </ButtonItem>
         </PanelSectionRow>
-        <UpdateRow state={state} />
+        {/* No UpdateRow: without cli_version() the installed version is unknown, so nothing is offered. */}
       </PanelSection>
     );
   }

@@ -563,7 +563,9 @@ export class Controller {
   /** A user-initiated run (Sync now, Re-fetch all art, Remove everything); refused while the plugin is off. */
   run(kind: RunKind): Promise<Failure | null> {
     if (!this.enabled) return Promise.resolve(DISABLED_FAILURE);
-    // Decky may be about to unload the plugin under the run (update spec 3.8).
+    // During the hand-off to Decky only: its install route resolves
+    // once Decky has shown its dialog, before the user confirms, so a run
+    // started behind the open dialog is not refused (update spec 3.8).
     if (this.state.updatePhase === "asking") return Promise.resolve(UPDATING_FAILURE);
     this.mismatchRetried = false;
     return this.startRun(kind);
@@ -718,6 +720,8 @@ export class Controller {
     // while a game is running (the row itself is disabled, `restartRowView`).
     // Off (spec 3.19): the row is not shown, and the write it would start is refused.
     if (this.state.inGame || !this.enabled) return;
+    // A press, like run(): nothing starts during the hand-off to Decky.
+    if (this.state.updatePhase === "asking") return;
     if (pending.restart_needed === "art") {
       await this.restartForArt();
       return;

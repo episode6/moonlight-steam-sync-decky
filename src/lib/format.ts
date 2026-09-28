@@ -34,10 +34,10 @@ export function timeUntil(iso: string | null | undefined, now: Date = new Date()
   const minutes = Math.ceil(ms / 60_000);
   if (minutes <= 1) return "in a minute";
   if (minutes < 60) return `in ${minutes} minutes`;
+  // The date only from a full day away, so it is never today's.
+  if (minutes >= 24 * 60) return `on ${dateText(iso!)}`;
   const hours = Math.round(minutes / 60);
-  if (hours === 1) return "in an hour";
-  if (hours < 24) return `in ${hours} hours`;
-  return `on ${dateText(iso!)}`;
+  return hours === 1 ? "in an hour" : `in ${hours} hours`;
 }
 
 /** A timestamp's local date, `2026-09-27`; the text itself when it does not parse. */

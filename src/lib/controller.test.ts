@@ -2634,6 +2634,26 @@ describe("the updater (update spec 3.6)", () => {
       expect(controller.state.updatePhase).toBe("idle");
     });
 
+    it("while Decky is being asked, the restart row starts nothing", async () => {
+      ui.holdInstall = true;
+      const controller = await offering();
+      const pending = controller.installUpdate("v0.13.0");
+      await flush();
+      expect(controller.state.updatePhase).toBe("asking");
+      for (const restart_needed of ["write", "art"] as const) {
+        controller.store.set({ pending: { ...PENDING, restart_needed, last_kind: "sync" } });
+        await controller.restartRow();
+      }
+      expect(names()).toEqual([]); // no start_sync, no clear_pending
+      expect(steam.shutdowns).toBe(0);
+      ui.heldInstall.forEach((resolve) => resolve());
+      await pending;
+      // once Decky has taken the request, the row works again
+      controller.store.set({ pending: { ...PENDING, restart_needed: "write", last_kind: "sync" } });
+      await controller.restartRow();
+      expect(names()).toContain("start_sync");
+    });
+
     const refused = async (controller: Controller, tag: string, text: string) => {
       order = [];
       expect(await controller.installUpdate(tag)).toBe(false);

@@ -42,6 +42,15 @@ describe("timeUntil and dateText", () => {
     expect(timeUntil(new Date(2026, 8, 21, 9, 0).toISOString(), now)).toBe("on 2026-09-21");
   });
 
+  it("hours up to a full day away, the date only from then", () => {
+    const later = (h: number, m: number) => new Date(now.getTime() + (h * 60 + m) * 60_000).toISOString();
+    expect(timeUntil(later(23, 29), now)).toBe("in 23 hours");
+    expect(timeUntil(later(23, 31), now)).toBe("in 24 hours"); // rounded, but not a date
+    expect(timeUntil(later(23, 59), now)).toBe("in 24 hours");
+    expect(timeUntil(later(24, 0), now)).toBe("on 2026-09-19");
+    expect(timeUntil(later(26, 0), now)).toBe("on 2026-09-19");
+  });
+
   it("a minute when unknown, past, unreadable or under a minute away", () => {
     expect(timeUntil(null, now)).toBe("in a minute");
     expect(timeUntil(undefined, now)).toBe("in a minute");

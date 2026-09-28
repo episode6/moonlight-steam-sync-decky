@@ -49,6 +49,7 @@ export interface HttpAnswer {
     "x-ratelimit-remaining": string | null;
     "x-ratelimit-reset": string | null;
     "retry-after": string | null;
+    /** Carried for a conditional request later; nothing reads it yet (an unauthenticated 304 still costs a request, update spec 2.5). */
     etag: string | null;
   };
   text: string;
