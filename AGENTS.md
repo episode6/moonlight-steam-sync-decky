@@ -831,7 +831,7 @@ src/components/             adoptDefault (inspectLayout -> refusal toasts -> Con
                             during a run): *Update to X* over
                             `updateRowView`, opening UPDATES_ROUTE and closing the
                             side menus as the header's buttons do), SyncProgress,
-                            RestartModal, SettingsPage (Host, Titles, Artwork,
+                            RestartModal, SettingsPage (Host, Artwork, Titles,
                             Advanced, Updates, About; while off none of them),
                             UpdatesPage (update spec §3.7, §3.12.5: *Installed*,
                             *Channel* (a DropdownItem over channelsOf() on

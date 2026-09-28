@@ -13,7 +13,7 @@ import { UpdatesPage } from "./UpdatesPage";
 import { useStore } from "./useStore";
 
 /**
- * The settings route `/moonlight-sync` (spec 3.8): Host, Titles, Artwork,
+ * The settings route `/moonlight-sync` (spec 3.8): Host, Artwork, Titles,
  * Advanced, Updates (update spec 3.7), About. Pages that only touch plugin files work without a CLI;
  * the rest say why they are disabled. While the plugin is off (spec 3.19)
  * the route shows the on/off toggle alone: no page, so no setting can
@@ -49,8 +49,8 @@ export function SettingsPage() {
         showTitle
         pages={[
           { title: "Host", content: <HostPage />, route: `${SETTINGS_ROUTE}/host` },
-          { title: "Titles", content: <TitlesPage />, route: TITLES_ROUTE },
           { title: "Artwork", content: <ArtworkPage />, route: `${SETTINGS_ROUTE}/artwork` },
+          { title: "Titles", content: <TitlesPage />, route: TITLES_ROUTE },
           { title: "Advanced", content: <AdvancedPage />, route: `${SETTINGS_ROUTE}/advanced` },
           // Only reachable while the plugin is on (update spec 3.2): the branch above has no pages.
           { title: "Updates", content: <UpdatesPage />, route: UPDATES_ROUTE },

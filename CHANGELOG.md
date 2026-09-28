@@ -72,6 +72,8 @@ project uses [semantic versioning](https://semver.org/).
   is still kept, and the plugin never installs an older one. Settings →
   About says when the bundled CLI is installed. See the README's "The
   bundled CLI".
+- **Settings lists Artwork before Titles.** The pages are now Host,
+  Artwork, Titles, Advanced, Updates, About.
 
 ## [0.11.0] - 2026-09-27
 
