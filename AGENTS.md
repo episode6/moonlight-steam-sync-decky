@@ -375,7 +375,7 @@ src/lib/                    pure modules (vitest)
                             §3.12.5): REPO (the repository's slug, spelled here only,
                             and the only file under src/ with a download URL),
                             RELEASES_API, DOWNLOAD_BASE, ASSET, PLUGIN_NAME,
-                            MIN_UPDATER_VERSION ([0, 12, 0], [verify] at release time),
+                            MIN_UPDATER_VERSION ([0, 12, 0], the first release with the updater),
                             MIN_LOADER_VERSION, INSTALL_TYPES_LOADER_VERSION,
                             CHECK_MIN_INTERVAL_MS, NOTES_MAX_CHARS, TAG_RE,
                             RELEASE_TAG_RE, REF_RE (the backend's, spelled alike:
@@ -1839,13 +1839,16 @@ Moonlight layout row, the shorter host row hidden with a single host), the
 Titles page's never-synced state, the Host page's MAC field removed, and
 fixes to the Stream button's focus order and to the key fetch's stale tab;
 the CLI takes `0.11.0`, the minimum stays `0.4.0`.
-The first release that carries the updater must be the version in
-`updates.ts`'s `MIN_UPDATER_VERSION` (`0.12.0`, a **[verify]** of update
-spec §3.4): if the user picks another number, that release's PR changes
-the constant and the README's "Updating" section with it. After the
-merge and before that release, the user installs the build with
-`install.sh` and walks DEVICE-CHECKLIST §16 (the human gate after
-PR-U2).
+Plugin `v0.12.0` (the user asked for it on 2026-09-28) is a minor release
+for the self-update (update spec PR-U1 to PR-U4c: the Updates page, the
+staged hand-off to Decky's installer, the branch builds and the *Channel*
+picker), About's *Built from* / *Commit*, the Titles page's *Recently
+added* order and Settings listing Artwork before Titles; the CLI takes
+`0.12.0`, the minimum stays `0.4.0`. It is the first release that
+carries the updater, which is the version `updates.ts`'s
+`MIN_UPDATER_VERSION` names (`0.12.0`, update spec §3.4's [verify],
+settled by this release); every release before it is updated once with
+`install.sh`.
 
 Once everything intended for the release has merged to `main`
 (substitute the version being cut for `X.Y.Z`):

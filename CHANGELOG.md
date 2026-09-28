@@ -6,6 +6,8 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-09-28
+
 ### Added
 
 - **Updates from inside the plugin.** Moonlight Sync is not in the Decky
