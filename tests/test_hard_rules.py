@@ -11,7 +11,7 @@ import subprocess
 import sys
 
 from conftest import ROOT, run
-from moonlight_sync import sgdbpage, updates
+from moonlight_sync import settings, sgdbpage, updates
 from moonlight_sync.keys import key_file_path
 
 FORBIDDEN_CALLS = (
@@ -89,15 +89,23 @@ def test_the_no_cors_fetch_is_only_wired_in_instance_tsx() -> None:
     assert files_naming("fetchNoCors") == {"src/instance.tsx"}
 
 
-def test_the_repository_is_spelled_only_in_the_updater_and_its_allowlist() -> None:
-    """Update spec 3.4 / 3.5: `REPO` in `updates.ts` and the allowlist's own
-    literal in `decky.ts` (plus their tests), so a download URL cannot be
-    built anywhere else."""
+def test_the_repository_is_spelled_only_in_the_updater() -> None:
+    """Update spec 3.4 / 3.12.5: `REPO` in `updates.ts` (plus its test), so a
+    request's URL cannot be built anywhere else. `decky.ts` no longer spells
+    it: Decky is handed a staged file, never a URL."""
     assert files_naming("episode6/moonlight-steam-sync-decky") == {
         "src/lib/updates.ts",
         "src/lib/updates.test.ts",
-        "src/lib/decky.ts",
-        "src/lib/decky.test.ts",
+    }
+
+
+def test_no_download_url_is_built_outside_the_updater() -> None:
+    """Update spec 3.12.5: the only download URLs under `src/` are
+    `updates.ts`'s (a branch's `build.json`), so no other file names a
+    release asset's path, and none can hand one to Decky."""
+    assert files_naming("releases/download") == {
+        "src/lib/updates.ts",
+        "src/lib/updates.test.ts",
     }
 
 
@@ -105,11 +113,47 @@ def test_the_ref_and_tag_patterns_are_spelled_alike_in_both_halves() -> None:
     """Update spec 3.12.4: ``update_channel``'s ref is checked by the backend
     (``updates.REF_RE``) and read by the frontend (``updates.ts``'s
     ``REF_RE``), and a tag is checked by both before it reaches a URL; the
-    two spellings must accept the same strings."""
+    two spellings must accept the same strings. The channel's two fixed
+    parts too (``settings.STABLE_CHANNEL`` / ``BRANCH_CHANNEL_PREFIX``): the
+    *Channel* picker writes what the frontend spells, and the backend
+    refuses anything but its own spelling."""
     source = (ROOT / "src" / "lib" / "updates.ts").read_text()
     for name, python in (("REF_RE", updates.REF_RE), ("TAG_RE", updates.TAG_RE)):
         found = re.findall(rf"^export const {name} = /(.+)/;$", source, re.MULTILINE)
         assert found == [python], name
+    for name, python in (
+        ("STABLE_CHANNEL", settings.STABLE_CHANNEL),
+        ("BRANCH_CHANNEL_PREFIX", settings.BRANCH_CHANNEL_PREFIX),
+    ):
+        found = re.findall(rf'^export const {name} = "([^"\\]*)";$', source, re.MULTILINE)
+        assert found == [python], name
+
+
+def test_the_staged_file_is_named_alike_in_both_halves() -> None:
+    """Update spec 3.12.5: `decky.ts` only hands Decky a `file://` artifact
+    named as the backend's ``updates.staged_path`` names the staged zip;
+    the two spellings of that name must agree, or every install is
+    refused."""
+    source = (ROOT / "src" / "lib" / "decky.ts").read_text()
+
+    def constant(name: str) -> str:
+        found = re.findall(rf'^export const {name} = "([^"\\]*)";$', source, re.MULTILINE)
+        assert len(found) == 1, name
+        return found[0]
+
+    digits = re.findall(r"^export const STAGED_HASH_DIGITS = (\d+);$", source, re.MULTILINE)
+    assert len(digits) == 1
+    sha = "0123456789abcdef" * 4
+    runtime = "/data/Moonlight Sync"
+    expected = (
+        runtime
+        + constant("STAGED_DIR")
+        + constant("STAGED_FILE_PREFIX")
+        + sha[: int(digits[0])]
+        + constant("STAGED_FILE_SUFFIX")
+    )
+    assert updates.staged_path(runtime, sha) == expected
+    assert constant("FILE_ARTIFACT_PREFIX") == "file:///"
 
 
 def test_backend_never_names_config_toml_for_writing() -> None:

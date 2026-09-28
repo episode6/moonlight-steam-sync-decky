@@ -1,9 +1,11 @@
-import { ButtonItem, DialogButton, DropdownItem, Field, Focusable, ToggleField } from "@decky/ui";
+import { ButtonItem, ConfirmModal, DialogButton, DropdownItem, Field, Focusable, ToggleField, showModal } from "@decky/ui";
 
 import { controller } from "../instance";
-import { errorText } from "../lib/cli";
+import { errorText, type UpdateChannel } from "../lib/cli";
 import {
   channelOf,
+  channelRef,
+  channelsOf,
   installable,
   installButtonText,
   installedOf,
@@ -29,11 +31,36 @@ const NOTES_BOX = {
 } as const;
 
 /**
- * Settings → Updates (update spec 3.7): the installed version, what the
- * last check found, the update's button and notes, the automatic check's
- * toggle and *Install another version*. There is no confirm of the
- * plugin's own: Decky's dialog is the confirmation, and its text names the
- * action and the version (Decision U3). The route leaves this page out
+ * *Channel*'s change (update spec 3.12.5): a branch asks first, *Releases*
+ * asks nothing. Cancelling the confirm stores nothing, and the dropdown,
+ * which shows the stored channel, stays where it was.
+ */
+function chooseChannel(channel: UpdateChannel): void {
+  const ref = channelRef(channel);
+  if (ref === null) {
+    void controller.setUpdateChannel(channel);
+    return;
+  }
+  showModal(
+    <ConfirmModal
+      strTitle={`Follow ${ref}?`}
+      strDescription="Builds of a branch are untested and can break syncing. You can return to Releases here at any time."
+      strOKButtonText="Follow"
+      strCancelButtonText="Cancel"
+      onOK={() => {
+        void controller.setUpdateChannel(channel);
+      }}
+    />,
+  );
+}
+
+/**
+ * Settings → Updates (update spec 3.7, 3.12.5): the installed version, the
+ * channel, what the last check found, the install button (with *Cancel*
+ * while the zip downloads) and notes, the automatic check's toggle and
+ * *Install another version*. There is no confirm of the plugin's own
+ * before an install: Decky's dialog is the confirmation, and its text names
+ * the action and the version (Decision U3). The route leaves this page out
  * entirely while the plugin is off (update spec 3.2).
  */
 export function UpdatesPage() {
@@ -65,6 +92,14 @@ export function UpdatesPage() {
   return (
     <div>
       {installedRow}
+      <DropdownItem
+        label="Channel"
+        description="Releases are tested. Builds of a branch are whatever was pushed last."
+        rgOptions={channelsOf(update.releases, channel).map((option) => ({ data: option.id, label: option.label }))}
+        selectedOption={channel}
+        disabled={!idle || !state.settings}
+        onChange={(option) => chooseChannel(option.data as UpdateChannel)}
+      />
       <Field label="Latest" description={latestText(update, phase, offer, channel)}>
         <DialogButton
           style={{ minWidth: 0, width: "auto", padding: "6px 14px" }}
@@ -77,6 +112,11 @@ export function UpdatesPage() {
       {offer ? (
         <ButtonItem layout="below" disabled={!idle} onClick={() => void controller.installUpdate(offer.tag)}>
           {installButtonText(offer, phase)}
+        </ButtonItem>
+      ) : null}
+      {phase === "downloading" ? (
+        <ButtonItem layout="below" onClick={() => void controller.cancelUpdate()}>
+          Cancel
         </ButtonItem>
       ) : null}
       {offer?.notes ? (

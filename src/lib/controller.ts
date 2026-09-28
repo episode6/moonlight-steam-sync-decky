@@ -3,8 +3,9 @@
  * the load order and first run (spec 3.8), runs and their events, the
  * restart flow (spec 3.9), the Stream press and the default controller
  * layout (spec 3.10, 3.16), host switching (spec 3.12), the SteamGridDB key
- * fetch from the Game Mode browser (spec 3.20), the updater's check and
- * its hand-off to Decky's installer (update spec 3.6) and the
+ * fetch from the Game Mode browser (spec 3.20), the updater's check, the
+ * backend's staging of the zip and the hand-off of the staged zip to
+ * Decky's installer (update spec 3.6, 3.12.5) and the
  * settings-page actions.
  * `index.tsx` wires it to the real backend (`makeBackend(callable)`), the
  * real Steam client (`steam.ts`) and the real modal/toaster; the tests wire
@@ -33,8 +34,10 @@ import {
   type SgdbKeyEventPayload,
   type SyncDonePayload,
   type SyncEventPayload,
+  type UpdateChannel,
   type WakeResult,
   SGDB_API_PAGE,
+  stagingErrorText,
 } from "./cli";
 import { lastOf } from "./events";
 import type { PinChoice } from "./join";
@@ -89,11 +92,15 @@ import {
   installable,
   installedOf,
   installRequestOf,
+  latestText,
   loaderSupported,
   offerOf,
+  STABLE_CHANNEL,
+  stagedMatches,
   updateCheckEnabled,
   type CheckResult,
   type NetPort,
+  type Offer,
 } from "./updates";
 
 export interface SteamPort {
@@ -221,7 +228,10 @@ export function appliedToast({ applied, kept, unavailable }: WalkCounts): string
 /** What a write refused while the plugin is off answers (spec 3.19). */
 export const DISABLED_FAILURE: Failure = { ok: false, error: "bad-request", message: "Moonlight Sync is off" };
 
-/** What a run refused while Decky is being asked to install answers (update spec 3.6). */
+/**
+ * What a run refused while an update is downloaded or Decky is being asked
+ * to install answers (update spec 3.6, 3.12.5).
+ */
 export const UPDATING_FAILURE: Failure = { ok: false, error: "bad-request", message: "An update is being installed" };
 
 /** The updater's texts (update spec 3.6), exactly. */
@@ -230,10 +240,19 @@ export const UPDATE_TEXTS = {
   walking: "Wait for the layouts to be applied",
   keyFetch: "Finish or cancel the key fetch first",
   unknownVersion: "That version cannot be installed",
-  /** Transitional (update spec 3.12.4): a branch build is never handed to Decky by URL; PR-U4c stages it and drops this. */
-  branchBuild: "Builds of a branch cannot be installed yet",
   refused: "Decky did not accept the install. Update with install.sh from Desktop Mode",
 } as const;
+
+/** How `checkUpdates` is asked (update spec 3.12.5). */
+export interface CheckOptions {
+  /** Ignore `CHECK_MIN_INTERVAL_MS` (never a stored `retryAt`): the install on a branch channel, a channel change. */
+  fresh?: boolean;
+  /** Toast nothing: the install says what the check found itself. */
+  quiet?: boolean;
+}
+
+/** What `checkUpdates` did: `skipped` when it made no request, or its answer landed nowhere. */
+export type CheckOutcome = "checked" | "failed" | "skipped";
 
 /** The automatic check's toast when it finds an update (update spec 3.6 step 4). */
 export function updateAvailableToast(label: string): string {
@@ -297,8 +316,9 @@ export class Controller {
   /** When the last update check was attempted (`timing.now()`), for *Check now*'s minimum interval. */
   private lastUpdateCheck: number | null = null;
   /**
-   * Bumped when the plugin is turned off: a check that was in flight then
-   * lands in a store that has moved on, and must leave it alone.
+   * Bumped when the plugin is turned off: a check or a staging that was in
+   * flight then lands in a store that has moved on, and must leave it alone
+   * (no toast, no phase, nothing asked of Decky).
    */
   private updateEpoch = 0;
 
@@ -567,10 +587,11 @@ export class Controller {
   /** A user-initiated run (Sync now, Re-fetch all art, Remove everything); refused while the plugin is off. */
   run(kind: RunKind): Promise<Failure | null> {
     if (!this.enabled) return Promise.resolve(DISABLED_FAILURE);
-    // During the hand-off to Decky only: its install route resolves
-    // once Decky has shown its dialog, before the user confirms, so a run
-    // started behind the open dialog is not refused (update spec 3.8).
-    if (this.state.updatePhase === "asking") return Promise.resolve(UPDATING_FAILURE);
+    // While the zip is downloaded and during the hand-off to Decky only: its
+    // install route resolves once Decky has shown its dialog, before the
+    // user confirms, so a run started behind the open dialog is not refused
+    // (update spec 3.8, 3.12.5).
+    if (this.updating()) return Promise.resolve(UPDATING_FAILURE);
     this.mismatchRetried = false;
     return this.startRun(kind);
   }
@@ -724,8 +745,8 @@ export class Controller {
     // while a game is running (the row itself is disabled, `restartRowView`).
     // Off (spec 3.19): the row is not shown, and the write it would start is refused.
     if (this.state.inGame || !this.enabled) return;
-    // A press, like run(): nothing starts during the hand-off to Decky.
-    if (this.state.updatePhase === "asking") return;
+    // A press, like run(): nothing starts during the download or the hand-off to Decky.
+    if (this.updating()) return;
     if (pending.restart_needed === "art") {
       await this.restartForArt();
       return;
@@ -1048,20 +1069,26 @@ export class Controller {
    * an offer it found, a manual one only its failure. The check follows
    * the selected channel (`channelOf`, update spec 3.12.4): on a branch
    * channel it also reads that branch's `build.json`, so a new build of a
-   * followed branch is announced as a release is. The updater makes
-   * no backend call at all, so no Moonlight command (Decision 66).
+   * followed branch is announced as a release is. `options.fresh` (the
+   * install on a branch channel, a channel change: update spec 3.12.5)
+   * ignores the minimum interval but never a `retryAt`; `options.quiet`
+   * (the install, which says what it found itself) toasts nothing. The
+   * check makes no backend call, so no Moonlight command (Decision 66).
+   * Answers `checked`, `failed`, or `skipped` when no request was made or
+   * its answer landed nowhere.
    */
-  async checkUpdates(manual: boolean): Promise<void> {
+  async checkUpdates(manual: boolean, options: CheckOptions = {}): Promise<CheckOutcome> {
     const update = this.state.update;
-    if (!this.enabled || !update || this.state.updatePhase !== "idle") return;
+    if (!this.enabled || !update || this.state.updatePhase !== "idle") return "skipped";
     const now = this.timing.now();
     const error = update.error;
     const retryAt = error?.error === "rate-limited" && error.retryAt ? Date.parse(error.retryAt) : NaN;
     const waiting = now < retryAt;
-    const tooSoon = manual && this.lastUpdateCheck !== null && now - this.lastUpdateCheck < CHECK_MIN_INTERVAL_MS;
+    const tooSoon =
+      manual && !options.fresh && this.lastUpdateCheck !== null && now - this.lastUpdateCheck < CHECK_MIN_INTERVAL_MS;
     if (waiting || tooSoon) {
-      if (manual && error) this.ui.toast("Moonlight Sync", errorText(error, new Date(now)));
-      return;
+      if (manual && error && !options.quiet) this.ui.toast("Moonlight Sync", errorText(error, new Date(now)));
+      return "skipped";
     }
     this.lastUpdateCheck = now;
     const epoch = this.updateEpoch;
@@ -1075,16 +1102,23 @@ export class Controller {
     }
     // Turned off meanwhile: the updater is silent, and its state is gone.
     const current = this.state.update;
-    if (epoch !== this.updateEpoch || !current) return;
+    if (epoch !== this.updateEpoch || !current) return "skipped";
     if (result.ok) {
       const checkedAt = new Date(this.timing.now()).toISOString();
       this.store.set({ update: { releases: result.releases, checkedAt, error: null } });
       const offer = offerOf(installedOf(this.state.cliVersion), result.releases, channel);
       if (!manual && offer) this.ui.toast("Moonlight Sync", updateAvailableToast(offer.label));
-    } else {
-      this.store.set({ update: { ...current, error: result } });
-      if (manual) this.ui.toast("Moonlight Sync", errorText(result, new Date(this.timing.now())));
+      return "checked";
     }
+    this.store.set({ update: { ...current, error: result } });
+    if (manual && !options.quiet) this.ui.toast("Moonlight Sync", errorText(result, new Date(this.timing.now())));
+    return "failed";
+  }
+
+  /** An install is under way: the zip is being downloaded, or Decky is being asked (update spec 3.12.5). */
+  private updating(): boolean {
+    const phase = this.state.updatePhase;
+    return phase === "downloading" || phase === "asking";
   }
 
   /** Can this loader be asked to install at all? The Updates page shows only why not when it cannot. */
@@ -1097,53 +1131,158 @@ export class Controller {
     return this.setSettings({ update_check: on });
   }
 
-  /**
-   * *Update to …* and *Install another version* (update spec 3.6): only
-   * ever on a press, and only for a release `installable()` lists, which
-   * has GitHub's sha256 (a `switch` back to a release from a branch build
-   * included, install type 4). The channel's branch build, `offerOf`'s
-   * `switch`, is refused with a toast until PR-U4c stages it: it is never
-   * handed to Decky by URL. Refused with a toast, and nothing asked of Decky,
-   * while off, while a run is going, during the layout walk, during a key
-   * fetch, and when this loader cannot install. Otherwise the settings page
-   * is left first (Decision U4: Decky unloads the plugin under it), then
-   * Decky is asked to show its own dialog, whose OK is the user's. Whether
-   * they confirmed is never known here: when they did, this frontend is
-   * gone within seconds. `true` when Decky took the request.
-   */
-  async installUpdate(tag: string): Promise<boolean> {
-    const refuse = (text: string) => {
-      this.ui.toast("Moonlight Sync", text);
-      return false;
-    };
-    if (!this.enabled) return refuse(errorText(DISABLED_FAILURE));
-    // The page's buttons are disabled then: one request at a time.
-    if (this.state.updatePhase !== "idle") return false;
-    if (this.state.run?.running || this.starting) return refuse(UPDATE_TEXTS.run);
-    if (this.state.walking) return refuse(UPDATE_TEXTS.walking);
-    if (this.state.keyFetch) return refuse(UPDATE_TEXTS.keyFetch);
-    if (!this.updatesSupported()) return refuse(errorText({ ok: false, error: "update-unsupported", message: "" }));
-    const loader = this.state.cliVersion?.loader_version;
-    const installer = this.ui.installer();
+  /** Why an install cannot start now (update spec 3.6 step 1), or `null`. */
+  private installRefusal(): string | null {
+    if (this.state.run?.running || this.starting) return UPDATE_TEXTS.run;
+    if (this.state.walking) return UPDATE_TEXTS.walking;
+    if (this.state.keyFetch) return UPDATE_TEXTS.keyFetch;
+    if (!this.updatesSupported()) return errorText({ ok: false, error: "update-unsupported", message: "" });
+    return null;
+  }
+
+  /** The offer for `tag` in what the last check found: `installable()` first, then the channel's own. */
+  private offerFor(tag: string): Offer | null {
     const installed = installedOf(this.state.cliVersion);
     const releases = this.state.update?.releases ?? null;
     const channelOffer = offerOf(installed, releases, channelOf(this.state.settings));
-    const offer =
+    return (
       installable(installed, releases).find((candidate) => candidate.tag === tag) ??
-      (channelOffer?.tag === tag ? channelOffer : null);
-    if (!offer) return refuse(UPDATE_TEXTS.unknownVersion);
-    // Never by URL: a rolling asset can change under its digest (update spec 3.12.3).
-    if (offer.kind === "branch") return refuse(UPDATE_TEXTS.branchBuild);
-    const request = installRequestOf(offer, loader);
-    this.store.set({ updatePhase: "asking" });
+      (channelOffer?.tag === tag ? channelOffer : null)
+    );
+  }
+
+  /**
+   * *Update to …*, *Switch to …* and *Install another version* (update spec
+   * 3.6, 3.12.5): only ever on a press. Refused with a toast, and nothing
+   * asked of anyone, while off, while a run is going, during the layout
+   * walk, during a key fetch, and when this loader cannot install; nothing
+   * at all while the updater is already busy. Then, in this order:
+   *
+   * 1. On a branch channel, a check first, whatever the last one's age
+   *    (never before a stored `retryAt`), so the digest is the current
+   *    build's. A check that could not be made or failed ends the install
+   *    with its failure's text; one that finds no offer for `tag`, with
+   *    `latestText`'s. On `stable` no check is made.
+   * 2. The offer: a release `installable()` lists (GitHub's sha256, a
+   *    `switch` back from a branch build included), else the channel's own
+   *    `offerOf` (a branch's build). No offer: "That version cannot be
+   *    installed".
+   * 3. `downloading`: the backend's `stage_update` downloads and verifies
+   *    the zip (exactly one of a release's version and a branch's ref). Its
+   *    failure is toasted (`stagingErrorText`), except `cancelled`, which is
+   *    the user's *Cancel*.
+   * 4. The staging's answer is checked against the offer (`stagedMatches`);
+   *    a mismatch is toasted as `bad-zip` and nothing is asked of Decky.
+   * 5. `asking`: the settings page is left (Decision U4: Decky unloads the
+   *    plugin under it), then Decky is asked, with the staged `file://`
+   *    artifact and hash, to show its own dialog, whose OK is the user's.
+   *    Whether they confirmed is never known here: when they did, this
+   *    frontend is gone within seconds.
+   *
+   * The phase is `idle` again in every path. An answer that arrives after
+   * the plugin was turned off lands nowhere (`updateEpoch`). `true` when
+   * Decky took the request.
+   */
+  async installUpdate(tag: string): Promise<boolean> {
+    const toast = (text: string) => {
+      this.ui.toast("Moonlight Sync", text);
+      return false;
+    };
+    if (!this.enabled) return toast(errorText(DISABLED_FAILURE));
+    // The page's buttons are disabled then: one request at a time.
+    if (this.state.updatePhase !== "idle") return false;
+    const refusal = this.installRefusal();
+    if (refusal) return toast(refusal);
+    const epoch = this.updateEpoch;
+    const channel = channelOf(this.state.settings);
+
+    // 1. a branch's build is replaced on every push: its digest must be the current one
+    if (channel !== STABLE_CHANNEL) {
+      const outcome = await this.checkUpdates(true, { fresh: true, quiet: true });
+      if (epoch !== this.updateEpoch || !this.enabled) return false;
+      const update = this.state.update;
+      if (!update) return false;
+      if (outcome !== "checked") {
+        const error = update.error;
+        return error ? toast(errorText(error, new Date(this.timing.now()))) : false;
+      }
+      if (!this.offerFor(tag)) {
+        const offer = offerOf(installedOf(this.state.cliVersion), update.releases, channel);
+        return toast(latestText(update, this.state.updatePhase, offer, channel, new Date(this.timing.now())));
+      }
+      // a run, a walk or a key fetch may have started during the check
+      const late = this.installRefusal();
+      if (late) return toast(late);
+      if (this.state.updatePhase !== "idle") return false;
+    }
+
+    // 2. the offer
+    const offer = this.offerFor(tag);
+    if (!offer || !offer.digest) return toast(UPDATE_TEXTS.unknownVersion);
+    const loader = this.state.cliVersion?.loader_version;
+    const installer = this.ui.installer();
+
+    this.store.set({ updatePhase: "downloading" });
     try {
+      // 3. the backend downloads and verifies the zip
+      const staged = await this.backend.stage_update(
+        offer.tag,
+        offer.digest,
+        offer.kind === "release" ? offer.version : null,
+        offer.kind === "branch" ? offer.ref : null,
+      );
+      // Turned off meanwhile: the updater is silent, and its state is gone.
+      if (epoch !== this.updateEpoch || !this.enabled) return false;
+      if (isFailure(staged)) {
+        return staged.error === "cancelled" ? false : toast(stagingErrorText(staged, new Date(this.timing.now())));
+      }
+      // 4. the zip is the one the offer asked for
+      if (!stagedMatches(offer, staged)) {
+        return toast(errorText({ ok: false, error: "bad-zip", message: "" }));
+      }
+      const request = installRequestOf(offer, staged, loader);
+      // 5. leave, then ask
+      this.store.set({ updatePhase: "asking" });
       this.ui.leaveSettings();
       const asked = await installer.request(request);
-      if (!asked) this.ui.toast("Moonlight Sync", UPDATE_TEXTS.refused);
+      if (!asked && epoch === this.updateEpoch) this.ui.toast("Moonlight Sync", UPDATE_TEXTS.refused);
       return asked;
     } finally {
-      this.store.set({ updatePhase: "idle" });
+      if (epoch === this.updateEpoch) this.store.set({ updatePhase: "idle" });
     }
+  }
+
+  /**
+   * *Cancel* under the install button (update spec 3.12.5): kills the
+   * download in flight; the interrupted `installUpdate` sees `cancelled`
+   * and toasts nothing. Nothing at all unless the updater is downloading.
+   */
+  async cancelUpdate(): Promise<void> {
+    if (this.state.updatePhase !== "downloading") return;
+    const result = await this.backend.cancel_update();
+    if (isFailure(result)) this.ui.toast("Moonlight Sync", errorText(result));
+  }
+
+  /**
+   * The *Channel* picker's change (update spec 3.12.5), after the page's
+   * *Follow <ref>?* confirm for a branch: `update_channel` stored, then a
+   * check of the new channel that ignores the minimum interval (a press
+   * within a minute of the last check must still read the new branch's
+   * `build.json`) and toasts its failure as *Check now* does. A refused
+   * `set_settings` is toasted and no check follows. The channel already
+   * selected does nothing, and so does a change while the updater is busy
+   * (the picker is disabled then). `null` when nothing was stored.
+   */
+  async setUpdateChannel(channel: UpdateChannel): Promise<Result | null> {
+    if (!this.state.update || this.state.updatePhase !== "idle") return null;
+    if (channel === channelOf(this.state.settings)) return null;
+    const result = await this.setSettings({ update_channel: channel });
+    if (isFailure(result)) {
+      this.ui.toast("Moonlight Sync", errorText(result));
+      return result;
+    }
+    await this.checkUpdates(true, { fresh: true });
+    return result;
   }
 
   // -------------------------------------------------------------------------
@@ -1536,6 +1675,9 @@ export class Controller {
       void this.layoutWalk();
       this.loadUpdates();
     } else {
+      // A download in flight is stopped (update spec 3.12.5); its late answer
+      // then lands nowhere, like a check's, since the epoch moves on.
+      if (this.state.updatePhase === "downloading") await this.backend.cancel_update();
       // The updater is silent while off (update spec 3.2): no row, no page, no check.
       this.updateEpoch++;
       this.store.set({ update: null, updatePhase: "idle" });

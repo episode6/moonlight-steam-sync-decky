@@ -493,7 +493,10 @@ export interface AppState {
    * plugin is off, and before the load has reached it. Never on disk.
    */
   update: UpdateInfo | null;
-  /** What the updater is doing right now. */
+  /**
+   * What the updater is doing right now: `checking` GitHub, `downloading`
+   * (the backend stages the zip, update spec 3.12.5), `asking` Decky.
+   */
   updatePhase: UpdatePhase;
 }
 

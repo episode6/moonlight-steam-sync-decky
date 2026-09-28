@@ -1,36 +1,71 @@
 /**
- * The Decky seam (update spec 3.5): the one place that touches Decky
+ * The Decky seam (update spec 3.5, 3.12.5): the one place that touches Decky
  * Loader's own globals (hard rule 12). Decky's installer is the websocket
  * route `utilities/install_plugin`, reached through the router Decky puts on
  * the window of the context plugin code runs in (update spec 2.3, 2.4); it
  * only stores the request and shows Decky's own dialog, whose OK is the
  * user's to press. This module never answers that dialog.
  *
+ * What Decky is handed is always a zip the backend staged and verified
+ * (`stage_update`, update spec 3.12.3), as a `file://` artifact: never a
+ * URL. Decky removes the installed plugin before it compares the hash or
+ * opens the zip (update spec 2.3), so only bytes already known to match the
+ * hash and to be a build of this plugin ever reach it.
+ *
  * Pure, globals only, like `steam.ts`: nothing here imports `@decky/*`, and
  * the scope the router is looked up on is a parameter, so vitest drives it
  * over plain objects. Nothing is imported from `updates.ts` either: the
  * allowlist below is spelled out here so it does not move when the
- * updater's constants do (`decky.test.ts` holds the two equal).
+ * updater's constants do (`decky.test.ts` and `tests/test_hard_rules.py`
+ * hold the spellings equal).
  */
 
 /** Decky's install route (update spec 2.3): `(artifact, name, version, hash, install_type)`. */
 export const INSTALL_ROUTE = "utilities/install_plugin";
 
-/** The only URLs Decky is ever handed: this repository's release assets. */
-export const RELEASE_URL_PREFIX = "https://github.com/episode6/moonlight-steam-sync-decky/releases/download/";
+/**
+ * The only artifacts Decky is ever handed (update spec 3.12.5): `file://`
+ * and an absolute path. Decky reads the rest of a `file://` artifact as a
+ * path, raw (update spec 2.3), and skips its download and its store request
+ * for it. No URL is accepted at all.
+ */
+export const FILE_ARTIFACT_PREFIX = "file:///";
 
-/** The one asset under a release tag Decky is handed: the plugin's zip. */
-export const RELEASE_ASSET = "Moonlight-Sync.zip";
+/**
+ * Where the backend stages a zip (`updates.staged_path`, update spec
+ * 3.12.3): `<runtime dir>/update/staged/Moonlight-Sync-<first 12 hex digits
+ * of its sha256>.zip`. Spelled here, not taken from the backend's answer;
+ * `tests/test_hard_rules.py` holds the two spellings of the name equal.
+ */
+export const STAGED_DIR = "/update/staged/";
+export const STAGED_FILE_PREFIX = "Moonlight-Sync-";
+export const STAGED_FILE_SUFFIX = ".zip";
+/** How many of the hash's first hex digits name the staged file. */
+export const STAGED_HASH_DIGITS = 12;
 
 /** `plugin.json`'s name, and the zip's top-level folder (update spec 2.3). */
 export const INSTALL_NAME = "Moonlight Sync";
 
+/**
+ * A branch's name, as a branch build's version carries it: `updates.ts`'s
+ * `REF_RE`, spelled here too so this module imports nothing from the
+ * updater (`decky.test.ts` holds the two equal).
+ */
+export const REF_RE = /^[A-Za-z0-9._/-]{1,100}$/;
+
 export interface InstallRequest {
-  /** A URL under `RELEASE_URL_PREFIX`: `<prefix><tag>/Moonlight-Sync.zip`. */
+  /**
+   * `file://` and the staged zip's absolute path, raw:
+   * `file:///…/update/staged/Moonlight-Sync-<first 12 of hash>.zip`.
+   */
   artifact: string;
   /** Always `Moonlight Sync`. */
   name: string;
-  /** Never `dev`, never empty. */
+  /**
+   * A release's version (`0.13.0`), or a branch build's `<version> (<ref> @
+   * <first 7 of sha>)` (`updates.ts`'s `branchVersionText`). Never `dev`,
+   * never empty.
+   */
   version: string;
   /** The zip's sha256: 64 lower-case hex digits. */
   hash: string;
@@ -45,11 +80,19 @@ export interface DeckyInstaller {
   request(req: InstallRequest): Promise<boolean>;
 }
 
-/** A tag as it may sit in the URL: `TAG_RE`'s characters, and not only dots. */
-const URL_TAG_RE = /^[A-Za-z0-9._-]{1,100}$/;
 const HASH_RE = /^[0-9a-f]{64}$/;
-/** A version Decky can put in a path of its store request: no space, no slash, no control character. */
+/** A release's version, and a branch build's version part: no space, no slash, no control character. */
 const VERSION_RE = /^[0-9A-Za-z.+-]{1,64}$/;
+/** A branch build's version: `<version> (<ref> @ <7 lower-case hex digits>)`, each part checked on its own. */
+const BRANCH_VERSION_RE = /^(\S+) \((\S+) @ ([0-9a-f]{7})\)$/;
+/** No staged path has one: a C0 or C1 control character, DEL, a line or paragraph separator. */
+function hasControl(text: string): boolean {
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (code < 0x20 || (code >= 0x7f && code <= 0x9f) || code === 0x2028 || code === 0x2029) return true;
+  }
+  return false;
+}
 
 interface Router {
   call(route: string, ...args: unknown[]): unknown;
@@ -84,26 +127,43 @@ function findRouter(scope: unknown): Router | null {
 }
 
 /**
- * The artifact is exactly `<RELEASE_URL_PREFIX><tag>/Moonlight-Sync.zip`,
- * the tag of `TAG_RE`'s characters and not only dots. That shape already
- * leaves out `..`, `?`, `#`, `%`, a backslash, whitespace and every control
- * character; the spec's explicit checks stay on top of it.
+ * The artifact is exactly `file://` and an absolute path ending in
+ * `/update/staged/Moonlight-Sync-<first 12 of hash>.zip`, the hash the
+ * request's own (update spec 3.12.5). The path has no empty, `.` or `..`
+ * step, no backslash, no control character, and no `?`, `#` or `%`: Decky
+ * does not decode it, so nothing in it is a URL's. A space is allowed (the
+ * runtime directory is `Moonlight Sync`'s).
  */
-function artifactAllowed(artifact: string): boolean {
-  if (!artifact.startsWith(RELEASE_URL_PREFIX)) return false;
-  if (artifact.includes("..") || artifact.includes("?") || artifact.includes("#")) return false;
-  const rest = artifact.slice(RELEASE_URL_PREFIX.length);
-  const slash = rest.indexOf("/");
-  if (slash < 0) return false;
-  const tag = rest.slice(0, slash);
-  if (!URL_TAG_RE.test(tag) || /^\.+$/.test(tag)) return false;
-  return rest.slice(slash + 1) === RELEASE_ASSET;
+function artifactAllowed(artifact: string, hash: string): boolean {
+  if (!artifact.startsWith(FILE_ARTIFACT_PREFIX)) return false;
+  const path = artifact.slice("file://".length);
+  if (/[\\?#%]/.test(path) || hasControl(path)) return false;
+  const steps = path.slice(1).split("/");
+  if (steps.some((step) => step === "" || step === "." || step === "..")) return false;
+  const name = `${STAGED_FILE_PREFIX}${hash.slice(0, STAGED_HASH_DIGITS)}${STAGED_FILE_SUFFIX}`;
+  return path.endsWith(`${STAGED_DIR}${name}`);
+}
+
+/** A version's number part: `VERSION_RE`, and never `dev` in any case. */
+function versionPartAllowed(version: string): boolean {
+  return VERSION_RE.test(version) && version.toLowerCase() !== "dev";
 }
 
 /**
- * Whether `request` may hand these values to Decky (update spec 3.5, hard
- * rule 12): checked here whatever the caller already guarantees. Each
- * value is a plain string or number read once by the caller.
+ * A release's version, or exactly what `branchVersionText` builds: `<version>
+ * (<ref> @ <first 7 of sha>)`, the ref of `REF_RE`'s characters.
+ */
+function versionAllowed(version: string): boolean {
+  if (versionPartAllowed(version)) return true;
+  const branch = BRANCH_VERSION_RE.exec(version);
+  return branch !== null && versionPartAllowed(branch[1]) && REF_RE.test(branch[2]);
+}
+
+/**
+ * Whether `request` may hand these values to Decky (update spec 3.5,
+ * 3.12.5, hard rule 12): checked here whatever the caller already
+ * guarantees. Each value is a plain string or number read once by the
+ * caller.
  */
 export function installAllowed(
   artifact: unknown,
@@ -112,10 +172,10 @@ export function installAllowed(
   hash: unknown,
   installType: unknown,
 ): boolean {
-  if (typeof artifact !== "string" || !artifactAllowed(artifact)) return false;
   if (typeof hash !== "string" || !HASH_RE.test(hash)) return false;
+  if (typeof artifact !== "string" || !artifactAllowed(artifact, hash)) return false;
   if (name !== INSTALL_NAME) return false;
-  if (typeof version !== "string" || !VERSION_RE.test(version) || version.toLowerCase() === "dev") return false;
+  if (typeof version !== "string" || !versionAllowed(version)) return false;
   if (typeof installType !== "number" || !Number.isInteger(installType)) return false;
   return installType >= 1 && installType <= 4;
 }
