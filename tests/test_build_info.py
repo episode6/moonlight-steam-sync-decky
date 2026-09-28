@@ -88,6 +88,13 @@ def test_a_hundred_character_ref_is_allowed(tmp_path: Path) -> None:
         ({"sha": SHA + "0"}, "--sha must be 40 hex digits"),
         ({"sha": SHA[:-1] + "g"}, "--sha must be 40 hex digits"),
         ({"sha": SHA + "\n"}, "--sha must be 40 hex digits"),
+        ({"run": ""}, "--run must be <run id>/<run attempt>"),
+        ({"run": "123456"}, "--run must be <run id>/<run attempt>"),
+        ({"run": "123456/"}, "--run must be <run id>/<run attempt>"),
+        ({"run": "12a/1"}, "--run must be <run id>/<run attempt>"),
+        ({"run": "1/2/3"}, "--run must be <run id>/<run attempt>"),
+        ({"run": "1/1\n"}, "--run must be <run id>/<run attempt>"),
+        ({"run": "\u0661/1"}, "--run must be <run id>/<run attempt>"),
         ({"ref": ""}, "--ref must match"),
         ({"ref": "a" * 101}, "--ref must match"),
         ({"ref": "feature+x"}, "--ref must match"),
@@ -115,10 +122,11 @@ def test_a_refusal_leaves_an_existing_file_alone(tmp_path: Path) -> None:
     assert (tmp_path / "build.json").read_text() == "old\n"
 
 
-def test_a_bad_kind_or_sha_is_not_a_ref_refusal(tmp_path: Path) -> None:
-    """Exit 3 means the ref alone: with a bad kind or sha as well, it is 1."""
+def test_a_bad_kind_sha_or_run_is_not_a_ref_refusal(tmp_path: Path) -> None:
+    """Exit 3 means the ref alone: with a bad kind, sha or run as well, it is 1."""
     assert build_info(tmp_path, *valid(kind="tag", ref="a+b")).returncode == 1
     assert build_info(tmp_path, *valid(sha="x", ref="a+b")).returncode == 1
+    assert build_info(tmp_path, *valid(run="x", ref="a+b")).returncode == 1
     assert build_info(tmp_path, *valid(ref="a+b")).returncode == 3
     assert list(tmp_path.iterdir()) == []
 

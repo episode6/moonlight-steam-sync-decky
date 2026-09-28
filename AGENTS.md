@@ -236,8 +236,9 @@ scripts/build_cli.py        cli/src -> moonlight-steam-sync.pyz (zipapp, deflate
 scripts/build_info.py       build.json (update spec 3.12.1): --kind release|branch --ref
                             --sha --run [--out], {schema: 1, kind, ref, sha, built_at,
                             run} in that order; refuses (one stderr line, nothing
-                            written) a kind outside the two or a sha that is not 40 hex
-                            digits with exit 1, then a ref outside
+                            written) a kind outside the two, a sha that is not 40 hex
+                            digits or a run that is not ^[0-9]+/[0-9]+$ with exit 1,
+                            then a ref outside
                             ^[A-Za-z0-9._/-]{1,100}$ with exit 3 (EXIT_REF_REFUSED:
                             ci.yml / release.yml skip build.json on it for a branch,
                             amendment A1; builds.yml fails, so a branch with a `+` or
@@ -1173,7 +1174,8 @@ There is no Steam Deck during development; everything else is tested.
   one. `tests/test_build_info.py` runs `scripts/build_info.py` with
   `sys.executable` in `tmp_path`: the keys and their order, `built_at`'s
   form, `--out`, and every refusal (one stderr line, nothing written; exit
-  3 for the ref alone, 1 when the kind or sha is bad too, 2 for argparse).
+  3 for the ref alone, 1 for a bad kind, sha or run, the ref bad too or
+  not, 2 for argparse).
 - `tests/test_hard_rules.py` also reads `.github/workflows/builds.yml` as
   text (no YAML parser is a dev dependency): the triggers are exactly
   `push`, `workflow_dispatch` and `delete` and no line outside a comment

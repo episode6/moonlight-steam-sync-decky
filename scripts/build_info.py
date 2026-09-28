@@ -13,16 +13,17 @@ builds. The version is not in it: ``package.json`` has it (hard rule 8).
      "sha": "<40 hex>", "built_at": "2026-10-02T14:03:11Z", "run": "123456/1"}
 
 ``KIND`` is ``release`` or ``branch``; ``SHA`` is 40 hex digits (written
-lower-cased); ``REF`` matches ``^[A-Za-z0-9._/-]{1,100}$``. A refusal writes
+lower-cased); ``RUN`` is ``<run id>/<run attempt>``, ``^[0-9]+/[0-9]+$``;
+``REF`` matches ``^[A-Za-z0-9._/-]{1,100}$``. A refusal writes
 nothing and prints one line on stderr. Its exit code:
 
-- ``3`` (``EXIT_REF_REFUSED``): the kind and the sha are good and only the
+- ``3`` (``EXIT_REF_REFUSED``): the kind, the sha and the run are good and only the
   ``REF`` is outside the pattern. A branch name GitHub allows but the
   pattern refuses (one with ``+`` or ``@``) ends here. ``ci.yml`` and
   ``release.yml`` treat exactly this code, on a branch, as "no build.json
   for this zip" (a notice, amendment A1); ``builds.yml`` fails on it, so
   such a branch cannot have a published build.
-- ``1``: a bad ``KIND`` or ``SHA`` (checked first), always a failure.
+- ``1``: a bad ``KIND``, ``SHA`` or ``RUN`` (checked first), always a failure.
 - ``2``: argparse's own, a missing or unknown option.
 
 ``built_at`` is the current time in UTC. Standard library only.
@@ -41,13 +42,14 @@ from pathlib import Path
 SCHEMA = 1
 KINDS = ("release", "branch")
 SHA_RE = re.compile(r"[0-9a-fA-F]{40}")
+RUN_RE = re.compile(r"[0-9]+/[0-9]+")
 REF_RE = re.compile(r"[A-Za-z0-9._/-]{1,100}")
 EXIT_REFUSED = 1
 EXIT_REF_REFUSED = 3
 
 
 class RefRefused(ValueError):
-    """The kind and the sha are good; only the ref is outside ``REF_RE``."""
+    """The kind, the sha and the run are good; only the ref is outside ``REF_RE``."""
 
 
 def build_info(kind: str, ref: str, sha: str, run: str, now: float | None = None) -> dict:
@@ -57,6 +59,8 @@ def build_info(kind: str, ref: str, sha: str, run: str, now: float | None = None
         raise ValueError(f"--kind must be one of {', '.join(KINDS)}, not {kind!r}")
     if not SHA_RE.fullmatch(sha):
         raise ValueError(f"--sha must be 40 hex digits, not {sha!r}")
+    if not RUN_RE.fullmatch(run):
+        raise ValueError(f"--run must be <run id>/<run attempt> in digits, not {run!r}")
     if not REF_RE.fullmatch(ref):
         raise RefRefused(f"--ref must match ^[A-Za-z0-9._/-]{{1,100}}$, not {ref!r}")
     built_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now))
