@@ -3,7 +3,17 @@
 The plugin zip carries ``bin/moonlight-steam-sync.pyz`` (spec 3.6.1). On
 startup the backend compares it with ``~/.local/bin/moonlight-steam-sync``
 and copies the bundle into place when the installed copy is missing or
-older. It never downgrades: a newer CLI the user installed by hand stays.
+older, and also when it has the same version but other bytes (update spec
+3.12.3, Decision U12: a branch build carries the last release's version
+number, so without this its CLI would never reach the device; it also
+replaces a hand-installed build of the same version). It never downgrades:
+a newer CLI the user installed by hand stays, and so does one of the same
+version whose bytes are the bundle's.
+
+A symlink at ``~/.local/bin/moonlight-steam-sync`` is replaced by the file
+itself, never written through, in both cases (older, or the same version
+with other bytes): the copy goes to a ``.tmp`` beside it and ``os.replace``
+swaps the link for it, so the file the link pointed to is left untouched.
 
 Both copies are always run through an explicit interpreter
 (``[python3, path, ...]``), so neither the exec bit nor the plugin_loader
@@ -13,6 +23,7 @@ service's minimal ``PATH`` matters.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import os
 import re
 import shutil
@@ -80,10 +91,21 @@ class InstallReport:
 
     bundled: Version | None
     installed: Version | None
-    #: ``"installed"`` (was missing), ``"upgraded"`` (was older), ``"kept"``
-    #: (same or newer), ``"none"`` (no usable bundle), ``"failed"``.
+    #: ``"installed"`` (was missing), ``"upgraded"`` (was older),
+    #: ``"replaced"`` (the same version with other bytes), ``"kept"`` (newer,
+    #: or the same version and bytes), ``"none"`` (no usable bundle),
+    #: ``"failed"``.
     action: str
     error: str | None = None
+
+
+def sha256_file(path: str, chunk: int = 64 * 1024) -> str:
+    """The file's sha256 as 64 lower-case hex digits, read in chunks."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        while block := handle.read(chunk):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def install_file(source: str, target: str) -> None:
@@ -112,7 +134,8 @@ def ensure_installed(
     env: dict[str, str] | None = None,
     cwd: str | None = None,
 ) -> InstallReport:
-    """Install or upgrade the bundled CLI when the installed one is missing or older.
+    """Install the bundled CLI when the installed one is missing, older, or
+    the same version with other bytes (``"replaced"``, Decision U12).
 
     Never downgrades and never raises: every failure becomes
     ``InstallReport.error`` with the installed copy untouched.
@@ -143,8 +166,20 @@ def ensure_installed(
             action="failed",
             error=f"the bundled CLI at {bundled_path} did not report a version",
         )
-    if installed is not None and installed >= bundled:
+    if installed is not None and installed > bundled:
         return InstallReport(bundled=bundled, installed=installed, action="kept")
+    if installed is not None and installed == bundled:
+        try:
+            same = sha256_file(installed_path) == sha256_file(bundled_path)
+        except OSError as exc:
+            return InstallReport(
+                bundled=bundled,
+                installed=installed,
+                action="failed",
+                error=f"could not compare {installed_path} with the bundled CLI: {exc}",
+            )
+        if same:
+            return InstallReport(bundled=bundled, installed=installed, action="kept")
 
     try:
         install_file(bundled_path, installed_path)
@@ -155,6 +190,11 @@ def ensure_installed(
             action="failed",
             error=f"could not install {installed_path}: {exc}",
         )
-    action = "installed" if installed is None else "upgraded"
+    if installed is None:
+        action = "installed"
+    elif installed == bundled:
+        action = "replaced"
+    else:
+        action = "upgraded"
     after = read_version([python, installed_path], env=env, cwd=cwd)
     return InstallReport(bundled=bundled, installed=after, action=action)

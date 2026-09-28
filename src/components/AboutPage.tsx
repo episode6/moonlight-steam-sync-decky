@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 
 import { backend, controller } from "../instance";
 import { isFailure } from "../lib/cli";
-import { bundledLine } from "../lib/version";
+import { BUNDLED_CLI_RULE, bundledLine } from "../lib/version";
 import { useStore } from "./useStore";
 
 const LOG_LINES = 50;
@@ -34,6 +34,7 @@ export function AboutPage() {
       {row("Installed at", info?.installed_path)}
       {row("Bundled CLI", info ? bundledLine(info) : null)}
       {row("Bundled at", info?.bundled_path)}
+      {row("Bundled CLI install", BUNDLED_CLI_RULE)}
       {row("Minimum CLI", info?.minimum)}
       {info?.install_error ? row("Install error", info.install_error) : null}
       {row("Plugin version", info?.plugin_version)}

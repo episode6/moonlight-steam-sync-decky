@@ -37,6 +37,7 @@ class Plugin:
                 log_dir=decky.DECKY_PLUGIN_LOG_DIR,
                 plugin_dir=decky.DECKY_PLUGIN_DIR,
                 home=decky.DECKY_USER_HOME,
+                runtime_dir=decky.DECKY_PLUGIN_RUNTIME_DIR,
                 plugin_version=getattr(decky, "DECKY_PLUGIN_VERSION", ""),
                 loader_version=getattr(decky, "DECKY_VERSION", ""),
                 emit=decky.emit,
@@ -189,3 +190,10 @@ class Plugin:
 
     async def cancel_sgdb_key_fetch(self):
         return await (await self._ready()).cancel_sgdb_key_fetch()
+
+    # -- updates (update spec 3.12.3) -------------------------------------
+    async def stage_update(self, tag, sha256, version=None, ref=None):
+        return await (await self._ready()).stage_update(tag, sha256, version, ref)
+
+    async def cancel_update(self):
+        return await (await self._ready()).cancel_update()

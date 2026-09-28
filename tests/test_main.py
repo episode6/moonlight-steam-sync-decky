@@ -35,6 +35,7 @@ def plugin_module(tmp_path, monkeypatch):
         "DECKY_PLUGIN_SETTINGS_DIR": str(tmp_path / "settings"),
         "DECKY_PLUGIN_LOG_DIR": str(tmp_path / "logs"),
         "DECKY_PLUGIN_DIR": str(plugin_dir),
+        "DECKY_PLUGIN_RUNTIME_DIR": str(tmp_path / "data"),
         "DECKY_PLUGIN_VERSION": "0.1.0",
         "FAKE_CLI_FIXTURES": f"{FIXTURES / 'full-sync'}:{FIXTURES / 'common'}",
         "FAKE_CLI_ARGV_LOG": str(tmp_path / "argv.jsonl"),
@@ -324,6 +325,23 @@ def test_loader_version_is_empty_without_decky_version(plugin, monkeypatch) -> N
     version = run(instance.cli_version())
     assert version["ok"] is True
     assert version["loader_version"] == ""
+
+
+def test_the_staging_through_main_py(plugin) -> None:
+    """Update spec 3.12.3: the runtime directory is decky's, the download
+    source is always GitHub's (main.py passes none), and the two callables
+    reach the backend."""
+    instance, decky, tmp_path = plugin
+    assert run(instance.cancel_update()) == {"ok": True, "running": False}
+    refused = run(instance.stage_update("v0.12.0", "not-a-hash", "0.12.0"))
+    assert refused["error"] == "bad-request"
+    backend = instance._backend
+    assert backend.runtime_dir == decky.DECKY_PLUGIN_RUNTIME_DIR == str(tmp_path / "data")
+    assert backend.update_source.allow_file is False
+    assert backend.update_source.download_base == (
+        "https://github.com/episode6/moonlight-steam-sync-decky/releases/download"
+    )
+    assert not (tmp_path / "data").exists()  # nothing staged, nothing created
 
 
 def _tree(root: Path) -> dict[str, bytes | None]:

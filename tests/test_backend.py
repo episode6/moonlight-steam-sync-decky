@@ -143,6 +143,7 @@ def test_cli_version_shape(backend, tmp_path) -> None:
         "log_path": str(tmp_path / "logs" / "moonlight-sync.log"),
         "install_error": None,
         "capabilities": {"art_commit": False},
+        "build": None,
     }
 
 

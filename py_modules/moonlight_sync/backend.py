@@ -11,7 +11,8 @@ Conventions (spec 3.7, amended):
   ``cli-missing``, ``cli-too-old``, ``cli-protocol``, ``cli-error``,
   ``timeout``, ``busy``, ``owned-apps-missing``, ``owned-apps-empty``,
   ``bad-request``, ``io``, ``no-mac``, ``no-debugger``, ``cancelled``,
-  ``sgdb-page``. Callables never raise.
+  ``sgdb-page``, ``network``, ``bad-release``, ``hash-mismatch``,
+  ``bad-zip``. Callables never raise.
 - Argv is always ``[python3, <installed cli>, "--json", <subcommand>, ...]``
   except ``doctor``, ``--version`` and ``art --help``. The child runs with
   ``cwd=<home>`` and ``env`` = the backend's plus
@@ -34,6 +35,11 @@ Conventions (spec 3.7, amended):
   as ``sgdb_key_event`` and its end as ``sgdb_key_done``, and hands the key
   to ``keys.set_key`` and nowhere else. It has its own busy guard (kind
   ``"key"``), not the runs': no CLI and no ``matches.json`` are involved.
+- The staging (``stage_update``, update spec 3.12.3) downloads a release's
+  zip through ``fetch.py``, a script run by the system ``python3 -I`` (never
+  imported here), into the runtime directory's ``update/staged/`` and
+  checks it (``updates.validate_zip``). It writes nothing under the plugin
+  directory (hard rule 12) and has its own busy guard (kind ``"update"``).
 """
 
 from __future__ import annotations
@@ -48,6 +54,7 @@ import os
 import shlex
 import shutil
 import signal
+import stat
 import threading
 import time
 import traceback
@@ -56,7 +63,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from . import cdp, install, keys, sgdbpage, wake
+from . import cdp, install, keys, sgdbpage, updates, wake
 from . import events as ev
 from .settings import SettingsError, Store
 
@@ -72,6 +79,16 @@ STDOUT_LINE_LIMIT = 4 * 1024 * 1024
 #: ``art.resolve.cache_dir()``.
 CACHE_DIR_NAME = "moonlight-steam-sync"
 MATCH_CACHE_NAME = "matches.json"
+#: The downloader (update spec 3.12.3), beside this file. Run as a script by
+#: the system interpreter, never imported.
+FETCH_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fetch.py")
+#: Its one output line is a small JSON object; anything longer is not it.
+FETCH_LINE_LIMIT = 64 * 1024
+#: The socket timeout of a download that names none (the sidecar's).
+FETCH_TIMEOUT_S = 30
+#: Where the sidecar is downloaded, inside the staged directory; removed
+#: after every staging, whatever its end.
+SIDECAR_NAME = "sidecar.txt"
 
 
 def iso_now() -> str:
@@ -127,6 +144,17 @@ class RunState:
     proc: asyncio.subprocess.Process | None = None
     task: asyncio.Task | None = None
     failure: Result | None = None
+
+
+@dataclass
+class UpdateJob:
+    """One ``stage_update`` in flight (update spec 3.12.3): its busy guard."""
+
+    started: str
+    #: The downloader running now, if any; ``cancel_update`` / ``unload`` kill it.
+    proc: asyncio.subprocess.Process | None = None
+    #: Set by ``cancel_update`` / ``unload``; the staging then answers ``cancelled``.
+    cancelled: bool = False
 
 
 @dataclass
@@ -207,6 +235,8 @@ class Backend:
     EVENT_RING = 200
     #: A cancelled key fetch reports within one poll interval; this is the margin.
     KEY_FETCH_UNLOAD_WAIT = 3.0
+    #: The downloader gets its socket timeout plus this, then it is killed.
+    FETCH_ANSWER_GRACE = 10.0
 
     def __init__(
         self,
@@ -215,6 +245,7 @@ class Backend:
         log_dir: str,
         plugin_dir: str,
         home: str,
+        runtime_dir: str,
         plugin_version: str = "",
         loader_version: str = "",
         emit: Emit | None = None,
@@ -222,11 +253,18 @@ class Backend:
         cli: list[str] | None = None,
         env: dict[str, str] | None = None,
         python: str | None = None,
+        update_source: updates.Source | None = None,
     ) -> None:
         self.settings_dir = settings_dir
         self.log_dir = log_dir
         self.plugin_dir = plugin_dir
         self.home = home
+        #: ``DECKY_PLUGIN_RUNTIME_DIR``: the staged downloads' home (update
+        #: spec 3.12.3), created on demand; deleting it loses nothing.
+        self.runtime_dir = runtime_dir
+        #: Where downloads come from. A test seam only: ``main.py`` never
+        #: passes one, so it is always this repository's releases on GitHub.
+        self.update_source = update_source or updates.Source()
         self.plugin_version = plugin_version
         #: Decky Loader's version as ``decky.DECKY_VERSION`` spells it
         #: (``"v3.2.9"``), ``""`` when unknown (update spec 3.3).
@@ -259,6 +297,8 @@ class Backend:
         self._procs: set[asyncio.subprocess.Process] = set()
         #: The key fetch in flight, if any (spec 3.20); its own busy guard.
         self._key_fetch: KeyFetch | None = None
+        #: The staging in flight, if any (update spec 3.12.3); its own busy guard.
+        self._update: UpdateJob | None = None
 
     # ------------------------------------------------------------------
     # logging
@@ -385,6 +425,9 @@ class Backend:
         try:
             self._trim_log()
             self._log(f"startup: plugin {self.plugin_version or '?'}")
+            # Staged zips older than an hour and any part file a killed
+            # download left behind. Creates nothing, never raises.
+            updates.cleanup(self.runtime_dir)
             if not self._cli_override:
                 report = await asyncio.to_thread(
                     install.ensure_installed,
@@ -427,8 +470,11 @@ class Backend:
         A run that has been registered but whose child is not spawned yet is
         flagged instead; :meth:`_run_started` interrupts it the moment it
         exists, so unloading can never leave an orphan behind. A key fetch
-        in flight is cancelled the way ``cancel_sgdb_key_fetch`` cancels it.
+        in flight is cancelled the way ``cancel_sgdb_key_fetch`` cancels it,
+        and a download in flight the way ``cancel_update`` cancels it, its
+        part file removed here (the staging may never run again to do it).
         """
+        await self._cancel_staging("unload")
         fetch = self._key_fetch
         if fetch is not None and not fetch.done:
             self._log("unload: cancelling the sgdb key fetch")
@@ -757,6 +803,10 @@ class Backend:
             "log_path": self.log_path,
             "install_error": self.install_error,
             "capabilities": dict(self._capabilities or {"art_commit": False}),
+            # What this plugin's own zip says it was built from (update spec
+            # 3.12.1); None for a zip without build.json (every release
+            # before it existed, and a hand-packaged one).
+            "build": updates.read_build(self.plugin_dir),
         }
 
     def _package_field(self, name: str) -> str | None:
@@ -1397,6 +1447,366 @@ class Backend:
             return {"ok": False, "error": "io", "message": "Could not save the key"}
         self._log("sgdb key fetched from the browser")
         return {"ok": True, "source": state.source, "hint": state.hint}
+
+    # ------------------------------------------------------------------
+    # staging an update (update spec 3.12.3)
+
+    async def _fetch(
+        self,
+        url: str,
+        dest: str,
+        *,
+        sha256: str | None = None,
+        max_bytes: int,
+        timeout: float = FETCH_TIMEOUT_S,
+    ) -> Result:
+        """Run the downloader once; its one output line, parsed.
+
+        The argv is a list, never a shell string: the system ``python3``
+        (the one with SteamOS's CA store, spec 2.5) in isolated mode (``-I``:
+        no ``PYTHON*`` variable is read and the script's own directory,
+        this package, is not on ``sys.path``), ``fetch.py`` beside this
+        file, the options, then ``--`` before the URL and the destination.
+        ``--allow-file`` only when ``update_source`` says so, which only a
+        test's does. The child runs through ``_child_env()`` like every
+        other; it is in ``self._procs`` while it lives (``unload`` kills it)
+        and is the staging's ``proc`` (``cancel_update`` kills it, and a
+        cancel that arrived during the spawn kills it as soon as it exists).
+        Its stderr goes nowhere: nothing of it reaches the log.
+
+        At most ``timeout + FETCH_ANSWER_GRACE`` seconds, then it is killed
+        and the answer is ``timeout`` with ``timeout_s`` that limit. No
+        line, one over ``FETCH_LINE_LIMIT``, one that does not parse, or a
+        value that is not an object with a boolean ``ok`` is ``io``, "the
+        downloader did not answer".
+        """
+        no_answer = failure("io", "the downloader did not answer")
+        job = self._update
+        if job is not None and job.cancelled:
+            return failure("cancelled", "The download was cancelled")
+        argv = [
+            self.python,
+            "-I",
+            FETCH_SCRIPT,
+            "--max-bytes",
+            str(int(max_bytes)),
+            "--timeout",
+            f"{timeout:g}",
+        ]
+        if sha256 is not None:
+            argv += ["--sha256", sha256]
+        if self.update_source.allow_file:
+            argv.append("--allow-file")
+        argv += ["--", url, dest]
+        self._log(f"fetch: {updates.strip_queries(url)} -> {os.path.basename(dest)}")
+        proc = await asyncio.create_subprocess_exec(
+            *argv,
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+            env=self._child_env(),
+            cwd=self._cwd(),
+            limit=FETCH_LINE_LIMIT,
+        )
+        self._procs.add(proc)
+        if job is not None:
+            job.proc = proc
+            if job.cancelled:
+                # A cancel_update() / unload() that arrived while the spawn
+                # was awaited found no process to kill: kill it now. The
+                # read below then sees EOF at once and the staging answers
+                # `cancelled` on its way out.
+                self._log("fetch: cancelled during the spawn; killing the downloader")
+                self._kill(proc)
+
+        async def answer() -> bytes:
+            assert proc.stdout is not None
+            line = await proc.stdout.readline()
+            await self._until_exit(proc)
+            return line
+
+        limit = timeout + self.FETCH_ANSWER_GRACE
+        line = b""
+        timed_out = False
+        try:
+            line = await asyncio.wait_for(answer(), limit)
+        except TimeoutError:
+            timed_out = True
+            self._log(f"fetch: no answer after {limit:g} s; killing the downloader")
+        except ValueError:  # a line over FETCH_LINE_LIMIT
+            self._log("fetch: the downloader's output is too long; killing it")
+            line = b""
+        finally:
+            self._kill(proc)
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(self._until_exit(proc), self.KILL_GRACE)
+            self._procs.discard(proc)
+            if job is not None:
+                job.proc = None
+        if timed_out:
+            return failure(
+                "timeout", f"The download took longer than {limit:g} s", timeout_s=limit
+            )
+        try:
+            parsed = json.loads(line.decode("utf-8"))
+        except (UnicodeDecodeError, ValueError):
+            return no_answer
+        if not isinstance(parsed, dict) or not isinstance(parsed.get("ok"), bool):
+            return no_answer
+        return parsed
+
+    @staticmethod
+    def _update_request_refusal(tag: Any, sha256: Any, version: Any, ref: Any) -> Result | None:
+        """Step 1: the whole request, types included, or ``bad-request``."""
+        if not updates.is_tag(tag):
+            return failure("bad-request", "tag must be a release tag")
+        if not updates.is_sha256(sha256):
+            return failure("bad-request", "sha256 must be 64 hex digits")
+        if (version is None) == (ref is None):
+            return failure("bad-request", "exactly one of version and ref is required")
+        if version is not None and not (
+            isinstance(version, str)
+            and len(version) <= 100
+            and install.parse_version(version) is not None
+        ):
+            return failure("bad-request", "version must be a version number")
+        if ref is not None and not updates.is_ref(ref):
+            return failure("bad-request", "ref must be a branch name")
+        return None
+
+    def _update_busy(self) -> Result | None:
+        """Step 2: a run or a match (the runs' guard), a key fetch, a staging."""
+        busy = self._busy()
+        if busy is not None:
+            return busy
+        fetch = self._key_fetch
+        if fetch is not None and not fetch.done:
+            return failure("busy", "A key fetch is already in progress", kind="key")
+        if self._update is not None:
+            return failure("busy", "An update is already being downloaded", kind="update")
+        return None
+
+    @guarded
+    async def stage_update(
+        self, tag: Any = None, sha256: Any = None, version: Any = None, ref: Any = None
+    ) -> Result:
+        """Download a release's (``version``) or a branch build's (``ref``) zip
+        and verify it, for Decky's installer (update spec 3.12.3).
+
+        1. The request is checked whole first: nothing is touched or spawned
+           for a ``bad-request``.
+        2. Busy: a run or a match as ``_busy()`` answers it, a key fetch
+           (kind ``"key"``), another staging (kind ``"update"``).
+        3. The sidecar (``Moonlight-Sync.zip.sha256``) must name ``sha256``:
+           the hash the frontend read from GitHub's API and the one the
+           release was uploaded with agree (Decision U20).
+        4. A staged file of that hash is re-hashed; a match is not
+           downloaded again, anything else is removed.
+        5. The zip is downloaded with ``--sha256``, and the downloader's
+           reported hash is compared again here.
+        6. ``updates.validate_zip``, either way; a refused zip is removed.
+        7. ``{"ok": True, "artifact": "file://<path>", "hash", "build",
+           "version"}``: the path is always ``updates.staged_path``, written
+           raw (Decky reads the rest of a ``file://`` artifact as a path,
+           unquoted, spec 2.3).
+
+        Every exit releases the ``"update"`` guard and removes the sidecar
+        and any part file. Nothing here writes under the plugin directory.
+        """
+        refused = self._update_request_refusal(tag, sha256, version, ref)
+        if refused is not None:
+            return refused
+        busy = self._update_busy()
+        if busy is not None:
+            return busy
+        job = UpdateJob(started=iso_now())
+        self._update = job
+        try:
+            return await self._stage(job, tag, sha256.lower(), version, ref)
+        finally:
+            self._remove_staging_leftovers()
+            if self._update is job:
+                self._update = None
+
+    async def _stage(
+        self, job: UpdateJob, tag: str, sha256: str, version: str | None, ref: str | None
+    ) -> Result:
+        """Steps 3 to 7 of ``stage_update``, under its guard."""
+        short = sha256[:12]
+        source = self.update_source
+        staged = updates.ensure_staged_dir(self.runtime_dir)
+
+        # 3. the sidecar
+        self._log(f"stage_update {tag}: reading the checksum file, expecting {short}")
+        sidecar = os.path.join(staged, SIDECAR_NAME)
+        answer = await self._fetch(
+            updates.asset_url(source, tag, updates.ASSET_SHA),
+            sidecar,
+            max_bytes=updates.SIDECAR_MAX_BYTES,
+        )
+        if job.cancelled:
+            return self._staging_cancelled(tag)
+        if not answer["ok"]:
+            return self._staging_failed(tag, self._fetch_failure(answer, sidecar=True))
+        listed = updates.parse_sidecar(self._read_sidecar(sidecar))
+        if listed is None:
+            return self._staging_failed(
+                tag, failure("bad-release", "The release's checksum file could not be read")
+            )
+        if listed != sha256:
+            message = (
+                "A new build is being published. Try again in a minute"
+                if ref is not None
+                else "the release's checksums disagree"
+            )
+            self._log(f"stage_update {tag}: the checksum file names {listed[:12]}, not {short}")
+            return self._staging_failed(tag, failure("bad-release", message))
+
+        # 4. already staged?
+        path = updates.staged_path(self.runtime_dir, sha256)
+        reused = await asyncio.to_thread(self._staged_file_matches, path, sha256)
+        if job.cancelled:
+            return self._staging_cancelled(tag)
+        if reused:
+            self._log(f"stage_update {tag}: {short} already staged, not downloaded again")
+        else:
+            # 5. the zip
+            self._log(f"stage_update {tag}: downloading {short}")
+            answer = await self._fetch(
+                updates.asset_url(source, tag, updates.ASSET),
+                path,
+                sha256=sha256,
+                max_bytes=updates.ZIP_MAX_BYTES,
+                timeout=updates.DOWNLOAD_TIMEOUT_S,
+            )
+            if job.cancelled:
+                return self._staging_cancelled(tag)
+            if not answer["ok"]:
+                return self._staging_failed(tag, self._fetch_failure(answer, sidecar=False))
+            # The downloader compared the bytes with --sha256 already; its
+            # own report is compared too, so a downloader that got it wrong
+            # cannot hand over a file of another hash.
+            if answer.get("sha256") != sha256:
+                self._remove_file(path)
+                return self._staging_failed(
+                    tag,
+                    failure("hash-mismatch", "The download did not match its checksum"),
+                )
+            self._log(f"stage_update {tag}: downloaded {answer.get('bytes')} bytes, {short}")
+
+        # 6. what the zip is
+        try:
+            checked = await asyncio.to_thread(
+                updates.validate_zip, path, version=version, ref=ref
+            )
+        except updates.BadZip as exc:
+            self._remove_file(path)
+            return self._staging_failed(tag, failure("bad-zip", exc.message))
+        if job.cancelled:
+            return self._staging_cancelled(tag)
+
+        # 7. the hand-off's artifact
+        size = os.path.getsize(path)
+        self._log(f"stage_update {tag}: staged {size} bytes, {short}, version {checked['version']}")
+        return {
+            "ok": True,
+            "artifact": "file://" + os.path.abspath(path),
+            "hash": sha256,
+            "build": checked["build"],
+            "version": checked["version"],
+        }
+
+    def _fetch_failure(self, answer: Result, *, sidecar: bool) -> Result:
+        """The downloader's failure as the staging answers it (step 3 and 5)."""
+        code = answer.get("error")
+        status = answer.get("status")
+        message = updates.strip_queries(str(answer.get("message", "")))[:300]
+        if code == "http" and status == 404:
+            what = "checksum file" if sidecar else "zip"
+            return failure("bad-release", f"The release has no {what}")
+        if code == "http":
+            return failure("network", f"HTTP {status}")
+        if code == "network":
+            return failure("network", message or "no answer")
+        if code == "hash-mismatch":
+            return failure("hash-mismatch", "The download did not match its checksum")
+        if code == "too-large":
+            if sidecar:
+                return failure("bad-release", "The release's checksum file could not be read")
+            return failure("bad-zip", f"The download is larger than {updates.ZIP_MAX_BYTES} bytes")
+        if code in ("cancelled", "timeout"):
+            # _fetch's own answers (a cancel, the wall-clock cap), not the
+            # downloader's: passed through as they are.
+            return answer
+        return failure("io", f"The download failed: {message or code}")
+
+    def _staging_failed(self, tag: str, result: Result) -> Result:
+        self._log(f"stage_update {tag}: {result.get('error')}: {result.get('message')}")
+        return result
+
+    def _staging_cancelled(self, tag: str) -> Result:
+        self._log(f"stage_update {tag}: cancelled")
+        return failure("cancelled", "The download was cancelled")
+
+    @staticmethod
+    def _read_sidecar(path: str) -> str:
+        try:
+            with open(path, "rb") as handle:
+                return handle.read(updates.SIDECAR_MAX_BYTES).decode("utf-8", "replace")
+        except OSError:
+            return ""
+
+    @staticmethod
+    def _staged_file_matches(path: str, sha256: str) -> bool:
+        """Step 4: ``path`` is a regular file whose bytes hash to ``sha256``.
+        Anything else at the path (another hash, a symlink) is removed."""
+        try:
+            st = os.lstat(path)
+        except FileNotFoundError:
+            return False
+        if stat.S_ISREG(st.st_mode) and install.sha256_file(path) == sha256:
+            return True
+        os.unlink(path)
+        return False
+
+    @staticmethod
+    def _remove_file(path: str) -> None:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(path)
+
+    def _remove_staging_leftovers(self) -> None:
+        """The sidecar and any part file: nothing of a staging but a
+        verified zip stays in the staged directory."""
+        updates.remove_parts(self.runtime_dir)
+        with contextlib.suppress(OSError):
+            os.unlink(os.path.join(updates.staged_dir(self.runtime_dir), SIDECAR_NAME))
+
+    @guarded
+    async def cancel_update(self) -> Result:
+        """Kill the download in flight; the interrupted ``stage_update``
+        answers ``cancelled`` (and removes the part file on its way out)."""
+        job = self._update
+        if job is None:
+            return {"ok": True, "running": False}
+        job.cancelled = True
+        if job.proc is not None:
+            self._kill(job.proc)
+        self._log("stage_update: cancel requested")
+        return {"ok": True, "running": True}
+
+    async def _cancel_staging(self, why: str) -> None:
+        """``unload``'s cancel: kill, wait for the child, remove its part file."""
+        job = self._update
+        if job is None:
+            return
+        self._log(f"{why}: cancelling the update download")
+        job.cancelled = True
+        proc = job.proc
+        if proc is not None:
+            self._kill(proc)
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(self._until_exit(proc), self.KILL_GRACE)
+        updates.remove_parts(self.runtime_dir)
 
     # ------------------------------------------------------------------
     # matching and ignoring (the Titles page)

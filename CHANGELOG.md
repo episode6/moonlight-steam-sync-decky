@@ -39,6 +39,24 @@ project uses [semantic versioning](https://semver.org/).
   from (`scripts/build_info.py`), except one from a branch whose name has
   a character like `+` or `@`, which CI still builds. See the README's
   "Developing".
+- **The plugin can download and check a build before it is installed.**
+  The backend can now fetch a release's (or a branch build's) zip from
+  this repository on GitHub into `~/homebrew/data/Moonlight Sync/`,
+  confirm it against the release's checksum file and the SHA-256 GitHub
+  reports, and check that it really is a Moonlight Sync build (its name,
+  its version, no root, nothing outside its folder) before anything would
+  hand it to Decky's installer. The updater does not use it yet; nothing
+  is downloaded until it does.
+
+### Changed
+
+- **The bundled CLI also replaces an installed CLI of the same version
+  whose bytes differ.** Until now an equal version was always kept; a
+  build of a branch carries the last release's version number, so its
+  CLI would never have been installed. A newer CLI you installed by hand
+  is still kept, and the plugin never installs an older one. Settings →
+  About says when the bundled CLI is installed. See the README's "The
+  bundled CLI".
 
 ## [0.11.0] - 2026-09-27
 

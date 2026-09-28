@@ -266,10 +266,24 @@ export type ErrorCode =
   | "update-unsupported"
   /** GitHub answered 403 / 429 with its rate limit spent; `retryAt` says when to ask again. */
   | "rate-limited"
-  /** GitHub did not answer, or answered something other than 200. */
+  // Both the frontend's and, since the staging (update spec 3.12.3), the backend's.
+  /**
+   * The frontend's check: GitHub did not answer, or answered something other
+   * than 200. `stage_update`: the download did not complete (no answer, or an
+   * HTTP status other than 200 and 404).
+   */
   | "network"
-  /** GitHub answered 200 with something that is not a list of releases. */
-  | "bad-release";
+  /**
+   * The frontend's check: GitHub answered 200 with something that is not a
+   * list of releases. `stage_update`: the release has no zip or checksum file
+   * (404), its checksum file does not parse, or it names another hash.
+   */
+  | "bad-release"
+  // The staging's own (update spec 3.12.3); nothing is installed after either.
+  /** `stage_update`: the downloaded bytes are not the ones the hash names. */
+  | "hash-mismatch"
+  /** `stage_update`: the download is not a build of this plugin (the message says why). */
+  | "bad-zip";
 
 export interface Failure {
   ok: false;
@@ -281,10 +295,11 @@ export interface Failure {
   minimum?: string;
   stderr?: string;
   /**
-   * Which busy guard answered: a run kind or `"match"` (the runs' guard), or
-   * `"key"` (a key fetch already in flight, spec 3.20.3: its own guard).
+   * Which busy guard answered: a run kind or `"match"` (the runs' guard),
+   * `"key"` (a key fetch already in flight, spec 3.20.3: its own guard), or
+   * `"update"` (a `stage_update` already downloading, update spec 3.12.3).
    */
-  kind?: RunKind | "match" | "key";
+  kind?: RunKind | "match" | "key" | "update";
   timeout_s?: number;
   /** `rate-limited`: when GitHub says to ask again (ISO), `null` when it did not say. */
   retryAt?: string | null;
@@ -352,6 +367,36 @@ export interface CliVersion {
   log_path: string;
   install_error: string | null;
   capabilities: { art_commit: boolean };
+  /**
+   * What the installed plugin's zip says it was built from (its
+   * `build.json`, update spec 3.12.1); `null` for a zip without one (every
+   * release before it existed). Absent from a backend before PR-U4a.
+   */
+  build?: BuildInfo | null;
+}
+
+/** A `build.json` as the backend reads it (update spec 3.12.1 / 3.12.3): the known keys only. */
+export interface BuildInfo {
+  schema: 1;
+  kind: "release" | "branch";
+  /** The tag (`release`) or the branch's name (`branch`). */
+  ref: string;
+  /** The commit, 40 lower-case hex digits. */
+  sha: string;
+  built_at: string | null;
+  run: string | null;
+}
+
+/** `stage_update`'s answer (update spec 3.12.3): a verified zip for Decky's installer. */
+export interface StagedUpdate {
+  /** `file://` and the staged zip's absolute path, raw (not URL-encoded). */
+  artifact: string;
+  /** The zip's sha256, 64 lower-case hex digits. */
+  hash: string;
+  /** The zip's `build.json`, or `null` for a release without one. */
+  build: BuildInfo | null;
+  /** The zip's `package.json` version. */
+  version: string;
 }
 
 /** A host's Wake-on-LAN MAC (spec 3.18), from Moonlight's own host list. */
@@ -585,6 +630,22 @@ export interface Backend {
   start_sgdb_key_fetch(): Promise<Result<{ started: string }>>;
   /** Cancel the fetch in flight; it reports `cancelled` through `sgdb_key_done`. */
   cancel_sgdb_key_fetch(): Promise<Result<{ running: boolean }>>;
+  /**
+   * Download a release's (`version`) or a branch build's (`ref`) zip into the
+   * runtime directory and verify it (update spec 3.12.3); exactly one of the
+   * two. `busy` (kind a run's, `"match"`, `"key"` or `"update"`),
+   * `bad-request`, `network`, `bad-release`, `hash-mismatch`, `bad-zip`,
+   * `timeout` (a download that ran past its limit; `timeout_s` is that
+   * limit), `cancelled` or `io` otherwise.
+   */
+  stage_update(
+    tag: string,
+    sha256: string,
+    version: string | null,
+    ref: string | null,
+  ): Promise<Result<StagedUpdate>>;
+  /** Kill the download in flight; the interrupted `stage_update` answers `cancelled`. */
+  cancel_update(): Promise<Result<{ running: boolean }>>;
   /** `--json search TERM`: candidates in the CLI's order (SGDB first when a key is set). */
   search(term: string): Promise<Result<{ candidates: CandidateEvent[]; notes: string[] }>>;
   /** `match NAME --steam | --sgdb | --none --defer-art`: exactly one of the three. */
@@ -648,6 +709,8 @@ const CALLABLES = [
   "test_sgdb_key",
   "start_sgdb_key_fetch",
   "cancel_sgdb_key_fetch",
+  "stage_update",
+  "cancel_update",
   "search",
   "pin",
   "unpin",
