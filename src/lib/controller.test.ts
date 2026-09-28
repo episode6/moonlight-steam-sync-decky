@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { fixtureText, loadFixture } from "../test/fixtures";
 import type {
   Backend,
+  BuildInfo,
   CliEvent,
   DefaultLayout,
   LayoutEntry,
@@ -291,6 +292,8 @@ class FakeUi implements UiPort {
   bodies: string[] = [];
   /** What the updater's GET answers (an `Error` rejects), and every URL it was asked for. */
   netAnswer: HttpAnswer | Error = NO_RELEASES;
+  /** Answers for particular URLs (a branch's `build.json`), before `netAnswer`. */
+  netAnswers: Record<string, HttpAnswer | Error> = {};
   netCalls: string[] = [];
   /** Pending GETs, when `holdNet` is set: resolve one to let its check finish. */
   holdNet = false;
@@ -328,8 +331,9 @@ class FakeUi implements UiPort {
       get: async (url) => {
         this.netCalls.push(url);
         if (this.holdNet) await new Promise<void>((resolve) => this.held.push(resolve));
-        if (this.netAnswer instanceof Error) throw this.netAnswer;
-        return this.netAnswer;
+        const reply = this.netAnswers[url] ?? this.netAnswer;
+        if (reply instanceof Error) throw reply;
+        return reply;
       },
     };
   }
@@ -2319,7 +2323,8 @@ describe("the updater (update spec 3.6)", () => {
   /** Backend callables that would run a Moonlight command (Decision 66), or write anything. */
   const MOONLIGHT_OR_WRITES = ["check_host", "list_apps", "list_cached", "add_host", "start_sync", "start_art_refetch", "start_remove_all", "wake_host"];
 
-  const cliVersion = (plugin: string | null = "0.12.0", loader = "v3.2.9") => ({
+  const cliVersion = (plugin: string | null = "0.12.0", loader = "v3.2.9", build: BuildInfo | null = null) => ({
+    build,
     ok: true,
     installed: "0.4.0",
     bundled: "0.4.0",
@@ -2350,6 +2355,15 @@ describe("the updater (update spec 3.6)", () => {
     return controller;
   }
 
+  /** `installUpdate(tag)` answers false with one toast, and nothing is asked of Decky. */
+  const refused = async (controller: Controller, tag: string, text: string) => {
+    order = [];
+    expect(await controller.installUpdate(tag)).toBe(false);
+    expect(ui.requests).toEqual([]);
+    expect(ui.leaves).toBe(0);
+    expect(order).toEqual([`toast:${text}`]);
+  };
+
   describe("the check", () => {
     it("the load starts one, last, and does not wait for it", async () => {
       ui.netAnswer = RELEASES_ANSWER;
@@ -2364,7 +2378,15 @@ describe("the updater (update spec 3.6)", () => {
       ui.held.forEach((resolve) => resolve());
       await flush();
       expect(controller.state.updatePhase).toBe("idle");
-      expect(controller.state.update?.releases?.map((r) => r.tag)).toEqual(["v0.13.0", "v0.12.1", "v0.12.0", "v0.11.0"]);
+      expect(controller.state.update?.releases?.map((r) => r.tag)).toEqual([
+        "v0.13.0",
+        "v0.12.1",
+        "v0.12.0",
+        "v0.11.0",
+        "build-feature-x",
+        "build-main",
+        "build-odd-title",
+      ]);
       expect(controller.state.update?.checkedAt).not.toBeNull();
       // the automatic check's one toast: an update was found
       expect(ui.bodies).toEqual([OFFERED]);
@@ -2395,7 +2417,7 @@ describe("the updater (update spec 3.6)", () => {
       // Check now still asks
       await controller.checkUpdates(true);
       expect(ui.netCalls).toHaveLength(1);
-      expect(controller.state.update?.releases).toHaveLength(4);
+      expect(controller.state.update?.releases).toHaveLength(7); // 4 releases, 3 branch builds
       expect(ui.bodies).toEqual([]); // a manual check toasts no offer: the page shows it
     });
 
@@ -2409,7 +2431,7 @@ describe("the updater (update spec 3.6)", () => {
       // a press still asks
       await controller.checkUpdates(true);
       expect(ui.netCalls).toHaveLength(1);
-      expect(controller.state.update?.releases).toHaveLength(4);
+      expect(controller.state.update?.releases).toHaveLength(7); // 4 releases, 3 branch builds
     });
 
     it("none on a loader too old to install", async () => {
@@ -2559,7 +2581,7 @@ describe("the updater (update spec 3.6)", () => {
       await controller.setEnabled(true);
       await flush();
       expect(ui.netCalls).toHaveLength(2);
-      expect(controller.state.update?.releases).toHaveLength(4);
+      expect(controller.state.update?.releases).toHaveLength(7); // 4 releases, 3 branch builds
       expect(ui.bodies).toEqual([OFFERED]);
     });
 
@@ -2654,14 +2676,6 @@ describe("the updater (update spec 3.6)", () => {
       expect(names()).toContain("start_sync");
     });
 
-    const refused = async (controller: Controller, tag: string, text: string) => {
-      order = [];
-      expect(await controller.installUpdate(tag)).toBe(false);
-      expect(ui.requests).toEqual([]);
-      expect(ui.leaves).toBe(0);
-      expect(order).toEqual([`toast:${text}`]);
-    };
-
     it("refused while the plugin is off", async () => {
       const controller = await offering();
       await controller.setEnabled(false);
@@ -2725,6 +2739,129 @@ describe("the updater (update spec 3.6)", () => {
       expect(controller.state.update?.releases?.length).toBeGreaterThan(0);
       expect(ui.bodies).toEqual([]); // no toast: nothing installable
       await refused(controller, "v0.13.0", "That version cannot be installed");
+    });
+  });
+
+  describe("channels (update spec 3.12.4)", () => {
+    const BUILD_MAIN_URL = `${DOWNLOAD_BASE}/build-main/build.json`;
+    const BUILD_MAIN: HttpAnswer = { ...NO_RELEASES, text: fixtureText("update/build-main.json") };
+    const MAIN_SHA = "abc1234def5678abc1234def5678abc1234def56";
+    const build = (ref: string, sha = MAIN_SHA, kind: BuildInfo["kind"] = "branch"): BuildInfo => ({
+      schema: 1,
+      kind,
+      ref,
+      sha,
+      built_at: null,
+      run: null,
+    });
+    const BRANCH_REFUSED = "Builds of a branch cannot be installed yet";
+
+    async function following(channel: string, answers: Partial<Record<keyof Backend, unknown>> = {}) {
+      settingsFile.update_channel = channel;
+      ui.netAnswer = RELEASES_ANSWER;
+      ui.netAnswers = { [BUILD_MAIN_URL]: BUILD_MAIN };
+      return loaded(answers);
+    }
+
+    it("stable asks for the list only, never a build.json", async () => {
+      const controller = await following("stable");
+      expect(ui.netCalls).toEqual([RELEASES_API]);
+      expect(ui.bodies).toEqual([OFFERED]);
+      await controller.checkUpdates(true);
+      expect(ui.netCalls.filter((url) => url !== RELEASES_API)).toEqual([]);
+    });
+
+    it("a channel that does not parse is stable", async () => {
+      for (const channel of ["branch:", "nightly", "branch:a b"]) {
+        ui.netCalls = [];
+        ui.bodies = [];
+        await following(channel);
+        expect(ui.netCalls, channel).toEqual([RELEASES_API]);
+        expect(ui.bodies, channel).toEqual([OFFERED]);
+      }
+    });
+
+    it("a branch channel reads that branch's build.json and announces its build", async () => {
+      const controller = await following("branch:main");
+      expect(ui.netCalls).toEqual([RELEASES_API, BUILD_MAIN_URL]);
+      const entry = controller.state.update?.releases?.find((r) => r.tag === "build-main");
+      expect(entry).toMatchObject({ kind: "branch", ref: "main", build: { ref: "main", sha: MAIN_SHA } });
+      // the automatic check's toast, with the table's label
+      expect(ui.bodies).toEqual(["Version main @ abc1234 is available. Settings → Updates"]);
+      expect(ui.requests).toEqual([]);
+      expect(names()).toEqual([]);
+    });
+
+    it("never another branch's build.json", async () => {
+      await following("branch:feature/x");
+      expect(ui.netCalls).toEqual([RELEASES_API, `${DOWNLOAD_BASE}/build-feature-x/build.json`]);
+      ui.netCalls = [];
+      await following("branch:gone");
+      expect(ui.netCalls).toEqual([RELEASES_API]);
+      expect(ui.bodies).toEqual([]);
+    });
+
+    it("the branch's own build installed: nothing announced", async () => {
+      await following("branch:main", { cli_version: cliVersion("0.12.0", "v3.2.9", build("main")) });
+      expect(ui.netCalls).toEqual([RELEASES_API, BUILD_MAIN_URL]);
+      expect(ui.bodies).toEqual([]);
+    });
+
+    it("a build.json that cannot be read fails nothing and announces nothing", async () => {
+      for (const reply of [{ ...NO_RELEASES, status: 404, text: "Not Found" }, new TypeError("Failed to fetch")]) {
+        ui.bodies = [];
+        settingsFile.update_channel = "branch:main";
+        ui.netAnswer = RELEASES_ANSWER;
+        ui.netAnswers = { [BUILD_MAIN_URL]: reply };
+        const controller = await loaded();
+        expect(controller.state.update?.error).toBeNull();
+        expect(controller.state.update?.releases).toHaveLength(7);
+        expect(controller.state.update?.releases?.find((r) => r.tag === "build-main")).toMatchObject({ build: null });
+        expect(ui.bodies).toEqual([]);
+      }
+    });
+
+    it("a branch build is never handed to Decky: refused with a toast, nothing asked", async () => {
+      const controller = await following("branch:main");
+      ui.bodies = [];
+      await refused(controller, "build-main", BRANCH_REFUSED);
+      expect(names()).toEqual([]);
+      expect(controller.state.updatePhase).toBe("idle");
+      // another branch's build is no offer at all
+      await refused(controller, "build-feature-x", "That version cannot be installed");
+    });
+
+    it("on a branch channel, Install another version still installs a release", async () => {
+      const controller = await following("branch:main");
+      expect(await controller.installUpdate("v0.13.0")).toBe(true);
+      expect(ui.requests).toEqual([
+        { artifact: ZIP_URL, name: "Moonlight Sync", version: "0.13.0", hash: "a".repeat(64), installType: 2 },
+      ]);
+    });
+
+    it("stable with a branch build installed: a switch back to the newest release, by its URL, type 4", async () => {
+      const controller = await following("stable", { cli_version: cliVersion("0.14.0", "v3.2.9", build("main")) });
+      expect(ui.bodies).toEqual([OFFERED]);
+      expect(await controller.installUpdate("v0.13.0")).toBe(true);
+      expect(await controller.installUpdate("v0.12.0")).toBe(true);
+      expect(ui.requests).toEqual([
+        { artifact: ZIP_URL, name: "Moonlight Sync", version: "0.13.0", hash: "a".repeat(64), installType: 4 },
+        {
+          artifact: `${DOWNLOAD_BASE}/v0.12.0/Moonlight-Sync.zip`,
+          name: "Moonlight Sync",
+          version: "0.12.0",
+          hash: "b".repeat(64),
+          installType: 4,
+        },
+      ]);
+    });
+
+    it("a release's build.json is a release: an update, not a switch", async () => {
+      const controller = await following("stable", {
+        cli_version: cliVersion("0.12.0", "v3.2.9", build("v0.12.0", MAIN_SHA, "release")),
+      });
+      expect(await controller.installUpdate("v0.13.0")).toBe(true);
+      expect(ui.requests.map((r) => r.installType)).toEqual([2]);
     });
   });
 });

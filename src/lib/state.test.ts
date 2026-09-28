@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { loadFixture } from "../test/fixtures";
-import type { CliVersion, EntryEvent, KeyState, Pending, Settings, SyncDonePayload } from "./cli";
+import type { BuildInfo, CliVersion, EntryEvent, KeyState, Pending, Settings, SyncDonePayload } from "./cli";
 import { eventsOf } from "./events";
 import { updateRowView, type Release } from "./updates";
 import {
@@ -561,6 +561,46 @@ describe("updateRowView, the panel's Update row (update spec 3.7)", () => {
     expect(updateRowView({ ...state, update: { ...state.update, error: failed } })).toEqual({
       text: "Update to 0.13.0",
       tag: "v0.13.0",
+    });
+  });
+
+  describe("on a channel (update spec 3.12.4; the row's text is 3.7's)", () => {
+    const sha = "abc1234def5678abc1234def5678abc1234def56";
+    const build: BuildInfo = { schema: 1, kind: "branch", ref: "main", sha, built_at: null, run: null };
+    const main: Release = {
+      tag: "build-main",
+      kind: "branch",
+      ref: "main",
+      version: null,
+      updatedAt: "2026-10-26T08:00:00Z",
+      publishedAt: "2026-10-10T08:00:00Z",
+      notes: "",
+      size: 1,
+      digest: "e".repeat(64),
+      build,
+    };
+    const onChannel = (channel: string, installedBuild: BuildInfo | null = null) => ({
+      ...offering(),
+      settings: { update_channel: channel } as Settings,
+      cliVersion: { ...cliVersion, build: installedBuild },
+      update: { releases: [release, main], checkedAt: "2026-10-26T09:00:00Z", error: null },
+    });
+
+    it("a branch channel offers its build, labelled <ref> @ <first 7 of sha>", () => {
+      expect(updateRowView(onChannel("branch:main"))).toEqual({ text: "Update to main @ abc1234", tag: "build-main" });
+    });
+
+    it("gone when that build is installed, or the branch has none", () => {
+      expect(updateRowView(onChannel("branch:main", build))).toBeNull();
+      expect(updateRowView(onChannel("branch:gone"))).toBeNull();
+      const unread = onChannel("branch:main");
+      expect(updateRowView({ ...unread, update: { ...unread.update, releases: [release, { ...main, build: null }] } })).toBeNull();
+    });
+
+    it("stable with a branch build installed offers the newest release", () => {
+      expect(updateRowView(onChannel("stable", build))).toEqual({ text: "Update to 0.13.0", tag: "v0.13.0" });
+      // a hand-broken channel is stable
+      expect(updateRowView(onChannel("nightly", build))).toEqual({ text: "Update to 0.13.0", tag: "v0.13.0" });
     });
   });
 });

@@ -83,9 +83,11 @@ import {
   type HostAppKey,
 } from "./state";
 import {
+  channelOf,
   CHECK_MIN_INTERVAL_MS,
   checkReleases,
   installable,
+  installedOf,
   installRequestOf,
   loaderSupported,
   offerOf,
@@ -228,6 +230,8 @@ export const UPDATE_TEXTS = {
   walking: "Wait for the layouts to be applied",
   keyFetch: "Finish or cancel the key fetch first",
   unknownVersion: "That version cannot be installed",
+  /** Transitional (update spec 3.12.4): a branch build is never handed to Decky by URL; PR-U4c stages it and drops this. */
+  branchBuild: "Builds of a branch cannot be installed yet",
   refused: "Decky did not accept the install. Update with install.sh from Desktop Mode",
 } as const;
 
@@ -1041,7 +1045,10 @@ export class Controller {
    * before a stored `rate-limited` failure's `retryAt`, nor for a manual
    * check within `CHECK_MIN_INTERVAL_MS` of the last attempt; a manual one
    * then toasts the stored failure, if any. An automatic check toasts only
-   * an update it found, a manual one only its failure. The updater makes
+   * an offer it found, a manual one only its failure. The check follows
+   * the selected channel (`channelOf`, update spec 3.12.4): on a branch
+   * channel it also reads that branch's `build.json`, so a new build of a
+   * followed branch is announced as a release is. The updater makes
    * no backend call at all, so no Moonlight command (Decision 66).
    */
   async checkUpdates(manual: boolean): Promise<void> {
@@ -1060,8 +1067,9 @@ export class Controller {
     const epoch = this.updateEpoch;
     this.store.set({ updatePhase: "checking" });
     let result: CheckResult;
+    const channel = channelOf(this.state.settings);
     try {
-      result = await checkReleases(this.ui.net(), () => this.timing.now());
+      result = await checkReleases(this.ui.net(), channel, () => this.timing.now());
     } finally {
       if (epoch === this.updateEpoch) this.store.set({ updatePhase: "idle" });
     }
@@ -1071,7 +1079,7 @@ export class Controller {
     if (result.ok) {
       const checkedAt = new Date(this.timing.now()).toISOString();
       this.store.set({ update: { releases: result.releases, checkedAt, error: null } });
-      const offer = offerOf(this.state.cliVersion?.plugin_version, result.releases);
+      const offer = offerOf(installedOf(this.state.cliVersion), result.releases, channel);
       if (!manual && offer) this.ui.toast("Moonlight Sync", updateAvailableToast(offer.label));
     } else {
       this.store.set({ update: { ...current, error: result } });
@@ -1092,7 +1100,10 @@ export class Controller {
   /**
    * *Update to …* and *Install another version* (update spec 3.6): only
    * ever on a press, and only for a release `installable()` lists, which
-   * has GitHub's sha256. Refused with a toast, and nothing asked of Decky,
+   * has GitHub's sha256 (a `switch` back to a release from a branch build
+   * included, install type 4). The channel's branch build, `offerOf`'s
+   * `switch`, is refused with a toast until PR-U4c stages it: it is never
+   * handed to Decky by URL. Refused with a toast, and nothing asked of Decky,
    * while off, while a run is going, during the layout walk, during a key
    * fetch, and when this loader cannot install. Otherwise the settings page
    * is left first (Decision U4: Decky unloads the plugin under it), then
@@ -1114,10 +1125,15 @@ export class Controller {
     if (!this.updatesSupported()) return refuse(errorText({ ok: false, error: "update-unsupported", message: "" }));
     const loader = this.state.cliVersion?.loader_version;
     const installer = this.ui.installer();
-    const offer = installable(this.state.cliVersion?.plugin_version, this.state.update?.releases ?? null).find(
-      (candidate) => candidate.tag === tag,
-    );
+    const installed = installedOf(this.state.cliVersion);
+    const releases = this.state.update?.releases ?? null;
+    const channelOffer = offerOf(installed, releases, channelOf(this.state.settings));
+    const offer =
+      installable(installed, releases).find((candidate) => candidate.tag === tag) ??
+      (channelOffer?.tag === tag ? channelOffer : null);
     if (!offer) return refuse(UPDATE_TEXTS.unknownVersion);
+    // Never by URL: a rolling asset can change under its digest (update spec 3.12.3).
+    if (offer.kind === "branch") return refuse(UPDATE_TEXTS.branchBuild);
     const request = installRequestOf(offer, loader);
     this.store.set({ updatePhase: "asking" });
     try {

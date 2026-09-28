@@ -338,7 +338,17 @@ export interface Settings {
   default_layout: DefaultLayout | null;
   /** Check for a newer release when the plugin loads (update spec 3.3); absent reads as on. */
   update_check?: boolean;
+  /**
+   * What the updater follows (update spec 3.12.4): `"stable"`, the releases,
+   * or `"branch:<ref>"`, that branch's rolling build. Absent (a backend
+   * before it) reads as `"stable"`, and so does anything `updates.ts`'s
+   * `channelOf` cannot read; the backend refuses to store such a value.
+   */
+  update_channel?: string;
 }
+
+/** `update_channel`'s two forms, as `updates.ts`'s `channelOf` answers them. */
+export type UpdateChannel = "stable" | `branch:${string}`;
 
 export type SettingsPatch = Partial<
   Pick<
@@ -352,7 +362,7 @@ export type SettingsPatch = Partial<
     | "streaming_collection"
     | "update_check"
   >
->;
+> & { update_channel?: UpdateChannel };
 
 export interface CliVersion {
   installed: string | null;
