@@ -87,9 +87,9 @@ Breaking any of these is a blocker, not a judgement call.
     a file or scope: stop and escalate (spec §5), do not improvise.
 12. **Updates go through Decky's installer, confirmed by the user.** The
     plugin never writes its own plugin directory. It hands Decky
-    (`utilities/install_plugin`) either a release asset's URL on this
-    repository or a zip its backend staged and verified, always with a
-    non-empty sha256, the name `Moonlight Sync` and a version that is
+    (`utilities/install_plugin`) a zip its backend staged and verified,
+    always with a non-empty sha256, the name `Moonlight Sync` and a
+    version that is
     never `dev`. It never calls `utilities/confirm_plugin_install`: the
     confirmation is the user's, in Decky's dialog. Download URLs are
     built from constants and a validated tag, never taken from a
@@ -103,11 +103,16 @@ hand-off only follows a button press); the updater is silent while the
 plugin is off (no check, no toast, no panel row, no *Updates* page); it
 never runs a Moonlight command and never touches the Steam directory; the
 SteamGridDB key is not involved; an update is never offered without a
-hash. `tests/test_hard_rules.py` greps `src/` for rule 12's names:
-`confirm_plugin_install` nowhere, `DeckyBackend` and `utilities/` only in
-`lib/decky.ts` (and its test), `api.github.com` only in `lib/updates.ts`
-(and its test), `fetchNoCors` only in `instance.tsx`, the
-repository's slug only in `updates.ts` and `decky.ts` (and their tests).
+hash. Since the staged hand-off (update spec §3.12.5, Decision U17) every
+install, a release's included, is downloaded and verified by the backend
+before Decky is asked, so no install can remove the plugin: an install
+that cannot succeed is refused before Decky removes anything, and Decky
+is never handed a URL. `tests/test_hard_rules.py` greps `src/` for rule
+12's names: `confirm_plugin_install` nowhere, `DeckyBackend` and
+`utilities/` only in `lib/decky.ts` (and its test), `api.github.com` only
+in `lib/updates.ts` (and its test), `fetchNoCors` only in `instance.tsx`,
+the repository's slug and `releases/download` only in `updates.ts` (and
+its test), so no download URL is built anywhere else.
 
 ## Module map
 
@@ -130,7 +135,10 @@ DEVICE-CHECKLIST.md         every on-device check (PR-0 probes, PR-5/6/7/8 items
                             §3.17-§3.20; the key fetch is §14, the panel's launch and
                             layout rows §15, updating from the plugin §16: V1-V7 of
                             update spec §3.9, via *Install another version* ->
-                            reinstall until a newer release exists), in order
+                            reinstall until a newer release exists; the staged
+                            hand-off and the channels §17: V8-V10 of update spec
+                            §3.12.5 and the branch's `build.json` through the
+                            loader's fetch), in order
 main.py                     thin decky Plugin: builds Backend, one line per callable;
                             no __init__ and `_backend` / `_startup` as class attributes, with
                             `_get` / `_ready` as classmethods, so it is correct whether the
@@ -323,9 +331,14 @@ src/lib/                    pure modules (vitest)
                             `update-unsupported`, `rate-limited` with "Try again
                             <timeUntil(retryAt)>" (errorText's optional `now`),
                             `network`, `bad-release`, which the staging answers
-                            too; its own `hash-mismatch` / `bad-zip` and `busy`
-                            kind `"update"` have no text yet and fall to the
-                            message until PR-U4c), the staging's types
+                            too; the staging's own, update spec §3.12.5:
+                            `hash-mismatch`, `bad-zip` and `busy` kind `"update"`),
+                            stagingErrorText() (a `stage_update` failure's text:
+                            errorText's, except a `bad-release` with a message,
+                            which is the backend's words for the user, first
+                            letter upper-cased; the controller's staging is its one
+                            caller, so the frontend check's texts stay errorText's),
+                            the staging's types
                             (update spec 3.12.3: `stage_update` / `cancel_update`,
                             StagedUpdate, BuildInfo, CliVersion's `build`),
                             Settings' / SettingsPatch's `update_channel` and the
@@ -334,8 +347,9 @@ src/lib/                    pure modules (vitest)
                             SgdbKeyDonePayload (its failure `error` narrowed to
                             SgdbKeyFetchError) (spec 3.20)
   events.ts                 NDJSON parsing, lastOf/eventsOf
-  updates.ts                the updater's logic (update spec §3.4, §3.7, §3.12.4): REPO
-                            (the repository's slug, spelled here and in decky.ts only),
+  updates.ts                the updater's logic (update spec §3.4, §3.7, §3.12.4,
+                            §3.12.5): REPO (the repository's slug, spelled here only,
+                            and the only file under src/ with a download URL),
                             RELEASES_API, DOWNLOAD_BASE, ASSET, PLUGIN_NAME,
                             MIN_UPDATER_VERSION ([0, 12, 0], [verify] at release time),
                             MIN_LOADER_VERSION, INSTALL_TYPES_LOADER_VERSION,
@@ -348,7 +362,8 @@ src/lib/                    pure modules (vitest)
                             BranchBuild: `kind` "branch", `ref`, `version` null,
                             `updatedAt` the zip's upload, a digest always, `build`
                             null until fetched) / Offer / Installed / ChannelOption /
-                            CheckResult / UpdateInfo / UpdatePhase; parseReleases()
+                            CheckResult / UpdateInfo / UpdatePhase (idle / checking /
+                            downloading / asking); parseReleases()
                             (phase 1's releases unchanged: drafts, prereleases,
                             non-vX.Y.Z tags and releases without the zip skipped, the
                             zip's `digest` as 64 lower-case hex or null, highest
@@ -381,17 +396,22 @@ src/lib/                    pure modules (vitest)
                             a `switch` from a branch build, else update / reinstall /
                             downgrade, empty when the installed version does not
                             parse), installType(), loaderSupported(),
-                            updateCheckEnabled(), installRequestOf() (throws without
-                            a digest and for a branch build: never handed to Decky
-                            by URL), branchVersionText() (`<zip version> (<ref> @
-                            <sha7>)`, for PR-U4c's staged hand-off; decky.ts's
-                            version check does not accept it yet), and the texts:
+                            updateCheckEnabled(), stagedMatches(offer, staged) (the
+                            staging answered what the offer asked for: its digest
+                            lower-cased; a release's version exactly; a branch
+                            build's `build.json` of kind "branch" with the offer's
+                            ref and a commit), installRequestOf(offer, staged,
+                            loader) (the staged `file://` artifact and hash, the
+                            name, installType(action), and the release's version or
+                            branchVersionText() of the staged zip's own version and
+                            `build.json`: `<zip version> (<ref> @ <sha7>)`, the
+                            shape decky.ts accepts), and the texts:
                             updateRowView() (the panel's row, on the channel),
                             installedText() (a branch build's ref, sha7 and built
                             time), latestText(…, channel) ("No build of <ref> is
                             published"; a branch offer's "built <when>"),
                             versionLabel(), installButtonText() (`Switch to` for a
-                            switch)
+                            switch; `Downloading…` / `Waiting for Decky…`)
   updates.test.ts           the fixture parsed (phase 1's releases unchanged, then the
                             branch builds; every skip, the ref rule, the duplicate
                             ref), every digest form, assetUrl's refusals, one test per
@@ -399,32 +419,48 @@ src/lib/                    pure modules (vitest)
                             selected branch only and its failures, parseBuild,
                             channelOf / channelsOf, one test per row of §3.12.4's
                             offer table and its edges, installable,
-                            installType / loaderSupported, installRequestOf,
+                            installType / loaderSupported, stagedMatches,
+                            installRequestOf over a staged answer,
                             branchVersionText, REF_RE, the texts
-  decky.ts                  the Decky seam (update spec §3.5), the one module touching
-                            Decky's globals (hard rule 12): INSTALL_ROUTE,
-                            RELEASE_URL_PREFIX / RELEASE_ASSET / INSTALL_NAME (literals,
-                            not imported from updates.ts, so the allowlist does not
-                            move with it), InstallRequest, DeckyInstaller,
+  decky.ts                  the Decky seam (update spec §3.5, §3.12.5), the one module
+                            touching Decky's globals (hard rule 12): INSTALL_ROUTE,
+                            FILE_ARTIFACT_PREFIX (`file:///`), STAGED_DIR /
+                            STAGED_FILE_PREFIX / STAGED_FILE_SUFFIX /
+                            STAGED_HASH_DIGITS (the backend's `staged_path` name,
+                            spelled here; test_hard_rules.py holds the two equal),
+                            INSTALL_NAME, REF_RE (updates.ts's, spelled here too;
+                            decky.test.ts holds them equal): literals, nothing
+                            imported from updates.ts, so the allowlist does not move
+                            with it; InstallRequest, DeckyInstaller,
                             deckyInstaller(scope = globalThis): the router is
                             `scope.DeckyBackend`, else `scope.opener.DeckyBackend`,
                             every read guarded; request() reads each field once and
-                            refuses (calling nothing) unless the artifact is exactly
-                            `<prefix><tag>/Moonlight-Sync.zip` (a TAG_RE tag, not only
-                            dots; no `..`, `?`, `#`), the hash is 64 lower-case hex
-                            digits (Decky compares against a lower-case hexdigest and
-                            a mismatch removes the plugin), the name is `Moonlight
-                            Sync`, the version is non-empty, not `dev` in any case and
-                            of `[0-9A-Za-z.+-]`, and the install type an integer 1-4;
-                            then one positional `call(INSTALL_ROUTE, artifact, name,
-                            version, hash, installType)`, false when it throws
+                            refuses (calling nothing) unless the hash is 64
+                            lower-case hex digits, the artifact is exactly `file://`
+                            and an absolute path ending in
+                            `/update/staged/Moonlight-Sync-<the hash's first 12>.zip`
+                            (no URL of any scheme, no empty / `.` / `..` step, no
+                            backslash, control character, `?`, `#` or `%`; a space is
+                            fine, Decky reads the path raw), the name is `Moonlight
+                            Sync`, the version is a release's (non-empty, not `dev` in
+                            any case, of `[0-9A-Za-z.+-]`) or exactly `<such a
+                            version> (<REF_RE ref> @ <7 lower-case hex>)`, and the
+                            install type an integer 1-4; then one positional
+                            `call(INSTALL_ROUTE, artifact, name, version, hash,
+                            installType)`, false when it throws
   decky.test.ts             the router on the scope / on `opener` / absent / behind a
-                            throwing getter, the call's arguments, every refusal (with
-                            the encoded, backslash, whitespace and getter cases), the
-                            constants equal to updates.ts's
+                            throwing getter, the call's arguments (the staged path
+                            raw, a space in it), branch builds' versions, every
+                            refusal with nothing called (every URL: the release's,
+                            http, file://host/, file:/, FILE:///, relative paths, the
+                            name mid-path, another zip under the runtime directory, a
+                            hash whose first 12 are not the file's; the step,
+                            backslash, query, percent, control-character and getter
+                            cases; every version form), REF_RE equal to updates.ts's
   state.ts                  AppState, Store, reducers (runs, counters, stream map),
                             `update` (the updater's releases / checkedAt / error, null
-                            while off) and `updatePhase` (idle / checking / asking),
+                            while off) and `updatePhase` (idle / checking /
+                            downloading / asking),
                             `titlesEpoch` (bumped by a match-cache reset; a mounted
                             TitlesPage re-lists off it), `sgdbKey` (sgdb_key_state:
                             source + hint, never the key) and `keyFetch` ({state} of
@@ -470,34 +506,53 @@ src/lib/                    pure modules (vitest)
                             cli_version() does not ask twice; the empty state, then
                             checkUpdates(false) when the settings were read (a
                             failed get_settings asks nothing), update_check is on
-                            and the loader is supported), checkUpdates(manual) (nothing
-                            unless idle and on; no request before a rate-limited
-                            retryAt, nor for Check now within CHECK_MIN_INTERVAL_MS,
-                            which toasts the stored failure; checkReleases on
-                            channelOf(settings), offerOf over installedOf(cliVersion)
-                            and that channel, so a followed branch's new build is
-                            announced as a release is; the automatic check
-                            toasts only an offer, a manual one only its failure; a
+                            and the loader is supported), checkUpdates(manual,
+                            {fresh, quiet}) (nothing unless idle and on; no request
+                            before a rate-limited retryAt, nor for Check now within
+                            CHECK_MIN_INTERVAL_MS unless `fresh`, which toasts the
+                            stored failure; checkReleases on channelOf(settings),
+                            offerOf over installedOf(cliVersion) and that channel,
+                            so a followed branch's new build is announced as a
+                            release is; the automatic check toasts only an offer, a
+                            manual one only its failure, a `quiet` one nothing; a
                             failure keeps the last releases; an epoch drops a check
-                            that lands after the plugin went off),
-                            updatesSupported(), setUpdateCheck(),
-                            installUpdate(tag) (refused with a toast while off, during
-                            a run, the walk or a key fetch, when unsupported, for a
-                            tag neither in installable() nor the channel's offer, and,
-                            until PR-U4c stages it, for a branch build ("Builds of a
-                            branch cannot be installed yet", nothing asked of Decky);
-                            a `switch` back to a release goes by its URL, install
-                            type 4; silently while not idle; else
-                            `asking`, leaveSettings(), then installer().request(), a
-                            toast when Decky did not take it, `idle`), run() answers
-                            "An update is being installed" and restartRow() starts
-                            nothing while `asking`, i.e. during the hand-off only:
+                            that lands after the plugin went off; answers `checked`
+                            / `failed` / `skipped`), updatesSupported(),
+                            setUpdateCheck(), installUpdate(tag) (update spec
+                            §3.12.5, in this order: refused with a toast while off,
+                            during a run, the walk or a key fetch, when unsupported,
+                            silently while not idle; on a branch channel a
+                            `fresh, quiet` check first, whose failure (or a stored
+                            retryAt) ends the install with its errorText, and whose
+                            result without an offer for the tag with latestText's
+                            text, the refusals asked again after it; the offer from
+                            installable() then the channel's offerOf, else "That
+                            version cannot be installed"; `downloading` and
+                            stage_update(tag, digest, version | null, ref | null),
+                            a failure toasted with stagingErrorText, `cancelled`
+                            silently; stagedMatches() else bad-zip's text; then
+                            `asking`, leaveSettings(), installer().request() with
+                            installRequestOf(offer, staged), a toast when Decky did
+                            not take it; `idle` in every path, a throw included; an
+                            answer after the plugin went off lands nowhere, by the
+                            same epoch as a check), cancelUpdate() (cancel_update()
+                            while `downloading`, nothing otherwise; a refused cancel
+                            toasted), setUpdateChannel(channel) (the *Channel*
+                            picker, after the page's confirm: nothing for the
+                            channel already selected or while not idle;
+                            setSettings({update_channel}), a refusal toasted and no
+                            check, else a `fresh` manual check of the new channel),
+                            run() answers "An update is being installed" and
+                            restartRow() starts nothing while `downloading` or
+                            `asking`, i.e. during the install only:
                             `utilities/install_plugin` resolves once Decky has shown
                             its dialog, before the user confirms, so a run started
                             behind the open dialog is not refused (update spec 3.8),
-                            setEnabled(false) clears `update`, setEnabled(true) runs
-                            loadUpdates(). The updater calls no backend callable but
-                            set_settings,
+                            setEnabled(false) cancels a download in flight
+                            (cancel_update()) and clears `update`,
+                            setEnabled(true) runs loadUpdates(). The updater calls
+                            no backend callable but set_settings, stage_update and
+                            cancel_update,
                             wakeHost() (spec 3.18: `wake_host` on the active host, a
                             toast either way, never held back),
                             refreshSgdbKey(), fetchSgdbKey() (spec 3.20.4:
@@ -779,14 +834,21 @@ src/components/             adoptDefault (inspectLayout -> refusal toasts -> Con
                             side menus as the header's buttons do), SyncProgress,
                             RestartModal, SettingsPage (Host, Titles, Artwork,
                             Advanced, Updates, About; while off none of them),
-                            UpdatesPage (update spec §3.7: *Installed*, *Latest*
-                            with *Check now*, the offer's install button, *What's new
-                            in X* in About's log-box style, *Check for updates
-                            automatically*, *Install another version* over
-                            installable() / versionLabel(), all on channelOf(settings)
-                            (no *Channel* picker until PR-U4c); only *Installed* and the
-                            unsupported text when !updatesSupported(); no confirm of
-                            its own, Decky's dialog is it), HostPage (no MAC field since
+                            UpdatesPage (update spec §3.7, §3.12.5: *Installed*,
+                            *Channel* (a DropdownItem over channelsOf() on
+                            channelOf(settings), disabled unless idle; a branch
+                            asks first with a ConfirmModal through showModal,
+                            "Follow <ref>?", as Advanced's confirms are shown;
+                            *Releases* asks nothing; then setUpdateChannel()),
+                            *Latest* with *Check now*, the offer's install button
+                            (`Downloading…` / `Waiting for Decky…`), a *Cancel*
+                            ButtonItem under it while `downloading`
+                            (cancelUpdate()), *What's new in X* in About's log-box
+                            style, *Check for updates automatically*, *Install
+                            another version* over installable() / versionLabel();
+                            only *Installed* and the unsupported text when
+                            !updatesSupported(); no confirm of its own before an
+                            install, Decky's dialog is it), HostPage (no MAC field since
                             2026-09-26: Moonlight's list is the one Wake source),
                             TitlesPage (layout text; the *Layout* menu:
                             *Choose layout…* and *Use as the default layout*, which
@@ -1049,18 +1111,23 @@ And `main.py`'s `_uninstall` stays `pass`: Decky's installer stops the old
 copy with `stop(uninstall=True)` on every update, not only on a real
 uninstall, so anything there would run at each update (hard rule 12);
 `tests/test_main.py` holds it to returning `None` and writing, removing
-and spawning nothing. Everything else of the updater is the frontend's
+and spawning nothing. The check and the hand-off are the frontend's
 (`updates.ts`, `decky.ts`, the controller's `loadUpdates` /
-`checkUpdates` / `installUpdate`): the backend makes no request, and the
-updater calls no backend callable but `set_settings({update_check})`.
+`checkUpdates` / `installUpdate` / `cancelUpdate` / `setUpdateChannel`):
+the backend makes no request of its own but the staging's download
+(below), and the updater calls no backend callable but `set_settings`
+(`update_check`, `update_channel`), `stage_update` and `cancel_update`.
 `settings.update_channel` (update spec §3.12.4, default `"stable"`) is
 what the updater follows: exactly `"stable"`, or `"branch:"` followed by a
 ref matching `updates.REF_RE` (`settings.is_channel`); `set_settings`
 refuses anything else as `bad-request` (a non-string, an empty or
 out-of-pattern ref, another word, whitespace around it), and a hand-broken
 value in the file reads back as `"stable"` rather than failing
-`get_settings`. No UI sets it until PR-U4c; the frontend reads it only
-through `channelOf`.
+`get_settings`. The Updates page's *Channel* picker is the one thing that
+sets it (`setUpdateChannel`, update spec §3.12.5); the frontend reads it
+only through `channelOf`, and `tests/test_hard_rules.py` holds its two
+fixed parts (`STABLE_CHANNEL`, `BRANCH_CHANNEL_PREFIX`) spelled alike in
+`settings.py` and `updates.ts`.
 The key fetch from the Game Mode browser (spec 3.20) needs no CLI and is
 not under the runs' busy guard (Decision 62: no `matches.json` involved, so
 a sync may run meanwhile and a fetch may start during a sync); it has its
@@ -1125,8 +1192,9 @@ by nothing in the frontend). A finished sync and a made-active add each
 stand in for the check (`reachFromRun`, `add_host`'s `count`). The CLI's
 `status`, `host show`, `match`, `search`,
 `art` and `remove` never run Moonlight and are unaffected.
-The staging (update spec 3.12.3, PR-U4a; nothing calls it until PR-U4c)
-needs no CLI. `cli_version()` carries an additive `build`: the plugin
+The staging (update spec 3.12.3, PR-U4a) needs no CLI; since PR-U4c
+every install goes through it (update spec 3.12.5), a release's included,
+and Decky is handed its `file://` artifact, never a URL. `cli_version()` carries an additive `build`: the plugin
 zip's own `build.json` through `updates.read_build` (the known keys only),
 `null` without one. `stage_update(tag, sha256, version=None, ref=None)`
 checks its whole request first (`tag` against `TAG_RE` and not `.` / `..`,
@@ -1174,6 +1242,15 @@ hour, every `*.part`; creates nothing). `install.ensure_installed`
 replaces an installed CLI of the bundled one's version whose bytes differ
 (`replaced`, Decision U12: a branch build carries the last release's
 version); a newer installed CLI is still kept and nothing is downgraded.
+The frontend (update spec 3.12.5) calls `stage_update` with exactly one
+of a release's `version` and a branch build's `ref`, the other `null`,
+checks the answer against its offer (`stagedMatches`: the hash, a
+release's version, a branch build's `build.json` ref), and hands Decky
+the answer's `artifact` and `hash` with, for a branch build, the version
+built from the answer's own `version` and `build`; `decky.ts` accepts
+only `file://` and an absolute path ending in the `staged_path` name of
+that hash. A `bad-release` answer's message is shown as it is
+(`stagingErrorText`); `cancelled` is shown as nothing.
 
 ## Commands
 
@@ -1277,22 +1354,40 @@ There is no Steam Deck during development; everything else is tested.
   `fixtureText` and scripts a `NetPort` per §3.4 table row (answers by
   URL for the `build.json` request);
   `decky.test.ts` drives `deckyInstaller` over plain scope objects (a
-  recording router, `opener`, throwing getters); `controller.test.ts`'s
-  `FakeUi` carries the three `UiPort` members: `net()` answers
-  `netAnswers[url]`, else `netAnswer` (by default a 200 with no release,
-  so older tests see no update toast and their calls are unchanged; an
-  `Error` rejects; `holdNet` parks the GET), `installer()` records requests and pushes
-  `install:<version>` to the `order` log (`holdInstall` parks it), and
-  `leaveSettings()` pushes `leave`, so "leave, then ask Decky" is
-  asserted in order. Its channel tests (update spec §3.12.4) set
-  `settingsFile.update_channel` and answer `build-main`'s `build.json`
-  through `netAnswers`: the second request made for the followed branch
-  only, the announced `main @ <sha7>`, a failed `build.json` failing
-  nothing, a branch build refused with nothing asked of Decky, a switch
-  back to a release by its URL with install type 4. `state.test.ts` holds
-  the panel's row on a channel, and `tests/test_backend.py`
-  `update_channel`'s validation and its hand-broken read. Decky's dialog,
-  its download and the reload are device checks (DEVICE-CHECKLIST §16).
+  recording router, `opener`, throwing getters) with staged `file://`
+  artifacts under a runtime directory with a space in it, every URL it
+  refuses built from `updates.ts`'s `assetUrl` (so the slug stays out of
+  it); `controller.test.ts`'s `FakeUi` carries the three `UiPort`
+  members: `net()` answers `netAnswers[url]`, else `netAnswer` (by
+  default a 200 with no release, so older tests see no update toast and
+  their calls are unchanged; an `Error` rejects; `holdNet` parks the
+  GET) and pushes `net:<url>` to the `order` log, `installer()` records
+  requests and pushes `install:<version>` (`holdInstall` parks it), and
+  `leaveSettings()` pushes `leave`; the fake backend's calls push
+  `call:<name>`. So the staged order (update spec §3.12.5) is asserted
+  whole: `call:stage_update`, `leave`, `install:0.13.0` for a release on
+  `stable` (no check); `net:<list>`, `net:<build.json>`,
+  `call:stage_update`, `leave`, `install:0.12.0 (main @ abc1234)` for a
+  branch build; `call:stage_update` then the failure's toast for a failed
+  staging or a mismatched answer; `call:stage_update`,
+  `call:cancel_update` and no toast for a cancel. The updater's tests
+  answer `stage_update` with what was asked for (`stagedFor`: the staged
+  path of the hash, a branch's `build.json` at `main`'s commit), or park
+  it (`holdStage` / `answerStage`) for the phases, *Cancel*, the plugin
+  turned off mid-download and the refusals while downloading. Its channel
+  tests (update spec §3.12.4, §3.12.5) set `settingsFile.update_channel`
+  and answer `build-main`'s `build.json` through `netAnswers`: the second
+  request made for the followed branch only, the announced `main @
+  <sha7>`, a failed `build.json` failing nothing, the forced check before
+  a branch build's staging (its failure, a stored `retryAt`, no offer
+  after it, a walk started during it, the plugin turned off during it),
+  a switch back to a release staged with install type 4, and the
+  *Channel* picker (`setUpdateChannel`: stored, then checked within the
+  minute; the same channel; a refused `set_settings`; the check's failure
+  toasted). `state.test.ts` holds the panel's row on a channel, and
+  `tests/test_backend.py` `update_channel`'s validation and its
+  hand-broken read. Decky's dialog, the `file://` install and the reload
+  are device checks (DEVICE-CHECKLIST §16, §17).
 - `tests/conftest.py`: `backend` / `make_backend` (a started Backend over
   the fake; `@pytest.mark.scenario("full-sync")` puts that scenario in front
   of `common/`), `steam_gone`, `install_env` (a `python3` shim that prints
@@ -1315,10 +1410,17 @@ There is no Steam Deck during development; everything else is tested.
   `confirm_plugin_install` nowhere, `DeckyBackend` and `utilities/` only in
   `lib/decky.ts` and its test, `api.github.com` only in `lib/updates.ts`
   and its test, `fetchNoCors` only in `instance.tsx`, the repository's
-  slug only in `updates.ts`, `decky.ts` and their tests. Each is an
-  equality, so a rename that loses the name fails too. It also holds
-  `updates.ts`'s `REF_RE` and `TAG_RE` spelled exactly as the backend's
-  `updates.REF_RE` / `TAG_RE` (update spec §3.12.4).
+  slug and `releases/download` only in `updates.ts` and its test (no
+  download URL is built anywhere else). Each is an equality, so a rename
+  that loses the name fails too. It also holds `updates.ts`'s `REF_RE`
+  and `TAG_RE` spelled exactly as the backend's `updates.REF_RE` /
+  `TAG_RE`, its `STABLE_CHANNEL` and `BRANCH_CHANNEL_PREFIX` as
+  `settings.py`'s (update spec §3.12.4: the *Channel* picker writes what
+  the frontend spells), and `decky.ts`'s staged file name
+  (`STAGED_DIR`, `STAGED_FILE_PREFIX`, the hash's first
+  `STAGED_HASH_DIGITS`, `STAGED_FILE_SUFFIX`) equal to what the
+  backend's `updates.staged_path` builds (update spec §3.12.5), each read
+  out of the TypeScript source by a regular expression.
 - The key fetch (spec 3.20) never opens a socket in a test: `conftest.py`'s
   `fake_browser` fixture installs a `FakeBrowser` as `cdp.TARGETS` /
   `cdp.CONNECT` (the Game Mode browser as the seams see it: the page

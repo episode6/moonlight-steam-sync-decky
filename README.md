@@ -111,44 +111,90 @@ your say-so, and while the plugin is toggled off there is no check, no
 toast, no row and no Updates page.
 
 **Installing.** Settings → Updates shows the installed version, the
-latest release, what is new in it, and **Update to X**. Pressing it
-closes the settings page and Decky asks "Are you sure you want to update
-Moonlight Sync to version X?". That dialog is Decky's and is the only
-confirmation: **Cancel** changes nothing; **Confirm** has Decky download
-the release's `Moonlight-Sync.zip`, remove the old copy, unpack the new
-one and load it, showing its progress in its own tab. Only the plugin
-reloads: no loader restart and no Steam restart. The plugin hands Decky
-the release's download address on this repository, built from the
-release's tag, and the SHA-256 GitHub reports for that zip; a release
-without one is never offered. The update is refused, with a toast, while
-a sync is running, while layouts are being applied and during a
-SteamGridDB key fetch.
+channel, the latest release, what is new in it, and **Update to X**.
+Pressing it first downloads the release's `Moonlight-Sync.zip`: the
+plugin's backend fetches it from this repository's releases on GitHub,
+checks it against the SHA-256 GitHub reports for it and against the
+release's own checksum file, and checks that it is a build of Moonlight
+Sync, all before Decky is involved. The button reads **Downloading…**
+meanwhile, and a **Cancel** button under it stops the download (nothing
+is installed, and nothing is said). Then the settings page closes and
+Decky asks "Are you sure you want to update Moonlight Sync to version
+X?". That dialog is Decky's and is the only confirmation: **Cancel**
+changes nothing; **Confirm** has Decky remove the old copy, unpack the
+checked zip and load it, showing its progress in its own tab. Only the
+plugin reloads: no loader restart and no Steam restart. Decky is only
+ever handed a zip the plugin has already downloaded and checked, never a
+web address; a release without a SHA-256 is never offered. The update is
+refused, with a toast, while a sync is running, while layouts are being
+applied and during a SteamGridDB key fetch, and no sync starts while the
+zip downloads or Decky is being asked.
 
 **Install another version** on the same page lists every release from
 0.12.0 on (older ones have no updater, so installing one would leave
 `install.sh` as the only way forward): the installed one again
 (*reinstall*), an older one (Decky asks to *downgrade*), or a newer one.
-It goes through the same dialog.
+It downloads and goes through the same dialog.
 
-Settings, the ignore list, the SteamGridDB key, the CLI and its caches,
-your shortcuts and artwork live outside the plugin's directory and are
+**Channel.** The second row of the page picks what the plugin follows:
+
+- **Releases** (the default): the tested releases, as above.
+- **A branch** (`main`, and any branch the developer publishes builds
+  of): that branch's newest build, rebuilt on every push to it. Builds of
+  a branch are untested and can break syncing. Choosing one asks first,
+  "Follow main?", with **Follow** and **Cancel**; choosing *Releases*
+  asks nothing, and you can return to it here at any time. On a branch the
+  page's button reads **Switch to main @ abc1234** (the branch and its
+  commit) whenever the branch has a build you do not have, and the
+  automatic check announces a new push as it does a release. Each install
+  from a branch checks GitHub again first, so what is downloaded is the
+  build that is there now. Decky's dialog names it as, say, "0.12.0 (main
+  @ abc1234)", since a branch's build carries the last release's version
+  number. *Installed* then reads `0.12.0 · main @ abc1234 · built …`.
+- **Back to Releases**: pick *Releases*; the page then offers **Switch to
+  X**, the newest release, which installs it over the branch's build
+  (Decky asks to *overwrite*). *Install another version* works from a
+  branch's build too.
+
+A branch's build brings its own CLI. Because it carries the same version
+number as the release it came after, the plugin replaces your installed
+CLI of that version with the branch's (see *The bundled CLI* below), and
+installing a release again puts the release's own CLI back the same way
+(or, for a newer release, as an update). A CLI newer than the build's,
+installed by hand, is never replaced.
+
+Settings, the ignore list, the SteamGridDB key, the CLI's caches, your
+shortcuts and artwork live outside the plugin's directory and are
 untouched by an update. After an update Moonlight Sync moves to the end
 of Decky's plugin list; put it back where you want it in Decky's
 settings.
 
 **What is sent.** The check is one unauthenticated request to GitHub's
-API for this repository's public list of releases; nothing about your
-device or your library goes with it. On an install, Decky itself reports
-the plugin's name and version to its store, as it does for any plugin
-installed from a URL. GitHub allows 60 such requests an hour per network;
-when it says the limit is spent, the Updates page says when to try again.
+API for this repository's public list of releases; on a branch channel
+one more request fetches that branch's `build.json` from its build on
+GitHub. An install downloads the zip and its checksum file from this
+repository's releases on GitHub, by the plugin's backend. Nothing about
+your device or your library goes with any of them, and Decky reports
+nothing to its store for an install from a downloaded file. GitHub allows
+60 API requests an hour per network; when it says the limit is spent, the
+Updates page says when to try again.
 
-**When it goes wrong:**
+**When it goes wrong.** Every failure before Decky's dialog opens leaves
+the installed version as it was, working, and says why in a toast;
+nothing is removed until you confirm a zip that has already been checked.
 
-| What happened | What you have | What to do |
+| What happened | What you see | What to do |
 |---|---|---|
-| The device was offline, or GitHub did not answer 200 | The old version, working. Decky's progress may stay on screen | Close it; try again |
-| The bytes did not match the hash, or the zip was broken | **No Moonlight Sync.** Settings, key, caches and library untouched | `install.sh` from Desktop Mode |
+| The device was offline, or GitHub did not answer | "Could not reach GitHub: …" | Try again |
+| GitHub is limiting requests from your network | "GitHub is limiting requests from this network. Try again in …" | Wait, then try again |
+| The release has no zip or checksum file, or its checksums disagree | "The release has no zip", "The release's checksum file could not be read", "The release's checksums disagree" | Try again later; report it if it stays |
+| A branch's build is being replaced right now | "A new build is being published. Try again in a minute" | Try again in a minute |
+| The download did not match its checksum | "The download did not match its checksum. Nothing was installed" | Try again |
+| The download is not a build of Moonlight Sync, or not the one asked for | "The download is not a Moonlight Sync build. Nothing was installed" | Report it |
+| The download took too long | "Timed out after … s" | Try again |
+| Another download is already going | "An update is already being downloaded" | Wait for it, or press **Cancel** |
+| The branch has no build right now (it is being republished, or was deleted) | "No build of main is published" | Try again later, or return to *Releases* |
+| Decky could not be asked | "Decky did not accept the install. Update with install.sh from Desktop Mode" | `install.sh` from Desktop Mode |
 
 When this Decky Loader is too old to install from a plugin (before
 v3.0.0), or its installer cannot be reached, the Updates page says so;

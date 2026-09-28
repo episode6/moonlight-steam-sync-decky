@@ -51,7 +51,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     # the check is the frontend's, this is only its switch
     "update_check": True,
     # what the updater follows (update spec 3.12.4): "stable" (the releases)
-    # or "branch:<ref>" (that branch's rolling build); no picker yet (PR-U4c)
+    # or "branch:<ref>" (that branch's rolling build); set by the Updates
+    # page's Channel picker (update spec 3.12.5)
     "update_channel": "stable",
 }
 
