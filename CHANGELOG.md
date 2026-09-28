@@ -27,6 +27,16 @@ project uses [semantic versioning](https://semver.org/).
   silent while the plugin is toggled off. Settings → About gains a
   **Decky Loader** row. Releases before this one have no updater: update
   them once with `install.sh`. See the README's "Updating".
+- **Builds of `main` and of branches.** Every push to `main` publishes
+  an installable build of it on GitHub as the prerelease `build-main`,
+  and any other branch publishes one as `build-<branch>` once asked with
+  `gh workflow run builds.yml --ref <branch>`, then with every push to it
+  (the new `builds.yml` workflow). Deleting the branch deletes its build.
+  Builds are prereleases and never "latest", so `install.sh` and the
+  updater still see releases only; nothing in the plugin installs a build
+  yet, that arrives with the channel picker. Every zip CI builds, a
+  release's included, now carries a `build.json` saying what it was built
+  from (`scripts/build_info.py`). See the README's "Developing".
 
 ## [0.11.0] - 2026-09-27
 

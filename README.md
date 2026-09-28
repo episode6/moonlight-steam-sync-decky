@@ -754,6 +754,33 @@ ruff check . && python3 -m pytest && python3 -m pytest cli
 (`cli/src/moonlight_steam_sync/__init__.py`) is not `package.json`'s
 `"version"`: the two are bumped together.
 
+A zip CI builds also carries `Moonlight Sync/build.json`, which says what
+it was built from (`scripts/build_info.py`: `release` and the tag, or
+`branch` and the branch's name, the commit and the run). A local build has
+none unless you write one at the repo root, and a zip without it is a
+release of `package.json`'s version.
+
+### Branch builds
+
+Every push to `main` publishes a build of it as a prerelease tagged
+`build-main` (`.github/workflows/builds.yml`). Any other branch publishes
+one on request:
+
+```sh
+gh workflow run builds.yml --ref <branch>
+```
+
+and from then on with every push to it, as the prerelease `build-<slug>`
+(the branch's name with every character outside `A-Z a-z 0-9 . _ -` turned
+into `-`, cut to 80). Deleting the branch deletes its build. Builds are
+prereleases and are never "latest", so a release is what `install.sh` and
+the plugin's own updater still see; nothing in the plugin installs a build
+yet. A branch can only be built once `builds.yml` is on it, so a branch cut
+before the workflow reached `main` needs a rebase first, and a branch whose
+name has a character outside `A-Z a-z 0-9 . _ / -` (a `+` or an `@`, say)
+cannot have a build: `build_info.py` refuses the name and the build fails.
+Pull requests never publish a build.
+
 Then copy `out/Moonlight-Sync.zip` to the Deck and install it as above.
 `decky plugin build` (Docker) still works through `backend/Dockerfile` and
 `backend/entrypoint.sh`, but it is only for a store submission. See

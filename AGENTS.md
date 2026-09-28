@@ -233,7 +233,16 @@ scripts/build_cli.py        cli/src -> moonlight-steam-sync.pyz (zipapp, deflate
                             `/usr/bin/env python3`, moonlight_steam_sync/ only: no
                             __pycache__ or egg-info), refusing a __version__ that is not
                             package.json's "version"
-scripts/package.py          Docker-free zip: out/Moonlight-Sync.zip ("Moonlight Sync/")
+scripts/build_info.py       build.json (update spec 3.12.1): --kind release|branch --ref
+                            --sha --run [--out], {schema: 1, kind, ref, sha, built_at,
+                            run} in that order; refuses (exit 1, one stderr line,
+                            nothing written) a kind outside the two, a sha that is not
+                            40 hex digits, a ref outside ^[A-Za-z0-9._/-]{1,100}$, so a
+                            branch with a `+` or an `@` cannot be built; CI writes it at
+                            the root before package.py, never committed (.gitignore)
+scripts/package.py          Docker-free zip: out/Moonlight-Sync.zip ("Moonlight Sync/");
+                            OPTIONAL_ROOT_FILES (build.json) from the root when it
+                            exists, 0644, after the five root files
 src/index.tsx               definePlugin: events (sync_event / sync_done, sgdb_key_event /
                             sgdb_key_done), settings route, running-app watch, load()
 src/instance.tsx            the Controller wired to callable / Steam / showModal / toaster;
@@ -706,6 +715,13 @@ tests/                      pytest: fake_cli.py, fixtures/, conftest.py, test_*.
                             v<package.json version>) Moonlight-Sync.zip,
                             moonlight-steam-sync.pyz and their .sha256 files attached to
                             one GitHub release; the build job also runs on pull_request
+.github/workflows/builds.yml   branch builds (update spec 3.12.2): push / workflow_dispatch
+                            / delete only, never a pull-request event; `gate` (publish
+                            for main, a dispatch, or a branch whose build-<slug> release
+                            exists), `build` (release.yml's steps, repeated), `publish`
+                            (tag moved to the commit built, the release made or edited
+                            as a prerelease never latest, four assets then build.json),
+                            `cleanup` (a deleted branch's release and tag)
 ```
 
 PR-6 made `search` / `pin` / `unpin` / `set_ignored` real (the Titles page
@@ -988,6 +1004,7 @@ python3 -m pytest cli             # the CLI's suite (cli/pyproject.toml's settin
 ruff check .                      # plugin and cli/; probes/ excluded in ruff.toml
 backend/entrypoint.sh             # build cli/src -> backend/out/moonlight-steam-sync.pyz
 python3 scripts/package.py        # out/Moonlight-Sync.zip (pnpm run package)
+gh workflow run builds.yml --ref <branch>   # publish a branch's build (then every push)
 ```
 
 Run long commands through `tee` to a log file, never `tail`.
@@ -1146,7 +1163,20 @@ There is no Steam Deck during development; everything else is tested.
   `package.json` (the zipapp's entries, mode and `--version`; a version
   mismatch, a missing source) and holds the real CLI's `__version__` to
   `package.json`'s; `tests/test_package.py` builds a fixture tree and checks
-  the exact zip entry list and modes.
+  the exact zip entry list and modes, with a root `build.json` and without
+  one. `tests/test_build_info.py` runs `scripts/build_info.py` with
+  `sys.executable` in `tmp_path`: the keys and their order, `built_at`'s
+  form, `--out`, and every refusal (one stderr line, nothing written).
+- `tests/test_hard_rules.py` also reads `.github/workflows/builds.yml` as
+  text (no YAML parser is a dev dependency): the triggers are exactly
+  `push`, `workflow_dispatch` and `delete` and no line outside a comment
+  names `pull_request`; the top-level permissions are `contents: read` and
+  `contents: write` is on `publish` and `cleanup` only; no workflow's
+  `run:` script contains a `${{ }}` expression; the slug line is spelled
+  identically in `gate` and `cleanup`, every `tag=` is `build-${slug}`
+  and guarded before any `gh` call, and that line and guard run under
+  `bash` over sample branch names; every script passes `bash -n`; and
+  `build.json` is uploaded in a step of its own after the other four.
 - The CLI's own suite is `cli/tests` (see `cli/AGENTS.md`, "Testing"): it
   has its own conftest and fakes, runs apart from `tests/` (`python3 -m
   pytest cli`), and `cli/tests/test_release_zipapp.py` builds through
@@ -1166,17 +1196,59 @@ On-device checks are not merge criteria; they are collected in
   3.13.5: `pip install --no-deps -e ./cli`, pytest `cli`, then
   `scripts/build_cli.py` and the zipapp's `--version` and `doctor` smoke
   runs), `package` (after all three: `backend/entrypoint.sh`, then
+  `scripts/build_info.py` -- `release` and the tag on a tag, else `branch`
+  and `github.head_ref || github.ref_name`, passed through `env:` -- then
   `scripts/package.py --require-cli` and the `Moonlight-Sync` artifact).
-  When SteamOS moves to a new Python, change `3.13.5` in both workflows.
+  When SteamOS moves to a new Python, change `3.13.5` in all three
+  workflows (`ci.yml`, `release.yml`, `builds.yml`).
 - `.github/workflows/release.yml`: the same frontend build, then
   `entrypoint.sh` (the CLI from `cli/src`, its `--version` smoke run), a
-  `doctor` smoke run, `package.py --require-cli`, and `sha256sum` of
+  `doctor` smoke run, `build_info.py` (as in `ci.yml`, so a release's zip
+  carries `build.json` with `kind: release` and the tag; it is inside the
+  zip, not a fifth asset), `package.py --require-cli`, and `sha256sum` of
   `Moonlight-Sync.zip` and `moonlight-steam-sync.pyz` against their bare
   filenames. On a `v*` tag it first checks the tag is `v` + `package.json`'s
   `"version"`, and the tag-gated `github-release` job attaches all four
   files to one release through an idempotent `gh release view || create` /
   `upload --clobber` step. The build job also runs on `pull_request` and
   `workflow_dispatch`, so it is exercised before any tag.
+- `.github/workflows/builds.yml` (update spec 3.12.2): a rolling
+  prerelease per branch, tagged `build-<slug>` (the branch's name with
+  every character outside `[A-Za-z0-9._-]` replaced by `-`, cut to 80),
+  titled with the branch's name. Triggers are `push` (every branch),
+  `workflow_dispatch` and `delete`, **never `pull_request` or
+  `pull_request_target`**, so code from a fork never reaches a release;
+  top-level permissions `contents: read`. `gate` answers `publish=true`
+  for `main`, for a `workflow_dispatch` and for a push to a branch whose
+  `build-<slug>` release already exists (`gh release view`; "release not
+  found" is `false`, any other failure fails the job), so a branch
+  publishes once asked and from then on with every push (Decision U10); a
+  dispatch on a tag fails. `build` repeats `release.yml`'s build job
+  (Decision U11: same actions and versions, Python 3.13.5, no tag check),
+  writes `build.json` with `branch` and the branch, and uploads the
+  artifact `Moonlight-Sync-build` (the zip, the pyz, their sidecars,
+  `build.json`). `publish` (`contents: write`) moves the tag through the
+  API to the run's `GITHUB_SHA`, the commit built (`POST git/refs`, or
+  `PATCH git/refs/tags/build-<slug>` with `force`), creates the release or
+  edits it with `--prerelease --latest=false` every time (so
+  `releases/latest` keeps naming the newest `v*`), uploads the four files
+  with `--clobber` and then, in a step of its own, `build.json`: `--clobber`
+  deletes an asset before uploading its replacement, so `build.json`
+  arriving last says the others are in place. `cleanup` (`contents:
+  write`, `delete` events of a branch only) runs `gh release delete
+  build-<slug> --cleanup-tag --yes`, content when there is none. Every
+  branch name, ref and event field reaches a script through `env:` as a
+  quoted variable, never as a `${{ }}` inside `run:`; the slug is one line,
+  identical in `gate` and `cleanup`; every tag the workflow moves or
+  deletes is built as `build-<slug>` and checked (the slug's characters,
+  the `build-` prefix, `git check-ref-format`) before any `gh` call, so it
+  can never touch a `v*` release. A tag made with `GITHUB_TOKEN` starts no
+  workflow, and `release.yml` listens for `v*` only. **Immutable releases
+  must stay off for the repository**: a rolling release cannot exist with
+  them. A branch can be built only once `builds.yml` is on it (a branch cut
+  before it reached `main` needs a rebase), `delete` runs the default
+  branch's copy, and a branch `build_info.py` refuses (a `+` or `@` in
+  its name) cannot be built.
 - `install.sh`: the plugin installer (curl the release zip + `.sha256`,
   verify, remove any previous install, unzip into `~/homebrew/plugins/`,
   restart `plugin_loader`); its `MOONLIGHT_SYNC_BASE_URL` seam lets
