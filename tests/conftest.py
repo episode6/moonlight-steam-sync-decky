@@ -220,13 +220,19 @@ LOOPBACK = {"127.0.0.1", "::1", "localhost"}
 
 @pytest.fixture
 def no_network(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Fail the test on any socket ``connect`` to a non-loopback address.
+    """Fail the test on any socket ``connect`` to a non-loopback address
+    made **in the test process**.
 
-    Used by the update tests (``pytestmark``), whose whole point is that the
-    downloader's checks work without the network: nothing there may reach
-    GitHub or anywhere else. Not autouse: ``tests/test_cdp.py`` talks to a
-    loopback fake debugger on purpose, which this would allow anyway, but
-    the guard stays where it is asked for.
+    It patches ``socket.socket.connect`` / ``connect_ex`` here only, so it
+    cannot see a child process's connects. The update tests (``pytestmark``)
+    are safe for another reason on that side: every URL they hand the real
+    ``fetch.py`` is a ``file://`` one with ``--allow-file`` (and
+    ``tests/test_fetch.py``'s ``run_script`` asserts that the argv it built
+    has both before it runs anything that could download), while the URL
+    check and the redirect handler are called in-process, under this
+    guard. Not autouse: ``tests/test_cdp.py`` talks to a loopback fake
+    debugger on purpose, which this would allow anyway, but the guard stays
+    where it is asked for.
     """
 
     def refuse(address: Any) -> None:

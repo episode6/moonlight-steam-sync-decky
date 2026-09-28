@@ -92,6 +92,27 @@ def test_same_version_with_other_bytes_is_replaced(install_env, monkeypatch) -> 
     assert install_env.installed_path.read_bytes() == install_env.bundled_path.read_bytes()
 
 
+def test_a_symlinked_cli_is_replaced_by_the_file_never_written_through(
+    install_env, tmp_path
+) -> None:
+    """Decision U12 on a symlink (a hand-installed build of the same
+    version): os.replace swaps the link itself for the bundle's bytes, and
+    the file it pointed to is left exactly as it was."""
+    install_env.bundled("moonlight-steam-sync.pyz 0.4.0")
+    target = tmp_path / "checkout" / "moonlight-steam-sync"
+    target.parent.mkdir()
+    target.write_text("moonlight-steam-sync 0.4.0\n# a developer's own build\n")
+    before = target.read_bytes()
+    install_env.installed_path.parent.mkdir(parents=True)
+    os.symlink(target, install_env.installed_path)
+    report = ensure(install_env)
+    assert report.action == "replaced"
+    assert not install_env.installed_path.is_symlink()
+    assert stat.S_ISREG(install_env.installed_path.lstat().st_mode)
+    assert install_env.installed_path.read_bytes() == install_env.bundled_path.read_bytes()
+    assert target.read_bytes() == before
+
+
 def test_newer_installed_is_kept_whatever_its_bytes(install_env) -> None:
     """Nothing is ever downgraded: the hash is only asked of an equal version."""
     install_env.bundled("moonlight-steam-sync.pyz 0.4.0")

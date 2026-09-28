@@ -161,8 +161,11 @@ py_modules/moonlight_sync/  the backend (imports nothing from decky)
                             downloader as `[python, "-I", fetch.py, options, "--",
                             url, dest]` through _child_env(), stderr to /dev/null,
                             one stdout line of at most FETCH_LINE_LIMIT, killed after
-                            its timeout + FETCH_ANSWER_GRACE; anything but an object
-                            with a boolean `ok` is `io`), stage_update() (the seven
+                            its timeout + FETCH_ANSWER_GRACE, which answers `timeout`
+                            with that limit as `timeout_s`; a cancel that landed
+                            during the spawn kills it as soon as it exists; no
+                            line or anything but an object with a boolean `ok` is
+                            `io`), stage_update() (the seven
                             steps; UpdateJob is its "update" busy guard, released on
                             every exit with the sidecar and any part file removed),
                             cancel_update() / _cancel_staging() (unload's: kill,
@@ -1078,9 +1081,13 @@ minute" for a `ref`, "the release's checksums disagree" for a `version`);
 then the zip to `staged_path(sha256)` unless a regular file there already
 hashes to it (a file that does not is removed), with `--sha256`, the
 downloader's reported hash compared again; then `validate_zip` either way
-(`bad-zip` with its message, the file removed). `hash-mismatch` passes
+(`bad-zip` with its message, the file removed; a release's own
+`build.json` must name `v<version>`). `hash-mismatch` passes
 through, `too-large` is `bad-zip`, an HTTP 404 `bad-release`, any other
-HTTP status or a network failure `network`. The answer is `{ok, artifact:
+HTTP status or a network failure (a body cut short included) `network`,
+a downloader still running after its socket timeout plus
+`FETCH_ANSWER_GRACE` (10 s) is killed and answers `timeout` with that
+limit as `timeout_s`. The answer is `{ok, artifact:
 "file://" + <absolute staged path, raw>, hash, build, version}`: the path
 is always `staged_path`, never a string from a response. The downloader is
 `fetch.py`, run as `[<system python3>, "-I", fetch.py, options, "--", url,
@@ -1095,7 +1102,8 @@ so, which only the tests' does. Every step is logged with the tag, a size
 and the first 12 hex digits of the hash, never a query string.
 `cancel_update()` kills the downloader (`{ok, running}`) and the
 interrupted `stage_update` answers `cancelled`; `unload()` does the same,
-waits for the child and removes its part file. Every exit releases the
+waits for the child and removes its part file; either one landing while
+the downloader is being spawned kills it the moment it exists. Every exit releases the
 guard. `startup()` runs `updates.cleanup` (staged files older than an
 hour, every `*.part`; creates nothing). `install.ensure_installed`
 replaces an installed CLI of the bundled one's version whose bytes differ
@@ -1300,14 +1308,23 @@ There is no Steam Deck during development; everything else is tested.
   allow_file=True)` with `python=sys.executable`: end to end for a release
   and a branch, the argv, every `bad-request` (nothing spawned or
   created), the reuse and the re-validation of a staged file, the
-  sidecar's failures, `hash-mismatch`, `bad-zip`, a downloader that says
-  nothing or hangs (`fake_python` shims, `FETCH_ANSWER_GRACE` patched
-  short), each busy kind, the guard released after an exception,
-  `cancel_update` and `unload` killing a downloader stuck mid-zip (its
-  part file gone), the startup cleanup, `cli_version()`'s `build`, and the
-  plugin directory byte-identical after a staging. `tests/test_install.py`
+  sidecar's failures, `hash-mismatch`, `bad-zip`, a download cut short
+  (`network`), a downloader that says nothing (`io`) or hangs (`timeout`,
+  `fake_python` shims, `FETCH_ANSWER_GRACE` patched short), each busy
+  kind, the guard released after an exception, `cancel_update` and
+  `unload` killing a downloader stuck mid-zip (its part file gone) and
+  landing during the spawn (`asyncio.create_subprocess_exec` patched to
+  cancel first), the startup cleanup, `cli_version()`'s `build`, and the
+  plugin directory byte-identical after a staging. `no_network` only sees
+  the test process: `test_fetch.py`'s `run_script` first proves from the
+  argv that the real script cannot reach the network (arguments refused
+  before any URL is used, or every URL a `file:///` one under
+  `--allow-file` or refused by `check_url` in-process). A failed `close`
+  of the part file is `io` and closes nothing twice.
+  `tests/test_install.py`
   holds the `replaced` case (equal version: equal bytes kept, other bytes
-  replaced atomically, a failed replace leaving the file), and
+  replaced atomically, a failed replace leaving the file, a symlink
+  replaced by the file itself with its old target untouched), and
   `tests/test_hard_rules.py` that `fetch.py` imports the standard library
   only and parses as Python 3.11, that nothing under `py_modules` or
   `main.py` imports it, that no backend file turns TLS verification off

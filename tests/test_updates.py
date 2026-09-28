@@ -145,6 +145,13 @@ def test_a_release_zip_with_its_release_build_json_passes(tmp_path) -> None:
     assert updates.validate_zip(str(path), version="0.12.0", ref=None)["build"]["kind"] == "release"
 
 
+@pytest.mark.parametrize("ref", ["v0.11.0", "0.12.0", "v0.12.0-rc1", "V0.12.0", "main"])
+def test_a_release_s_build_json_must_name_the_release(tmp_path, ref) -> None:
+    build = branch_build(ref, kind="release")
+    path = build_zip(tmp_path / "z.zip", version="0.12.0", build=build)
+    refused(path, f"the zip is the build of {ref}, not of v0.12.0")
+
+
 def test_a_branch_zip_passes(tmp_path) -> None:
     path = build_zip(tmp_path / "z.zip", version="0.11.0", build=branch_build("self-update/x"))
     checked = updates.validate_zip(str(path), version=None, ref="self-update/x")

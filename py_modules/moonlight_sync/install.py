@@ -10,6 +10,11 @@ replaces a hand-installed build of the same version). It never downgrades:
 a newer CLI the user installed by hand stays, and so does one of the same
 version whose bytes are the bundle's.
 
+A symlink at ``~/.local/bin/moonlight-steam-sync`` is replaced by the file
+itself, never written through, in both cases (older, or the same version
+with other bytes): the copy goes to a ``.tmp`` beside it and ``os.replace``
+swaps the link for it, so the file the link pointed to is left untouched.
+
 Both copies are always run through an explicit interpreter
 (``[python3, path, ...]``), so neither the exec bit nor the plugin_loader
 service's minimal ``PATH`` matters.

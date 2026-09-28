@@ -45,7 +45,46 @@ def load_fetch():
 fetch = load_fetch()
 
 
+def refused_in_process(url: str) -> bool:
+    try:
+        fetch.check_url(url)
+    except fetch.Refused:
+        return True
+    return False
+
+
+def assert_cannot_reach_the_network(args: tuple[str, ...]) -> None:
+    """``no_network`` cannot see the child's connects, so before the real
+    script runs, prove from its argv that it cannot make one: its arguments
+    are refused before any URL is used, or every URL is a ``file://`` one
+    under ``--allow-file``, or one the URL check (run here, in-process)
+    refuses before any connection."""
+    try:
+        fetch.parse_args(list(args))
+    except (fetch.ArgumentsRefused, ValueError):
+        return
+    urls = [arg for arg in args if "://" in arg or arg.startswith(("http", "file", "data"))]
+    assert urls, args
+    for url in urls:
+        allowed_file = url.startswith("file:///") and "--allow-file" in args
+        assert allowed_file or refused_in_process(url), f"{url} could reach the network"
+
+
+def test_the_argv_guard_itself() -> None:
+    """What run_script refuses to run: a URL the script would download."""
+    for args in (
+        ("https://github.com/x", "/tmp/d"),
+        ("--allow-file", "https://objects.githubusercontent.com/x", "/tmp/d"),
+    ):
+        with pytest.raises(AssertionError):
+            assert_cannot_reach_the_network(args)
+    assert_cannot_reach_the_network(("file:///srv/x", "/tmp/d"))  # refused without the flag
+    assert_cannot_reach_the_network(("--allow-file", "file:///srv/x", "/tmp/d"))
+    assert_cannot_reach_the_network(("--max-bytes", "0", "https://github.com/x", "/tmp/d"))
+
+
 def run_script(*args: str) -> tuple[dict, subprocess.CompletedProcess[str]]:
+    assert_cannot_reach_the_network(args)
     result = subprocess.run(
         [sys.executable, "-I", str(SCRIPT), *args],
         capture_output=True,
@@ -205,6 +244,7 @@ def test_the_script_runs_isolated_and_imports_nothing_beside_it(tmp_path, source
     copy.parent.mkdir()
     copy.write_bytes(SCRIPT.read_bytes())
     (copy.parent / "hashlib.py").write_text("raise SystemExit('shadowed')\n")
+    assert_cannot_reach_the_network(("--allow-file", source.as_uri(), str(dest)))
     result = subprocess.run(
         [sys.executable, "-I", str(copy), "--allow-file", source.as_uri(), str(dest)],
         capture_output=True,
@@ -694,6 +734,32 @@ def test_a_failed_write_is_io(dest, monkeypatch) -> None:
         "status": None,
         "message": "could not write the download: No space left on device",
     }
+    assert dest.read_bytes() == b"the previous file"
+    assert not os.path.exists(part_of(dest))
+
+
+def test_a_failed_close_is_io_and_closes_nothing_twice(dest, monkeypatch) -> None:
+    dest.write_bytes(b"the previous file")
+    real_close = os.close
+    closes: list[int] = []
+
+    def failing_close(fd):
+        closes.append(fd)
+        real_close(fd)  # the descriptor is gone, as after a real EIO on close
+        if len(closes) == 1:
+            raise OSError(5, "Input/output error")
+
+    monkeypatch.setattr(fetch.os, "close", failing_close)
+    answer = fetch.run(
+        [URL, str(dest)], opener_factory=opener_answering(lambda r: FakeResponse(PAYLOAD, URL))
+    )
+    assert answer == {
+        "ok": False,
+        "error": "io",
+        "status": None,
+        "message": "could not write the download: Input/output error",
+    }
+    assert len(closes) == 1  # never closed a second time
     assert dest.read_bytes() == b"the previous file"
     assert not os.path.exists(part_of(dest))
 

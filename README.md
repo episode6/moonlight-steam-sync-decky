@@ -170,6 +170,11 @@ compares that copy with `~/.local/bin/moonlight-steam-sync`:
 - the same version and the same bytes, or newer → left alone. A newer CLI
   you installed by hand stays; the plugin never installs an older one.
 
+If `~/.local/bin/moonlight-steam-sync` is a symlink (to a checkout, say),
+a replace, whether for an older version or for the same version with other
+bytes, puts the bundled file in place of the link itself; it never writes
+through the link, so the file it pointed to is left as it was.
+
 The plugin always runs the copy in `~/.local/bin`, through `python3`, so a
 shortcut made from Game Mode and one made from a terminal belong to the same
 tool. Settings → **About** shows both versions, the minimum the plugin

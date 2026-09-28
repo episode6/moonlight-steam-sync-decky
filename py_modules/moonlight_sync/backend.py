@@ -1470,12 +1470,14 @@ class Backend:
         ``--allow-file`` only when ``update_source`` says so, which only a
         test's does. The child runs through ``_child_env()`` like every
         other; it is in ``self._procs`` while it lives (``unload`` kills it)
-        and is the staging's ``proc`` (``cancel_update`` kills it). Its
-        stderr goes nowhere: nothing of it reaches the log. At most
-        ``timeout + 10`` seconds, then it is killed.
+        and is the staging's ``proc`` (``cancel_update`` kills it, and a
+        cancel that arrived during the spawn kills it as soon as it exists).
+        Its stderr goes nowhere: nothing of it reaches the log.
 
-        No line, one over ``FETCH_LINE_LIMIT``, one that does not parse, or
-        a value that is not an object with a boolean ``ok`` is ``io``, "the
+        At most ``timeout + FETCH_ANSWER_GRACE`` seconds, then it is killed
+        and the answer is ``timeout`` with ``timeout_s`` that limit. No
+        line, one over ``FETCH_LINE_LIMIT``, one that does not parse, or a
+        value that is not an object with a boolean ``ok`` is ``io``, "the
         downloader did not answer".
         """
         no_answer = failure("io", "the downloader did not answer")
@@ -1509,6 +1511,13 @@ class Backend:
         self._procs.add(proc)
         if job is not None:
             job.proc = proc
+            if job.cancelled:
+                # A cancel_update() / unload() that arrived while the spawn
+                # was awaited found no process to kill: kill it now. The
+                # read below then sees EOF at once and the staging answers
+                # `cancelled` on its way out.
+                self._log("fetch: cancelled during the spawn; killing the downloader")
+                self._kill(proc)
 
         async def answer() -> bytes:
             assert proc.stdout is not None
@@ -1518,9 +1527,11 @@ class Backend:
 
         limit = timeout + self.FETCH_ANSWER_GRACE
         line = b""
+        timed_out = False
         try:
             line = await asyncio.wait_for(answer(), limit)
         except TimeoutError:
+            timed_out = True
             self._log(f"fetch: no answer after {limit:g} s; killing the downloader")
         except ValueError:  # a line over FETCH_LINE_LIMIT
             self._log("fetch: the downloader's output is too long; killing it")
@@ -1532,6 +1543,10 @@ class Backend:
             self._procs.discard(proc)
             if job is not None:
                 job.proc = None
+        if timed_out:
+            return failure(
+                "timeout", f"The download took longer than {limit:g} s", timeout_s=limit
+            )
         try:
             parsed = json.loads(line.decode("utf-8"))
         except (UnicodeDecodeError, ValueError):
@@ -1719,7 +1734,9 @@ class Backend:
             if sidecar:
                 return failure("bad-release", "The release's checksum file could not be read")
             return failure("bad-zip", f"The download is larger than {updates.ZIP_MAX_BYTES} bytes")
-        if code == "cancelled":
+        if code in ("cancelled", "timeout"):
+            # _fetch's own answers (a cancel, the wall-clock cap), not the
+            # downloader's: passed through as they are.
             return answer
         return failure("io", f"The download failed: {message or code}")
 

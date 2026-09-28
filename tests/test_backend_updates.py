@@ -408,8 +408,33 @@ def test_a_downloader_that_hangs_is_killed(stager, tmp_path, monkeypatch) -> Non
         backend._fetch("https://github.com/x", str(tmp_path / "d"), max_bytes=10, timeout=0.1)
     )
     assert time.monotonic() - started < 10
-    assert answer["error"] == "io"
+    assert answer == {
+        "ok": False,
+        "error": "timeout",
+        "message": "The download took longer than 0.3 s",
+        "timeout_s": pytest.approx(0.3),
+    }
     assert backend._procs == set()
+
+
+def test_a_staging_whose_download_hangs_answers_timeout(
+    stager, releases, runtime, tmp_path, monkeypatch
+) -> None:
+    digest = releases.publish(TAG, version=VERSION)
+    backend = stager(python=fake_python(tmp_path, "time.sleep(60)"))
+    monkeypatch.setattr(type(backend), "FETCH_ANSWER_GRACE", 0.2)
+    real = backend._fetch  # every download's socket timeout cut to 0.1 s
+
+    async def short(url, dest, **kwargs):
+        kwargs["timeout"] = 0.1
+        return await real(url, dest, **kwargs)
+
+    monkeypatch.setattr(backend, "_fetch", short)
+    result = run(backend.stage_update(TAG, digest, VERSION, None))
+    assert result["error"] == "timeout"
+    assert result["timeout_s"] == pytest.approx(0.3)
+    assert backend._update is None
+    assert staged_files(runtime) == []
 
 
 def test_a_failed_staging_answers_io_for_a_silent_downloader(stager, releases, tmp_path) -> None:
@@ -580,6 +605,34 @@ def test_unload_kills_the_downloader(stager, releases, runtime, tmp_path) -> Non
     assert part_after_unload is False
     assert result["error"] == "cancelled"
     assert backend._update is None
+
+
+@pytest.mark.parametrize("how", ["cancel_update", "unload"])
+def test_a_cancel_during_the_spawn_is_honoured(
+    stager, releases, runtime, tmp_path, monkeypatch, how
+) -> None:
+    """A cancel that lands while the zip's downloader is being spawned finds
+    no process to kill; the process is killed as soon as it exists."""
+    backend, digest, pidfile = slow_backend(stager, tmp_path, releases)
+    real = asyncio.create_subprocess_exec
+    spawned: list = []
+
+    async def cancelling_spawn(*argv, **kwargs):
+        if argv[-1].endswith(".zip"):
+            await getattr(backend, how)()  # arrives before the process exists
+        proc = await real(*argv, **kwargs)
+        spawned.append(proc)
+        return proc
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", cancelling_spawn)
+    started = time.monotonic()
+    result = run(backend.stage_update(TAG, digest, VERSION, None))
+    assert time.monotonic() - started < 20  # not the shim's 60 s sleep
+    assert result == {"ok": False, "error": "cancelled", "message": "The download was cancelled"}
+    assert all(proc.returncode is not None for proc in spawned)
+    assert not os.path.exists(updates.staged_path(str(runtime), digest) + ".part")
+    assert staged_files(runtime) == []
+    assert backend._update is None and backend._procs == set()
 
 
 # ---------------------------------------------------------------------------

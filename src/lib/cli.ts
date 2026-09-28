@@ -635,7 +635,8 @@ export interface Backend {
    * runtime directory and verify it (update spec 3.12.3); exactly one of the
    * two. `busy` (kind a run's, `"match"`, `"key"` or `"update"`),
    * `bad-request`, `network`, `bad-release`, `hash-mismatch`, `bad-zip`,
-   * `cancelled` or `io` otherwise.
+   * `timeout` (a download that ran past its limit; `timeout_s` is that
+   * limit), `cancelled` or `io` otherwise.
    */
   stage_update(
     tag: string,

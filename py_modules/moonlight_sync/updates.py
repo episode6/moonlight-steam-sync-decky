@@ -391,6 +391,10 @@ def _check_build_json(
             raise BadZip(f"the zip is a build of {build['ref']}, not {ref}")
     if version is not None and build["kind"] == "branch":
         raise BadZip("the zip is a branch build, not a release")
+    # A release's build.json names its tag (release.yml writes it): the
+    # release of `version` is `v<version>`.
+    if version is not None and build["ref"] != "v" + version:
+        raise BadZip(f"the zip is the build of {build['ref']}, not of v{version}")
     return build
 
 

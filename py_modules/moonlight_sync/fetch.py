@@ -380,8 +380,11 @@ def download(
                 digest.update(chunk)
                 _file_side(_write_all, fd, chunk)
         _file_side(os.fsync, fd)
-        os.close(fd)
-        fd = -1
+        # Forget the descriptor before closing it: a close that fails must
+        # not lead the cleanup below to close it a second time (and fail
+        # before it removes the part file). Its failure is the file's: `io`.
+        closing, fd = fd, -1
+        _file_side(os.close, closing)
         got = digest.hexdigest()
         if sha256 is not None and got != sha256.lower():
             raise Failed("hash-mismatch", f"{safe_url(url)} does not have the expected sha256", 200)
@@ -389,7 +392,8 @@ def download(
         return {"ok": True, "status": 200, "bytes": size, "sha256": got}
     except BaseException:
         if fd >= 0:
-            os.close(fd)
+            with contextlib.suppress(OSError):
+                os.close(fd)
         _remove(part)
         raise
 
