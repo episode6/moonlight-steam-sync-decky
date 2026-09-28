@@ -702,6 +702,10 @@ which has no UI: it is the hand-editable switch described under
 `enabled` (the panel's on/off toggle, `true` by default);
 `update_check` (Updates → *Check for updates automatically*, `true` by
 default; nothing about a check is kept on disk);
+`update_channel` (what the updater follows: `"stable"`, the releases, by
+default, or `"branch:<name>"` for a branch's builds; a picker for it on
+the Updates page arrives in a later version, and a value that is not one
+of the two reads as `"stable"`);
 `hide_stream_shortcuts` / `streaming_collection` (the *Streaming tab*
 toggle: the key kept its name), the two Advanced toggles above; and
 `default_layout` (`null`, or `{"url", "title", "when"}`, the
