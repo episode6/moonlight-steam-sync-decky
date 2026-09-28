@@ -771,7 +771,7 @@ Stream shortcuts* **off** (so there are visible shortcuts and a
       another game and come back).
 - [ ] **Settings are locked.** The panel's header buttons and *Settings*
       open a route with the toggle alone: no Host / Artwork / Titles /
-      Advanced / About.
+      Advanced / Updates / About.
 - [ ] **A reboot keeps it off.** Restart Steam: the panel opens on the
       toggle alone and the library is still clean (the load's reconcile
       hides every entry again; the log has no `check_host`).
