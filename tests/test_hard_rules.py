@@ -334,6 +334,8 @@ def test_the_slug_line_and_its_guard() -> None:
     assert slug("feature+x@y") == (0, "build-feature-x-y")
     assert slug("v1.2.3") == (0, "build-v1.2.3")
     assert slug("a" * 85) == (0, "build-" + "a" * 80)
+    # One `-` per character under a UTF-8 locale (the runner's is C.UTF-8).
+    assert slug("caf\u00e9") == (0, "build-caf-")
     assert slug("") == (3, "")
     assert slug("a" * 79 + ".x") == (3, "")  # cut to end in "."
 
@@ -366,6 +368,8 @@ def test_builds_yml_uploads_build_json_last() -> None:
     assert "- name: Upload build.json, last" in first
     assert "out/build.json" in last
     assert publish.count("--prerelease --latest=false") == 2
+    # Amendment A3: the previous build.json goes before any upload.
+    assert 0 <= publish.index("gh release delete-asset") < uploads[0]
 
 
 def build_json_step(path) -> str:
@@ -442,52 +446,82 @@ def test_the_build_json_step_fails_on_anything_else(tmp_path) -> None:
     assert run_build_json_step(tmp_path, ref="a+b", sha="nope").returncode == 1
 
 
+#: `gh` as builds.yml's scripts see it, logging every argv to FAKE_GH_LOG.
+#: `release view` answers FAKE_GH_RELEASE (`none`, `fail`, `title=<name>`),
+#: or with `--json assets` the names in FAKE_GH_ASSETS; a GET through `api`
+#: answers FAKE_GH_REF (`missing` is gh's `HTTP 404`, `exists`, `fail`);
+#: every write succeeds.
 FAKE_GH = """#!/bin/sh
 printf '%s\\n' "$*" >> "$FAKE_GH_LOG"
-case "$1 $2" in
-  "release view")
-    case "$FAKE_GH_RELEASE" in
-      none) echo "release not found" >&2; exit 1 ;;
-      fail) echo "HTTP 502: Bad Gateway" >&2; exit 1 ;;
-      title=*) printf '%s\\n' "${FAKE_GH_RELEASE#title=}"; exit 0 ;;
+case "$1" in
+  api)
+    case " $* " in
+      *" --method "*) exit 0 ;;
+    esac
+    case "${FAKE_GH_REF:-missing}" in
+      missing) echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
+      exists) exit 0 ;;
+      *) echo "gh: Server Error (HTTP 500)" >&2; exit 1 ;;
     esac ;;
-  "release delete") exit 0 ;;
+  release)
+    case "$2" in
+      view)
+        case " $* " in
+          *" --json assets "*) printf '%s\\n' ${FAKE_GH_ASSETS:-}; exit 0 ;;
+        esac
+        case "$FAKE_GH_RELEASE" in
+          none) echo "release not found" >&2; exit 1 ;;
+          fail) echo "HTTP 502: Bad Gateway" >&2; exit 1 ;;
+          title=*) printf '%s\\n' "${FAKE_GH_RELEASE#title=}"; exit 0 ;;
+        esac ;;
+      create|edit|delete-asset|upload|delete) exit 0 ;;
+    esac ;;
 esac
 echo "unexpected: gh $*" >&2
 exit 64
 """
 
 
-def run_job(tmp_path, job: str, *, branch: str, release: str, event: str = "push"):
-    """`job`'s one script under bash with a fake `gh` answering `release`
-    (`none`, `fail` or `title=<name>`): (exit code, outputs, gh calls, stdout)."""
-    (script,) = run_scripts("\n".join(jobs_of(BUILDS.read_text().splitlines())[job]))
+def fake_gh_env(tmp_path, **env: str) -> dict[str, str]:
+    """The environment for a script over the fake `gh`, its log emptied."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
     gh = bin_dir / "gh"
     gh.write_text(FAKE_GH)
     gh.chmod(0o755)
-    log, output = tmp_path / "gh.log", tmp_path / "output"
+    log = tmp_path / "gh.log"
     log.write_text("")
-    output.write_text("")
-    env = {
+    return {
         **os.environ,
         "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
         "LC_ALL": "C.UTF-8",
-        "BRANCH": branch,
-        "GITHUB_REF_TYPE": "branch",
-        "GITHUB_REF": f"refs/heads/{branch}",
-        "GITHUB_EVENT_NAME": event,
         "GITHUB_REPOSITORY": "owner/repo",
-        "GITHUB_OUTPUT": str(output),
         "FAKE_GH_LOG": str(log),
-        "FAKE_GH_RELEASE": release,
+        **env,
     }
+
+
+def run_job(tmp_path, job: str, *, branch: str, release: str, event: str = "push"):
+    """`job`'s one script under bash with a fake `gh` answering `release`
+    (`none`, `fail` or `title=<name>`): (exit code, outputs, gh calls, stdout)."""
+    (script,) = run_scripts("\n".join(jobs_of(BUILDS.read_text().splitlines())[job]))
+    output = tmp_path / "output"
+    output.write_text("")
+    env = fake_gh_env(
+        tmp_path,
+        BRANCH=branch,
+        GITHUB_REF_TYPE="branch",
+        GITHUB_REF=f"refs/heads/{branch}",
+        GITHUB_EVENT_NAME=event,
+        GITHUB_OUTPUT=str(output),
+        FAKE_GH_RELEASE=release,
+    )
     result = subprocess.run(
         ["bash", "-c", script], cwd=tmp_path, env=env, capture_output=True, text=True, check=False
     )
     outputs = dict(line.split("=", 1) for line in output.read_text().splitlines())
-    return result.returncode, outputs, log.read_text().splitlines(), result.stdout
+    calls = (tmp_path / "gh.log").read_text().splitlines()
+    return result.returncode, outputs, calls, result.stdout
 
 
 def gate(tmp_path, **kwargs):
@@ -542,3 +576,154 @@ def test_cleanup_deletes_only_the_branch_s_own_release(tmp_path) -> None:
     assert (code, deletes) == (0, [])
     assert "::notice::build-a-b belongs to the branch 'a-b'; left alone" in stdout
     assert cleanup(tmp_path, branch="a/b", release="fail")[:2] == (1, [])
+
+
+PUBLISH_STEPS = [
+    "Move the tag to the commit built",
+    "Create or edit the release",
+    "Remove the previous build.json",
+    "Upload the zip, the CLI and their checksums",
+    "Upload build.json, last",
+]
+SHA = "c0ffee" + "0" * 34
+
+
+def step_script(job: str, name: str) -> str:
+    """The `run:` script of `job`'s step called `name`."""
+    lines = jobs_of(BUILDS.read_text().splitlines())[job]
+    start = lines.index(f"      - name: {name}")
+    end = next(
+        (n for n in range(start + 1, len(lines)) if lines[n].startswith("      - ")), len(lines)
+    )
+    (script,) = run_scripts("\n".join(lines[start:end]))
+    return script
+
+
+def publish(tmp_path, *, release: str, ref: str, assets: str = "", steps=PUBLISH_STEPS):
+    """`publish`'s steps in order over the fake `gh`, stopping at the first
+    that fails, as the job does: (the failed step or None, gh calls)."""
+    env = fake_gh_env(
+        tmp_path,
+        BRANCH="a/b",
+        SLUG="a-b",
+        GITHUB_SHA=SHA,
+        FAKE_GH_RELEASE=release,
+        FAKE_GH_REF=ref,
+        FAKE_GH_ASSETS=assets,
+    )
+    failed = None
+    for name in steps:
+        result = subprocess.run(
+            ["bash", "-c", step_script("publish", name)],
+            cwd=tmp_path,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            failed = name
+            break
+    calls = (tmp_path / "gh.log").read_text().splitlines()
+    for call in calls:
+        # Every tag of every call is this branch's.
+        assert set(re.findall(r"build-[^\s/]*", call)) == {"build-a-b"}, call
+        assert set(re.findall(r"refs/tags/(\S+)", call)) <= {"build-a-b"}, call
+    return failed, calls
+
+
+VIEW = "release view build-a-b --repo owner/repo --json name --jq .name"
+GET_REF = "api repos/owner/repo/git/ref/tags/build-a-b --silent"
+NOTES = (
+    f"--notes Build of `a/b` at `{SHA}`. Untested: installed from Moonlight Sync's Updates page."
+)
+ASSETS = "release view build-a-b --repo owner/repo --json assets --jq .assets[].name"
+UPLOAD_FOUR = (
+    "release upload build-a-b --repo owner/repo --clobber "
+    "out/Moonlight-Sync.zip out/Moonlight-Sync.zip.sha256 "
+    "out/moonlight-steam-sync.pyz out/moonlight-steam-sync.pyz.sha256"
+)
+UPLOAD_BUILD_JSON = "release upload build-a-b --repo owner/repo --clobber out/build.json"
+
+
+def test_publish_s_steps_are_these_in_this_order() -> None:
+    names = [
+        line.strip().removeprefix("- name: ")
+        for line in jobs_of(BUILDS.read_text().splitlines())["publish"]
+        if line.startswith("      - name: ")
+    ]
+    assert names == PUBLISH_STEPS
+
+
+def test_publish_a_first_build(tmp_path) -> None:
+    failed, calls = publish(tmp_path, release="none", ref="missing")
+    assert failed is None
+    assert calls == [
+        VIEW,
+        GET_REF,
+        "api --method POST repos/owner/repo/git/refs "
+        f"-f ref=refs/tags/build-a-b -f sha={SHA} --silent",
+        VIEW,
+        f"release create build-a-b --repo owner/repo --verify-tag --title a/b {NOTES} "
+        "--prerelease --latest=false",
+        ASSETS,
+        UPLOAD_FOUR,
+        UPLOAD_BUILD_JSON,
+    ]
+
+
+def test_publish_over_the_branch_s_own_build(tmp_path) -> None:
+    failed, calls = publish(
+        tmp_path, release="title=a/b", ref="exists", assets="Moonlight-Sync.zip build.json"
+    )
+    assert failed is None
+    assert calls == [
+        VIEW,
+        GET_REF,
+        "api --method PATCH repos/owner/repo/git/refs/tags/build-a-b "
+        f"-f sha={SHA} -F force=true --silent",
+        VIEW,
+        f"release edit build-a-b --repo owner/repo --title a/b {NOTES} --prerelease --latest=false",
+        ASSETS,
+        "release delete-asset build-a-b build.json --yes --repo owner/repo",
+        UPLOAD_FOUR,
+        UPLOAD_BUILD_JSON,
+    ]
+
+
+def test_publish_deletes_no_build_json_it_does_not_see(tmp_path) -> None:
+    failed, calls = publish(
+        tmp_path, release="title=a/b", ref="exists", assets="Moonlight-Sync.zip"
+    )
+    assert failed is None
+    assert not any("delete-asset" in call for call in calls)
+    assert calls[-2:] == [UPLOAD_FOUR, UPLOAD_BUILD_JSON]
+
+
+def test_publish_never_touches_another_branch_s_release(tmp_path) -> None:
+    """Amendment A2: a same-slug branch published after the gate ran."""
+    failed, calls = publish(tmp_path, release="title=a-b", ref="exists")
+    assert (failed, calls) == ("Move the tag to the commit built", [VIEW])
+    # Even reached on its own, the create-or-edit step does not retitle it.
+    failed, calls = publish(
+        tmp_path, release="title=a-b", ref="exists", steps=["Create or edit the release"]
+    )
+    assert (failed, calls) == ("Create or edit the release", [VIEW])
+
+
+def test_publish_stops_when_github_does_not_answer(tmp_path) -> None:
+    failed, calls = publish(tmp_path, release="none", ref="fail")
+    assert (failed, calls) == ("Move the tag to the commit built", [VIEW, GET_REF])
+    failed, calls = publish(tmp_path, release="fail", ref="exists")
+    assert (failed, calls) == ("Move the tag to the commit built", [VIEW])
+
+
+def test_publish_flags(tmp_path) -> None:
+    """`--verify-tag` on create only; `--prerelease --latest=false` on both."""
+    for release, ref in (("none", "missing"), ("title=a/b", "exists")):
+        _, calls = publish(tmp_path, release=release, ref=ref)
+        for call in calls:
+            verb = call.split()[1] if call.startswith("release ") else None
+            assert ("--verify-tag" in call) == (verb == "create"), call
+            if verb in ("create", "edit"):
+                assert call.endswith("--prerelease --latest=false"), call

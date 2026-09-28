@@ -7,9 +7,11 @@
 # "latest" (`--prerelease --latest=false` on create and on every edit), so
 # `releases/latest` keeps naming the newest v* release. Its five assets are
 # release.yml's four (the zip, the CLI, their .sha256 sidecars) plus
-# build.json, uploaded last: `gh release upload --clobber` deletes an asset
-# before it uploads the new one, so build.json's presence says the other four
-# are in place (update spec 3.12.3).
+# build.json. The previous build's build.json is removed before the four are
+# replaced and the new one is uploaded last (`gh release upload --clobber`
+# deletes an asset before it uploads the new one), so build.json's presence
+# says the four beside it are its own, on a republish as on a first publish
+# (update spec 3.12.3, amendment A3).
 #
 # Jobs:
 #   gate     publish=true for `main`, for a workflow_dispatch, and for a push
@@ -26,7 +28,8 @@
 #            build_info.py refuses fails here: it cannot have a build.
 #   publish  checks the title again (a same-slug branch may have published
 #            since the gate), moves the tag to the commit built, creates or
-#            edits the release, uploads the four files, then build.json.
+#            edits the release, removes its old build.json, uploads the four
+#            files, then build.json.
 #   cleanup  on a branch's deletion, deletes its release and its tag, only
 #            when the release's title is that branch's name.
 #
@@ -151,7 +154,10 @@ jobs:
 
       - name: Write build.json
         # A ref build_info.py refuses (one with `+` or `@`, say) fails the
-        # build: such a branch cannot have one.
+        # build: such a branch cannot have one. No `rm -f build.json` as in
+        # ci.yml's step, deliberately: a fresh checkout has none (ignored,
+        # never committed) and a refusal fails the job, so no stale file
+        # can reach the zip.
         env:
           BRANCH: ${{ github.ref_name }}
         run: |
@@ -259,6 +265,27 @@ jobs:
           else
             cat view.err >&2
             exit 1
+          fi
+
+      - name: Remove the previous build.json
+        # Amendment A3: on a republish the last build's build.json would
+        # stay attached while the four are swapped, and a run cancelled
+        # mid-upload would leave that mix standing. Without it the release
+        # reads as "no build published" until the new one is complete. The
+        # asset list decides, so no error text of gh's is relied on; any
+        # failure fails the job.
+        run: |
+          set -euo pipefail
+          slug="$SLUG"
+          tag="build-${slug}"
+          if ! [[ "$slug" =~ ^[A-Za-z0-9._-]{1,80}$ && "$tag" == build-?* ]] || ! git check-ref-format "refs/tags/${tag}"; then
+            echo "::error::refusing to touch the release '${tag}'"
+            exit 1
+          fi
+          assets=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
+          if printf '%s\n' "$assets" | grep -qxF build.json; then
+            gh release delete-asset "$tag" build.json --yes --repo "$GITHUB_REPOSITORY"
+            echo "Removed ${tag}'s previous build.json"
           fi
 
       - name: Upload the zip, the CLI and their checksums

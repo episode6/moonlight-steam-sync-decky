@@ -1184,22 +1184,37 @@ There is no Steam Deck during development; everything else is tested.
   `run:` script contains a `${{ }}` expression; the slug line is spelled
   identically in `gate` and `cleanup`, every `tag=` is `build-${slug}`
   and guarded before any `gh` call, and that line and guard run under
-  `bash` over sample branch names; every script passes `bash -n`; and
-  `build.json` is uploaded in a step of its own after the other four.
+  `bash` over sample branch names (`café` is `build-caf-` under
+  `C.UTF-8`, the runner's locale); every script passes `bash -n`; and
+  the previous `build.json` is deleted before the first upload and the
+  new one uploaded in a step of its own after the other four.
   It also holds `ci.yml`'s and `release.yml`'s "Write build.json" steps
   identical and runs that step under `bash` in `tmp_path` over a copy of
   `build_info.py` and a stale `build.json`: a branch (with `BUILD_SHA`,
   never `GITHUB_SHA`) and a tag are written, a refused branch name is a
-  notice with no `build.json` left, a refused tag or a bad sha fails. And it runs `gate`'s and `cleanup`'s
-  scripts under `bash` with a fake `gh` on `PATH` (a shell script
-  answering `release view` from `FAKE_GH_RELEASE`: `none`, `fail` or
-  `title=<name>`, and logging its argv) and the `GITHUB_*` variables set:
+  notice with no `build.json` left, a refused tag or a bad sha fails. And
+  it runs `gate`'s, `cleanup`'s and `publish`'s scripts under `bash`
+  with a fake `gh` on `PATH` (`FAKE_GH`, a shell script logging every
+  argv: `release view` answers `FAKE_GH_RELEASE`, `none`, `fail` or
+  `title=<name>`, or with `--json assets` the names in `FAKE_GH_ASSETS`;
+  a GET through `api` answers `FAKE_GH_REF`, `missing` as gh's `HTTP
+  404`, `exists` or `fail`; every write succeeds) and the `GITHUB_*`
+  variables set:
   `publish` from the `GITHUB_OUTPUT` file for `main` with and without its
   release, a branch without one, with its own and with another branch's
   (amendment A2), a dispatch or `main` on another branch's tag failing, an
   API failure failing, a title that tries a workflow command shown
   defanged; `cleanup` deleting only its own release (the argv log), none
-  and another's left alone, an API failure failing.
+  and another's left alone, an API failure failing; `publish`'s five
+  steps run in order by name, stopping at the first failure as the job
+  does, with the whole argv log compared: a first build (`POST git/refs`
+  with `refs/tags/build-<slug>` and the run's sha, `create --verify-tag`,
+  no delete-asset), a republish (`PATCH` with `force=true`, `edit`
+  without `--verify-tag`, the old `build.json` deleted before the
+  uploads, `build.json` last in a call of its own), another branch's
+  title (no `api` call and no write, and the create-or-edit step alone
+  refusing too), an API failure (nothing after it); every tag in every
+  call is `build-<slug>`.
 - The CLI's own suite is `cli/tests` (see `cli/AGENTS.md`, "Testing"): it
   has its own conftest and fakes, runs apart from `tests/` (`python3 -m
   pytest cli`), and `cli/tests/test_release_zipapp.py` builds through
@@ -1273,10 +1288,15 @@ On-device checks are not merge criteria; they are collected in
   job before anything is written, and the create-or-edit step checks it
   once more, so an edit never retitles another branch's release),
   creates the release or edits it with `--prerelease --latest=false` every time (so
-  `releases/latest` keeps naming the newest `v*`), uploads the four files
-  with `--clobber` and then, in a step of its own, `build.json`: `--clobber`
+  `releases/latest` keeps naming the newest `v*`), removes the release's
+  previous `build.json` asset when the asset list (`gh release view --json
+  assets`) has one (amendment A3: otherwise a republish, or a run
+  cancelled mid-upload, would leave the last build's `build.json` beside
+  new or half-replaced files; the list decides, so no `gh` error text is
+  relied on, and any failure fails the job), uploads the four files with
+  `--clobber` and then, in a step of its own, `build.json`: `--clobber`
   deletes an asset before uploading its replacement, so `build.json`
-  arriving last says the others are in place. `cleanup` (`contents:
+  arriving last says the four beside it are its own. `cleanup` (`contents:
   write`, `delete` events of a branch only) runs `gh release delete
   build-<slug> --cleanup-tag --yes` only when the release's title is the
   deleted branch's name; no release, or another branch's, is a success
