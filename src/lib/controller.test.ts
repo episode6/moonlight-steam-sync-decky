@@ -330,6 +330,7 @@ class FakeUi implements UiPort {
     return {
       get: async (url) => {
         this.netCalls.push(url);
+        order.push(`net:${url}`);
         if (this.holdNet) await new Promise<void>((resolve) => this.held.push(resolve));
         const reply = this.netAnswers[url] ?? this.netAnswer;
         if (reply instanceof Error) throw reply;
@@ -365,7 +366,7 @@ function done(kind: RunKind, events: CliEvent[], exit: number, pending: Partial<
 }
 
 let calls: Calls;
-/** Backend calls, browser navigations and toasts, interleaved in the order they happened. */
+/** Backend calls, browser navigations, the updater's GETs, Decky's installer and toasts, interleaved in the order they happened. */
 let order: string[];
 let steam: FakeSteam;
 let ui: FakeUi;
@@ -2318,8 +2319,35 @@ describe("the updater (update spec 3.6)", () => {
   };
   const UNAVAILABLE: HttpAnswer = { ...NO_RELEASES, status: 502, text: "" };
   const OFFERED = "Version 0.13.0 is available. Settings → Updates";
-  const ZIP_URL = `${DOWNLOAD_BASE}/v0.13.0/Moonlight-Sync.zip`;
   const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+  /** `build-main.json`'s commit, lower-cased. */
+  const MAIN_SHA = "abc1234def5678abc1234def5678abc1234def56";
+  const build = (ref: string, sha = MAIN_SHA, kind: BuildInfo["kind"] = "branch"): BuildInfo => ({
+    schema: 1,
+    kind,
+    ref,
+    sha,
+    built_at: null,
+    run: null,
+  });
+  /** Where the fake backend stages a zip: `updates.staged_path` under a runtime directory with a space in it. */
+  const stagedArtifact = (sha: string) => `file:///data/Moonlight Sync/update/staged/Moonlight-Sync-${sha.slice(0, 12)}.zip`;
+  /** `stage_update` as the backend answers it: the zip is what was asked for (a branch's is at `MAIN_SHA`, version 0.12.0). */
+  const stagedFor = (_tag: string, sha: string, version: string | null, ref: string | null) => ({
+    ok: true,
+    artifact: stagedArtifact(sha),
+    hash: sha,
+    version: version ?? "0.12.0",
+    build: ref === null ? null : build(ref),
+  });
+  /** When set, `stage_update` waits for the test to answer it (`answerStage`). */
+  let holdStage = false;
+  let answerStage: ((answer: unknown) => void) | null = null;
+  const stageUpdate = (...args: [string, string, string | null, string | null]) =>
+    holdStage ? new Promise((resolve) => (answerStage = resolve)) : stagedFor(...args);
+  const HASH_MISMATCH = "The download did not match its checksum. Nothing was installed";
+  const BAD_ZIP = "The download is not a Moonlight Sync build. Nothing was installed";
+  const UPDATING = { ok: false, error: "bad-request", message: "An update is being installed" };
   /** Backend callables that would run a Moonlight command (Decision 66), or write anything. */
   const MOONLIGHT_OR_WRITES = ["check_host", "list_apps", "list_cached", "add_host", "start_sync", "start_art_refetch", "start_remove_all", "wake_host"];
 
@@ -2343,7 +2371,23 @@ describe("the updater (update spec 3.6)", () => {
     return { ok: true, settings: { ...settingsFile } };
   };
   const make = (answers: Partial<Record<keyof Backend, unknown>> = {}, timing = instantTiming()) =>
-    new Controller(fakeBackend(calls, { cli_version: cliVersion(), set_settings: setSettings, ...answers }), steam, ui, timing);
+    new Controller(
+      fakeBackend(calls, {
+        cli_version: cliVersion(),
+        set_settings: setSettings,
+        stage_update: stageUpdate,
+        cancel_update: { ok: true, running: true },
+        ...answers,
+      }),
+      steam,
+      ui,
+      timing,
+    );
+
+  beforeEach(() => {
+    holdStage = false;
+    answerStage = null;
+  });
 
   /** Loaded, with the load's automatic check finished. */
   async function loaded(answers: Partial<Record<keyof Backend, unknown>> = {}, timing = instantTiming()) {
@@ -2553,12 +2597,13 @@ describe("the updater (update spec 3.6)", () => {
       expect(ui.netCalls).toHaveLength(1);
     });
 
-    it("the updater calls no backend callable, so no Moonlight command", async () => {
+    it("the check calls no backend callable, and an install only stage_update: no Moonlight command", async () => {
       ui.netAnswer = RELEASES_ANSWER;
       const controller = await loaded();
       await controller.checkUpdates(true);
-      await controller.installUpdate("v0.13.0");
       expect(names()).toEqual([]);
+      await controller.installUpdate("v0.13.0");
+      expect(names()).toEqual(["stage_update"]);
     });
   });
 
@@ -2607,15 +2652,195 @@ describe("the updater (update spec 3.6)", () => {
       return controller;
     }
 
-    it("leaves the settings page, then asks Decky, with the release's URL and digest", async () => {
+    it("a release on stable: no check, the staging, then leave the settings page, then ask Decky with the staged zip", async () => {
       const controller = await offering();
       expect(await controller.installUpdate("v0.13.0")).toBe(true);
-      expect(order).toEqual(["leave", "install:0.13.0"]);
+      expect(order).toEqual(["call:stage_update", "leave", "install:0.13.0"]);
+      // exactly one of version and ref
+      expect(calls).toEqual([["stage_update", ["v0.13.0", "a".repeat(64), "0.13.0", null]]]);
       expect(ui.requests).toEqual([
-        { artifact: ZIP_URL, name: "Moonlight Sync", version: "0.13.0", hash: "a".repeat(64), installType: 2 },
+        { artifact: stagedArtifact("a".repeat(64)), name: "Moonlight Sync", version: "0.13.0", hash: "a".repeat(64), installType: 2 },
       ]);
+      expect(ui.netCalls).toHaveLength(1); // the load's check only
       expect(ui.bodies).toEqual([]);
       expect(controller.state.updatePhase).toBe("idle");
+    });
+
+    it("the phases: downloading while the backend stages, asking while Decky is asked", async () => {
+      holdStage = true;
+      ui.holdInstall = true;
+      const controller = await offering();
+      const pending = controller.installUpdate("v0.13.0");
+      await flush();
+      expect(controller.state.updatePhase).toBe("downloading");
+      expect(order).toEqual(["call:stage_update"]); // nothing left, nothing asked yet
+      answerStage!(stagedFor("v0.13.0", "a".repeat(64), "0.13.0", null));
+      await flush();
+      expect(controller.state.updatePhase).toBe("asking");
+      ui.heldInstall.forEach((resolve) => resolve());
+      expect(await pending).toBe(true);
+      expect(controller.state.updatePhase).toBe("idle");
+    });
+
+    it("a failed staging is toasted, and nothing is left or asked", async () => {
+      const cases: [unknown, string][] = [
+        [{ ok: false, error: "hash-mismatch", message: "The download did not match its checksum" }, HASH_MISMATCH],
+        [{ ok: false, error: "bad-zip", message: "plugin.json names another plugin" }, BAD_ZIP],
+        [{ ok: false, error: "busy", message: "a staging is going", kind: "update" }, "An update is already being downloaded"],
+        [{ ok: false, error: "busy", message: "a run is going", kind: "sync" }, "A sync is already running"],
+        [{ ok: false, error: "network", message: "HTTP 503" }, "Could not reach GitHub: HTTP 503"],
+        [{ ok: false, error: "bad-release", message: "the release's checksums disagree" }, "The release's checksums disagree"],
+        [{ ok: false, error: "timeout", message: "The download took longer than 120 s", timeout_s: 120 }, "Timed out after 120 s"],
+        [{ ok: false, error: "io", message: "backend call stage_update failed: Error" }, "backend call stage_update failed: Error"],
+      ];
+      for (const [answer, text] of cases) {
+        const controller = await offering({ stage_update: answer });
+        order = [];
+        expect(await controller.installUpdate("v0.13.0")).toBe(false);
+        expect(order).toEqual(["call:stage_update", `toast:${text}`]);
+        expect(ui.requests).toEqual([]);
+        expect(ui.leaves).toBe(0);
+        expect(controller.state.updatePhase).toBe("idle");
+      }
+    });
+
+    it("a staging that throws still returns the phase to idle", async () => {
+      const controller = await offering({
+        stage_update: () => {
+          throw new Error("backend gone");
+        },
+      });
+      await expect(controller.installUpdate("v0.13.0")).rejects.toThrow("backend gone");
+      expect(controller.state.updatePhase).toBe("idle");
+      expect(ui.requests).toEqual([]);
+    });
+
+    it("an answer that is not the offer's zip is toasted as bad-zip, and Decky is not asked", async () => {
+      const zip = stagedFor("v0.13.0", "a".repeat(64), "0.13.0", null);
+      for (const answer of [
+        { ...zip, hash: "b".repeat(64) },
+        { ...zip, version: "0.12.0" },
+        { ...zip, hash: "A".repeat(64) },
+      ]) {
+        const controller = await offering({ stage_update: answer });
+        order = [];
+        expect(await controller.installUpdate("v0.13.0")).toBe(false);
+        expect(order).toEqual(["call:stage_update", `toast:${BAD_ZIP}`]);
+        expect(ui.requests).toEqual([]);
+        expect(ui.leaves).toBe(0);
+        expect(controller.state.updatePhase).toBe("idle");
+      }
+    });
+
+    it("Cancel while downloading: cancel_update, and the interrupted install toasts nothing", async () => {
+      holdStage = true;
+      const controller = await offering();
+      const pending = controller.installUpdate("v0.13.0");
+      await flush();
+      await controller.cancelUpdate();
+      answerStage!({ ok: false, error: "cancelled", message: "The download was cancelled" });
+      expect(await pending).toBe(false);
+      expect(order).toEqual(["call:stage_update", "call:cancel_update"]);
+      expect(ui.bodies).toEqual([]);
+      expect(ui.requests).toEqual([]);
+      expect(ui.leaves).toBe(0);
+      expect(controller.state.updatePhase).toBe("idle");
+    });
+
+    it("Cancel does nothing unless the updater is downloading", async () => {
+      const controller = await offering();
+      await controller.cancelUpdate();
+      expect(names()).toEqual([]);
+      ui.holdInstall = true;
+      const pending = controller.installUpdate("v0.13.0");
+      await flush();
+      expect(controller.state.updatePhase).toBe("asking");
+      await controller.cancelUpdate();
+      expect(names()).toEqual(["stage_update"]);
+      ui.heldInstall.forEach((resolve) => resolve());
+      await pending;
+    });
+
+    it("a refused cancel is toasted", async () => {
+      holdStage = true;
+      const controller = await offering({ cancel_update: { ok: false, error: "io", message: "cancel failed" } });
+      const pending = controller.installUpdate("v0.13.0");
+      await flush();
+      await controller.cancelUpdate();
+      expect(ui.bodies).toEqual(["cancel failed"]);
+      answerStage!(stagedFor("v0.13.0", "a".repeat(64), "0.13.0", null));
+      expect(await pending).toBe(true);
+    });
+
+    it("while downloading: runs and the restart row start nothing, a second press, Check now and the channel do nothing", async () => {
+      holdStage = true;
+      const controller = await offering();
+      const pending = controller.installUpdate("v0.13.0");
+      await flush();
+      expect(controller.state.updatePhase).toBe("downloading");
+      calls.length = 0;
+      expect(await controller.run("sync")).toEqual(UPDATING);
+      for (const restart_needed of ["write", "art"] as const) {
+        controller.store.set({ pending: { ...PENDING, restart_needed, last_kind: "sync" } });
+        await controller.restartRow();
+      }
+      expect(await controller.installUpdate("v0.13.0")).toBe(false);
+      expect(await controller.checkUpdates(true)).toBe("skipped");
+      expect(await controller.setUpdateChannel("branch:main")).toBeNull();
+      expect(names()).toEqual([]); // no start_sync, clear_pending, stage_update or set_settings
+      expect(steam.shutdowns).toBe(0);
+      expect(ui.netCalls).toHaveLength(1);
+      expect(ui.bodies).toEqual([]);
+      answerStage!(stagedFor("v0.13.0", "a".repeat(64), "0.13.0", null));
+      expect(await pending).toBe(true);
+      expect(ui.requests).toHaveLength(1);
+    });
+
+    it("turned off while downloading: the download is cancelled, and its late answer lands nowhere", async () => {
+      for (const late of [
+        stagedFor("v0.13.0", "a".repeat(64), "0.13.0", null),
+        { ok: false, error: "cancelled", message: "The download was cancelled" },
+        { ok: false, error: "hash-mismatch", message: "The download did not match its checksum" },
+      ]) {
+        holdStage = true;
+        settingsFile.enabled = true; // the last round turned it off
+        const controller = await offering();
+        const pending = controller.installUpdate("v0.13.0");
+        await flush();
+        await controller.setEnabled(false);
+        expect(names().indexOf("set_settings")).toBeLessThan(names().indexOf("cancel_update"));
+        expect(controller.state.update).toBeNull();
+        expect(controller.state.updatePhase).toBe("idle");
+        answerStage!(late);
+        expect(await pending).toBe(false);
+        expect(controller.state.update).toBeNull();
+        expect(controller.state.updatePhase).toBe("idle");
+        expect(ui.requests).toEqual([]);
+        expect(ui.leaves).toBe(0);
+        expect(ui.bodies).toEqual([]);
+      }
+    });
+
+    it("turned off and on again while downloading: the late answer still lands nowhere", async () => {
+      holdStage = true;
+      const controller = await offering();
+      const pending = controller.installUpdate("v0.13.0");
+      await flush();
+      await controller.setEnabled(false);
+      await controller.setEnabled(true);
+      await flush();
+      ui.bodies = [];
+      answerStage!(stagedFor("v0.13.0", "a".repeat(64), "0.13.0", null));
+      expect(await pending).toBe(false);
+      expect(controller.state.updatePhase).toBe("idle");
+      expect(ui.requests).toEqual([]);
+      expect(ui.bodies).toEqual([]);
+    });
+
+    it("turned off while idle: no cancel_update", async () => {
+      const controller = await offering();
+      await controller.setEnabled(false);
+      expect(names()).not.toContain("cancel_update");
     });
 
     it("a reinstall and a downgrade carry their install types", async () => {
@@ -2637,7 +2862,12 @@ describe("the updater (update spec 3.6)", () => {
       ui.requestAnswer = false;
       const controller = await offering();
       expect(await controller.installUpdate("v0.13.0")).toBe(false);
-      expect(order).toEqual(["leave", "install:0.13.0", "toast:Decky did not accept the install. Update with install.sh from Desktop Mode"]);
+      expect(order).toEqual([
+        "call:stage_update",
+        "leave",
+        "install:0.13.0",
+        "toast:Decky did not accept the install. Update with install.sh from Desktop Mode",
+      ]);
       expect(controller.state.updatePhase).toBe("idle");
     });
 
@@ -2647,10 +2877,10 @@ describe("the updater (update spec 3.6)", () => {
       const pending = controller.installUpdate("v0.13.0");
       await flush();
       expect(controller.state.updatePhase).toBe("asking");
-      expect(await controller.run("sync")).toEqual({ ok: false, error: "bad-request", message: "An update is being installed" });
+      expect(await controller.run("sync")).toEqual(UPDATING);
       expect(await controller.installUpdate("v0.13.0")).toBe(false);
       expect(ui.requests).toHaveLength(1);
-      expect(names()).not.toContain("start_sync");
+      expect(names()).toEqual(["stage_update"]); // no start_sync, no second staging
       ui.heldInstall.forEach((resolve) => resolve());
       expect(await pending).toBe(true);
       expect(controller.state.updatePhase).toBe("idle");
@@ -2662,6 +2892,7 @@ describe("the updater (update spec 3.6)", () => {
       const pending = controller.installUpdate("v0.13.0");
       await flush();
       expect(controller.state.updatePhase).toBe("asking");
+      calls.length = 0;
       for (const restart_needed of ["write", "art"] as const) {
         controller.store.set({ pending: { ...PENDING, restart_needed, last_kind: "sync" } });
         await controller.restartRow();
@@ -2742,19 +2973,11 @@ describe("the updater (update spec 3.6)", () => {
     });
   });
 
-  describe("channels (update spec 3.12.4)", () => {
+  describe("channels (update spec 3.12.4, 3.12.5)", () => {
     const BUILD_MAIN_URL = `${DOWNLOAD_BASE}/build-main/build.json`;
     const BUILD_MAIN: HttpAnswer = { ...NO_RELEASES, text: fixtureText("update/build-main.json") };
-    const MAIN_SHA = "abc1234def5678abc1234def5678abc1234def56";
-    const build = (ref: string, sha = MAIN_SHA, kind: BuildInfo["kind"] = "branch"): BuildInfo => ({
-      schema: 1,
-      kind,
-      ref,
-      sha,
-      built_at: null,
-      run: null,
-    });
-    const BRANCH_REFUSED = "Builds of a branch cannot be installed yet";
+    /** The fixture's build-main zip digest. */
+    const MAIN_DIGEST = "e".repeat(64);
 
     async function following(channel: string, answers: Partial<Record<keyof Backend, unknown>> = {}) {
       settingsFile.update_channel = channel;
@@ -2821,39 +3044,235 @@ describe("the updater (update spec 3.6)", () => {
       }
     });
 
-    it("a branch build is never handed to Decky: refused with a toast, nothing asked", async () => {
+    it("a branch build: check, stage, leave, ask, even within a minute of the last check", async () => {
       const controller = await following("branch:main");
       ui.bodies = [];
-      await refused(controller, "build-main", BRANCH_REFUSED);
-      expect(names()).toEqual([]);
+      expect(await controller.installUpdate("build-main")).toBe(true);
+      expect(order).toEqual([
+        `net:${RELEASES_API}`,
+        `net:${BUILD_MAIN_URL}`,
+        "call:stage_update",
+        "leave",
+        "install:0.12.0 (main @ abc1234)",
+      ]);
+      // exactly one of version and ref: the ref
+      expect(calls).toEqual([["stage_update", ["build-main", MAIN_DIGEST, null, "main"]]]);
+      expect(ui.requests).toEqual([
+        {
+          artifact: stagedArtifact(MAIN_DIGEST),
+          name: "Moonlight Sync",
+          version: "0.12.0 (main @ abc1234)",
+          hash: MAIN_DIGEST,
+          installType: 4,
+        },
+      ]);
+      // the forced check toasts nothing of its own
+      expect(ui.bodies).toEqual([]);
       expect(controller.state.updatePhase).toBe("idle");
-      // another branch's build is no offer at all
-      await refused(controller, "build-feature-x", "That version cannot be installed");
     });
 
-    it("on a branch channel, Install another version still installs a release", async () => {
+    it("a branch build's version is built from the staged zip's own version and build.json", async () => {
+      const controller = await following("branch:main", {
+        stage_update: (...args: [string, string, string | null, string | null]) => ({
+          ...stagedFor(...args),
+          version: "0.12.3",
+          build: build("main", "fedcba9876543210fedcba9876543210fedcba98"),
+        }),
+      });
+      expect(await controller.installUpdate("build-main")).toBe(true);
+      expect(ui.requests.map((r) => r.version)).toEqual(["0.12.3 (main @ fedcba9)"]);
+    });
+
+    it("the check digest is the new build's: a push since the last check is what is staged", async () => {
+      const controller = await following("branch:main");
+      const raw = JSON.parse(fixtureText("update/releases.json")) as { tag_name: string; assets: { name: string; digest: string }[] }[];
+      for (const release of raw) {
+        if (typeof release === "object" && release.tag_name === "build-main") release.assets[0].digest = `sha256:${"f".repeat(64)}`;
+      }
+      ui.netAnswer = { ...NO_RELEASES, text: JSON.stringify(raw) };
+      expect(await controller.installUpdate("build-main")).toBe(true);
+      expect(calls).toEqual([["stage_update", ["build-main", "f".repeat(64), null, "main"]]]);
+      expect(ui.requests[0].hash).toBe("f".repeat(64));
+    });
+
+    it("a staging answer for another branch, or without build.json, is toasted as bad-zip", async () => {
+      for (const zip of [{ build: build("feature/x") }, { build: null }, { build: build("main", MAIN_SHA, "release") }]) {
+        const controller = await following("branch:main", {
+          stage_update: (...args: [string, string, string | null, string | null]) => ({ ...stagedFor(...args), ...zip }),
+        });
+        order = [];
+        expect(await controller.installUpdate("build-main")).toBe(false);
+        expect(order).toEqual([`net:${RELEASES_API}`, `net:${BUILD_MAIN_URL}`, "call:stage_update", `toast:${BAD_ZIP}`]);
+        expect(ui.requests).toEqual([]);
+        expect(ui.leaves).toBe(0);
+        expect(controller.state.updatePhase).toBe("idle");
+      }
+    });
+
+    it("a staging that says a new build is being published says so", async () => {
+      const message = "A new build is being published. Try again in a minute";
+      const controller = await following("branch:main", { stage_update: { ok: false, error: "bad-release", message } });
+      expect(await controller.installUpdate("build-main")).toBe(false);
+      expect(order).toEqual([`net:${RELEASES_API}`, `net:${BUILD_MAIN_URL}`, "call:stage_update", `toast:${message}`]);
+    });
+
+    it("the forced check failed: its text, once, and nothing staged", async () => {
+      const controller = await following("branch:main");
+      ui.netAnswer = UNAVAILABLE;
+      expect(await controller.installUpdate("build-main")).toBe(false);
+      expect(order).toEqual([`net:${RELEASES_API}`, "toast:Could not reach GitHub: GitHub answered 502"]);
+      expect(names()).toEqual([]);
+      expect(controller.state.updatePhase).toBe("idle");
+    });
+
+    it("the forced check never asks before a stored retryAt: its text, nothing asked", async () => {
+      ui.netAnswer = RATE_LIMITED;
+      settingsFile.update_channel = "branch:main";
+      const controller = await loaded();
+      expect(ui.netCalls).toHaveLength(1);
+      expect(await controller.installUpdate("build-main")).toBe(false);
+      expect(ui.netCalls).toHaveLength(1);
+      expect(order).toEqual(["toast:GitHub is limiting requests from this network. Try again in 10 minutes"]);
+      expect(names()).toEqual([]);
+    });
+
+    it("the forced check finds no offer for the tag: latestText's text, nothing staged", async () => {
+      // the build is being republished: its build.json is gone
+      const controller = await following("branch:main");
+      ui.netAnswers = { [BUILD_MAIN_URL]: { ...NO_RELEASES, status: 404, text: "Not Found" } };
+      expect(await controller.installUpdate("build-main")).toBe(false);
+      expect(order).toEqual([`net:${RELEASES_API}`, `net:${BUILD_MAIN_URL}`, "toast:No build of main is published"]);
+      expect(names()).toEqual([]);
+      // another branch's build is no offer on this channel
+      order = [];
+      ui.netAnswers = { [BUILD_MAIN_URL]: BUILD_MAIN };
+      expect(await controller.installUpdate("build-feature-x")).toBe(false);
+      expect(order[order.length - 1]).toMatch(/^toast:main @ abc1234 · built .* · checked /);
+      expect(names()).toEqual([]);
+    });
+
+    it("the forced check finds the build installed: latestText's up to date", async () => {
+      const controller = await following("branch:main");
+      // installed meanwhile, as far as cli_version says
+      controller.store.set({ cliVersion: cliVersion("0.12.0", "v3.2.9", build("main")) });
+      expect(await controller.installUpdate("build-main")).toBe(false);
+      expect(order[order.length - 1]).toMatch(/^toast:Up to date · checked /);
+      expect(names()).toEqual([]);
+    });
+
+    it("a layout walk started during the forced check refuses the install before anything is staged", async () => {
+      const controller = await following("branch:main");
+      ui.holdNet = true;
+      const pending = controller.installUpdate("build-main");
+      await flush();
+      controller.store.set({ walking: true });
+      ui.held.forEach((resolve) => resolve());
+      await flush();
+      ui.held.forEach((resolve) => resolve());
+      expect(await pending).toBe(false);
+      expect(order[order.length - 1]).toBe("toast:Wait for the layouts to be applied");
+      expect(names()).toEqual([]);
+    });
+
+    it("turned off during the forced check: nothing staged, nothing said", async () => {
+      const controller = await following("branch:main");
+      ui.bodies = [];
+      ui.holdNet = true;
+      const pending = controller.installUpdate("build-main");
+      await flush();
+      await controller.setEnabled(false);
+      ui.held.forEach((resolve) => resolve());
+      await flush();
+      ui.held.forEach((resolve) => resolve());
+      expect(await pending).toBe(false);
+      expect(names()).not.toContain("stage_update");
+      expect(ui.bodies).toEqual([]);
+    });
+
+    it("on a branch channel, Install another version still installs a release, after the check", async () => {
       const controller = await following("branch:main");
       expect(await controller.installUpdate("v0.13.0")).toBe(true);
+      expect(order).toEqual([`net:${RELEASES_API}`, `net:${BUILD_MAIN_URL}`, "call:stage_update", "leave", "install:0.13.0"]);
+      expect(calls).toEqual([["stage_update", ["v0.13.0", "a".repeat(64), "0.13.0", null]]]);
       expect(ui.requests).toEqual([
-        { artifact: ZIP_URL, name: "Moonlight Sync", version: "0.13.0", hash: "a".repeat(64), installType: 2 },
+        { artifact: stagedArtifact("a".repeat(64)), name: "Moonlight Sync", version: "0.13.0", hash: "a".repeat(64), installType: 2 },
       ]);
     });
 
-    it("stable with a branch build installed: a switch back to the newest release, by its URL, type 4", async () => {
+    it("stable with a branch build installed: a switch back to the newest release, staged, type 4, no check", async () => {
       const controller = await following("stable", { cli_version: cliVersion("0.14.0", "v3.2.9", build("main")) });
       expect(ui.bodies).toEqual([OFFERED]);
       expect(await controller.installUpdate("v0.13.0")).toBe(true);
       expect(await controller.installUpdate("v0.12.0")).toBe(true);
+      expect(ui.netCalls).toHaveLength(1);
       expect(ui.requests).toEqual([
-        { artifact: ZIP_URL, name: "Moonlight Sync", version: "0.13.0", hash: "a".repeat(64), installType: 4 },
-        {
-          artifact: `${DOWNLOAD_BASE}/v0.12.0/Moonlight-Sync.zip`,
-          name: "Moonlight Sync",
-          version: "0.12.0",
-          hash: "b".repeat(64),
-          installType: 4,
-        },
+        { artifact: stagedArtifact("a".repeat(64)), name: "Moonlight Sync", version: "0.13.0", hash: "a".repeat(64), installType: 4 },
+        { artifact: stagedArtifact("b".repeat(64)), name: "Moonlight Sync", version: "0.12.0", hash: "b".repeat(64), installType: 4 },
       ]);
+    });
+
+    describe("the Channel picker (update spec 3.12.5)", () => {
+      it("stores the channel, then checks it at once, even within a minute of the last check", async () => {
+        const controller = await following("stable");
+        ui.bodies = [];
+        expect(await controller.setUpdateChannel("branch:main")).toMatchObject({ ok: true });
+        expect(order).toEqual(["call:set_settings", `net:${RELEASES_API}`, `net:${BUILD_MAIN_URL}`]);
+        expect(calls).toEqual([["set_settings", [{ update_channel: "branch:main" }]]]);
+        expect(controller.state.settings?.update_channel).toBe("branch:main");
+        // the page reads the new channel's build, and a manual check toasts no offer
+        expect(controller.state.update?.releases?.find((r) => r.tag === "build-main")).toMatchObject({ build: { ref: "main" } });
+        expect(ui.bodies).toEqual([]);
+        expect(controller.state.updatePhase).toBe("idle");
+      });
+
+      it("back to Releases: stored and checked, no build.json", async () => {
+        const controller = await following("branch:main");
+        expect(await controller.setUpdateChannel("stable")).toMatchObject({ ok: true });
+        expect(order).toEqual(["call:set_settings", `net:${RELEASES_API}`]);
+        expect(settingsFile.update_channel).toBe("stable");
+      });
+
+      it("the channel already selected does nothing", async () => {
+        const controller = await following("branch:main");
+        expect(await controller.setUpdateChannel("branch:main")).toBeNull();
+        const stable = await following("stable");
+        expect(await stable.setUpdateChannel("stable")).toBeNull();
+        expect(order).toEqual([]);
+        expect(names()).toEqual([]);
+      });
+
+      it("a refused set_settings is toasted and no check follows", async () => {
+        const controller = await following("stable", {
+          set_settings: { ok: false, error: "bad-request", message: 'update_channel must be "stable" or "branch:<ref>"' },
+        });
+        expect(await controller.setUpdateChannel("branch:main")).toMatchObject({ ok: false });
+        expect(order).toEqual(["call:set_settings", 'toast:update_channel must be "stable" or "branch:<ref>"']);
+        expect(ui.netCalls).toHaveLength(1); // the load's
+      });
+
+      it("the check's failure is toasted as Check now's", async () => {
+        const controller = await following("stable");
+        ui.bodies = [];
+        ui.netAnswer = UNAVAILABLE;
+        await controller.setUpdateChannel("branch:main");
+        expect(order).toEqual(["call:set_settings", `net:${RELEASES_API}`, "toast:Could not reach GitHub: GitHub answered 502"]);
+      });
+
+      it("the check still waits for a stored retryAt", async () => {
+        ui.netAnswer = RATE_LIMITED;
+        const controller = await loaded();
+        await controller.setUpdateChannel("branch:main");
+        expect(ui.netCalls).toHaveLength(1);
+        expect(order).toEqual(["call:set_settings", "toast:GitHub is limiting requests from this network. Try again in 10 minutes"]);
+      });
+
+      it("refused while the plugin is off", async () => {
+        const controller = await following("stable");
+        await controller.setEnabled(false);
+        calls.length = 0;
+        expect(await controller.setUpdateChannel("branch:main")).toBeNull();
+        expect(names()).toEqual([]);
+      });
     });
 
     it("a release's build.json is a release: an update, not a switch", async () => {

@@ -1,16 +1,19 @@
 /**
  * The updater's logic (update spec 3.4, 3.7, 3.12.4): what GitHub says
  * exists, what is offered on the selected channel, and what Decky's
- * installer is handed. Pure (hard rule 9): the requests go through a
- * `NetPort` (`instance.tsx` wires it over `@decky/api`'s no-CORS fetch), and
- * the hand-off through `decky.ts`.
+ * installer is handed once the backend has staged the zip (update spec
+ * 3.12.5). Pure (hard rule 9): the requests go through a `NetPort`
+ * (`instance.tsx` wires it over `@decky/api`'s no-CORS fetch), the download
+ * is the backend's `stage_update`, and the hand-off goes through `decky.ts`.
  *
  * Hard rule 12: download URLs are built from the constants below and a
  * validated tag, never taken from a response (`parseReleases` keeps none),
- * and nothing is offered without GitHub's sha256 of the zip.
+ * and nothing is offered without GitHub's sha256 of the zip. This file (and
+ * its test) is the only one under `src/` that spells a download URL, and
+ * Decky is never handed one.
  */
 
-import { errorText, type BuildInfo, type CliVersion, type Settings, type UpdateChannel } from "./cli";
+import { errorText, type BuildInfo, type CliVersion, type Settings, type StagedUpdate, type UpdateChannel } from "./cli";
 import type { InstallRequest } from "./decky";
 import { dateText, relativeTime } from "./format";
 import { pluginEnabled } from "./library";
@@ -162,7 +165,11 @@ export interface UpdateInfo {
   error: CheckFailure | null;
 }
 
-export type UpdatePhase = "idle" | "checking" | "asking";
+/**
+ * What the updater is doing (update spec 3.6, 3.12.5): `checking` GitHub,
+ * `downloading` (the backend stages the zip), `asking` Decky.
+ */
+export type UpdatePhase = "idle" | "checking" | "downloading" | "asking";
 
 // ---------------------------------------------------------------------------
 // versions
@@ -572,20 +579,58 @@ export function installable(installed: Installed | null, releases: readonly Rele
   return offers;
 }
 
+/** A commit: 40 hex digits, either case (its label lower-cases it). */
+const COMMIT_RE = /^[0-9a-fA-F]{40}$/;
+
 /**
- * What Decky's installer is handed for a release's offer (update spec
- * 3.5); throws without a digest, and for a branch build, which is never
- * handed to Decky by URL (its rolling asset may be replaced between the
- * check and the download; PR-U4c stages every install instead).
+ * The staging answered what was asked for (update spec 3.12.5): the
+ * backend validated the zip, and this checks that its answer is the one the
+ * offer asked for before anything reaches Decky. The hash is the offer's
+ * digest, lower-cased; for a release the zip's version is the offer's,
+ * exactly; for a branch build the zip has a `build.json` of `kind: "branch"`
+ * with the offer's ref and a commit (the version handed to Decky is built
+ * from it). Anything else is `false`.
  */
-export function installRequestOf(offer: Offer, loaderVersion: string | null | undefined): InstallRequest {
-  if (offer.kind !== "release") throw new Error(`${offer.tag} is a branch build, not a release`);
-  if (!offer.digest) throw new Error(`${offer.tag} has no sha256`);
+export function stagedMatches(offer: Offer, staged: StagedUpdate): boolean {
+  if (!offer.digest || typeof staged.hash !== "string" || staged.hash !== offer.digest.toLowerCase()) return false;
+  if (typeof staged.artifact !== "string" || typeof staged.version !== "string") return false;
+  if (offer.kind === "release") return staged.version === offer.version;
+  const build = staged.build;
+  return (
+    !!build &&
+    build.kind === "branch" &&
+    build.ref === offer.ref &&
+    typeof build.sha === "string" &&
+    COMMIT_RE.test(build.sha)
+  );
+}
+
+/**
+ * What Decky's installer is handed (update spec 3.12.5): the staged zip's
+ * `file://` artifact and hash, the plugin's name, the install type for the
+ * offer's action, and the version: the release's own, or for a branch build
+ * `branchVersionText` of the staged zip's own version and `build.json` (what
+ * is in the zip is the truth, not what the list said). Throws for a branch
+ * build whose zip has no `build.json`: the caller checks `stagedMatches`
+ * first. `decky.ts` checks every field again.
+ */
+export function installRequestOf(
+  offer: Offer,
+  staged: StagedUpdate,
+  loaderVersion: string | null | undefined,
+): InstallRequest {
+  let version: string;
+  if (offer.kind === "release") {
+    version = offer.version;
+  } else {
+    if (!staged.build) throw new Error(`${offer.tag}'s zip has no build.json`);
+    version = branchVersionText(staged.version, staged.build);
+  }
   return {
-    artifact: assetUrl(offer.tag, ASSET),
+    artifact: staged.artifact,
     name: PLUGIN_NAME,
-    version: offer.version,
-    hash: offer.digest,
+    version,
+    hash: staged.hash,
     installType: installType(offer.action, loaderVersion),
   };
 }
@@ -594,8 +639,8 @@ export function installRequestOf(offer: Offer, loaderVersion: string | null | un
  * The version Decky is handed for a branch build (update spec 3.12.4):
  * `<the zip's version> (<ref> @ <first 7 of sha>)`, e.g. `0.12.0 (main @
  * abc1234)`, from the staged zip's `package.json` version and
- * `build.json`. Nothing calls it yet: PR-U4c does, after staging, and
- * changes `decky.ts`'s version check, which does not accept this text yet.
+ * `build.json`. Decky shows it in its dialog; `decky.ts` accepts exactly
+ * this shape besides a release's version.
  */
 export function branchVersionText(zipVersion: string, build: Pick<BuildInfo, "ref" | "sha">): string {
   return `${zipVersion} (${buildLabel(build)})`;
@@ -666,10 +711,11 @@ export function versionLabel(offer: Offer): string {
 /**
  * The page's install button: `Switch to <label>` for a `switch` (to a
  * branch's build, or back to a release from one), else `Update to
- * <label>`; `Waiting for Decky…` while Decky is asked. (Spec 3.12.4's
- * `Downloading…` arrives with the `downloading` phase, in PR-U4c.)
+ * <label>`; `Downloading…` while the backend stages the zip, `Waiting for
+ * Decky…` while Decky is asked.
  */
 export function installButtonText(offer: Offer, phase: UpdatePhase): string {
+  if (phase === "downloading") return "Downloading…";
   if (phase === "asking") return "Waiting for Decky…";
   return offer.action === "switch" ? `Switch to ${offer.label}` : `Update to ${offer.label}`;
 }

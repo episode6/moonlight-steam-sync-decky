@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { errorText, isSteamUserMismatch, makeBackend, type CallableFactory, type Failure } from "./cli";
+import { errorText, isSteamUserMismatch, makeBackend, stagingErrorText, type CallableFactory, type Failure } from "./cli";
 
 const fail = (error: Failure["error"], extra: Partial<Failure> = {}): Failure => ({
   ok: false,
@@ -84,6 +84,52 @@ describe("errorText (spec 3.8 error strings)", () => {
     );
     expect(errorText(fail("bad-release"))).toBe("GitHub's answer could not be read. Check again later");
   });
+
+  it("says the staging's failures in the spec's words (update spec 3.12.5)", () => {
+    expect(errorText(fail("hash-mismatch"))).toBe("The download did not match its checksum. Nothing was installed");
+    expect(errorText(fail("bad-zip", { message: "plugin.json names another plugin" }))).toBe(
+      "The download is not a Moonlight Sync build. Nothing was installed",
+    );
+    expect(errorText(fail("busy", { kind: "update" }))).toBe("An update is already being downloaded");
+  });
+});
+
+describe("stagingErrorText (update spec 3.12.5)", () => {
+  it("a staging's bad-release says the backend's message, the first letter upper-cased", () => {
+    expect(stagingErrorText(fail("bad-release", { message: "A new build is being published. Try again in a minute" }))).toBe(
+      "A new build is being published. Try again in a minute",
+    );
+    expect(stagingErrorText(fail("bad-release", { message: "the release's checksums disagree" }))).toBe(
+      "The release's checksums disagree",
+    );
+    expect(stagingErrorText(fail("bad-release", { message: "The release has no zip" }))).toBe("The release has no zip");
+    // without a message, errorText's
+    expect(stagingErrorText(fail("bad-release", { message: "" }))).toBe("GitHub's answer could not be read. Check again later");
+  });
+
+  it("the frontend's own check keeps its texts: errorText is unchanged for both codes", () => {
+    expect(errorText(fail("bad-release", { message: "GitHub's answer was not a list of releases" }))).toBe(
+      "GitHub's answer could not be read. Check again later",
+    );
+    expect(errorText(fail("network", { message: "GitHub answered 502" }))).toBe("Could not reach GitHub: GitHub answered 502");
+  });
+
+  it("a staging's network failure shows its message through errorText's text", () => {
+    expect(stagingErrorText(fail("network", { message: "HTTP 503" }))).toBe("Could not reach GitHub: HTTP 503");
+    expect(stagingErrorText(fail("network", { message: "no answer" }))).toBe("Could not reach GitHub: no answer");
+  });
+
+  it("every other code is errorText's", () => {
+    expect(stagingErrorText(fail("hash-mismatch"))).toBe("The download did not match its checksum. Nothing was installed");
+    expect(stagingErrorText(fail("bad-zip"))).toBe("The download is not a Moonlight Sync build. Nothing was installed");
+    expect(stagingErrorText(fail("busy", { kind: "update" }))).toBe("An update is already being downloaded");
+    expect(stagingErrorText(fail("busy", { kind: "key" }))).toBe("A key fetch is already in progress");
+    expect(stagingErrorText(fail("timeout", { timeout_s: 120 }))).toBe("Timed out after 120 s");
+    expect(stagingErrorText(fail("io", { message: "The download failed: io" }))).toBe("The download failed: io");
+  });
+});
+
+describe("the rest of errorText", () => {
 
   it("spots the steamid3 mismatch", () => {
     expect(

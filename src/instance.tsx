@@ -40,7 +40,8 @@ const ui: UiPort = {
   // The updater (update spec 3.5): Decky's installer through `lib/decky.ts`,
   // the one module that touches Decky's globals (hard rule 12).
   installer: () => deckyInstaller(),
-  // The list of releases through the loader (update spec 2.5: the status,
+  // The list of releases, and a followed branch's build.json, through the
+  // loader (the zip itself is the backend's download; update spec 2.5: the status,
   // the body and the rate-limit headers all come through).
   net: () => ({
     async get(url, headers) {

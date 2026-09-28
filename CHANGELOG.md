@@ -14,15 +14,20 @@ project uses [semantic versioning](https://semver.org/).
   releases (one unauthenticated request, nothing about the device); a
   newer release gets a toast and an **Update to X** row at the bottom of
   the Quick Access panel, which opens the new **Settings → Updates**
-  page. There, **Update to X** closes the settings page and Decky's own
-  dialog asks to confirm; nothing is installed without that. Decky is
-  handed the release's download address on this repository and the
-  SHA-256 GitHub reports for the zip, and a release without one is never
-  offered. The page also shows the installed and latest versions, the
-  release notes, **Check now**, **Check for updates automatically** (the
-  new `update_check` setting, on by default) and **Install another
-  version** (every release from 0.12.0 on: reinstall, downgrade or
-  update). Updating is refused while a sync runs, while layouts are being
+  page. There, **Update to X** first downloads the release's zip from
+  this repository on GitHub (**Downloading…**, with a **Cancel** button)
+  and checks it against the SHA-256 GitHub reports and the release's
+  checksum file, and that it is a Moonlight Sync build; only then does the
+  settings page close and Decky's own dialog ask to confirm, with that
+  checked zip. Nothing is installed without the confirmation, a release
+  without a SHA-256 is never offered, and every failure before the dialog
+  leaves the installed version as it was, with a toast saying why: a
+  download that is wrong is found out before Decky removes anything. The
+  page also shows the installed and latest versions, the release notes,
+  **Check now**, the **Channel** (below), **Check for updates
+  automatically** (the new `update_check` setting, on by default) and
+  **Install another version** (every release from 0.12.0 on: reinstall,
+  downgrade or update). Updating is refused while a sync runs, while layouts are being
   applied and during a SteamGridDB key fetch, and the whole updater is
   silent while the plugin is toggled off. Settings → About gains a
   **Decky Loader** row. Releases before this one have no updater: update
@@ -33,8 +38,8 @@ project uses [semantic versioning](https://semver.org/).
   `gh workflow run builds.yml --ref <branch>`, then with every push to it
   (the new `builds.yml` workflow). Deleting the branch deletes its build.
   Builds are prereleases and never "latest", so `install.sh` and the
-  updater still see releases only; nothing in the plugin installs a build
-  yet, that arrives with the channel picker. Every zip CI builds, a
+  updater's *Releases* channel see releases only; the plugin installs a
+  build only on a branch channel (below). Every zip CI builds, a
   release's included, now carries a `build.json` saying what it was built
   from (`scripts/build_info.py`), except one from a branch whose name has
   a character like `+` or `@`, which CI still builds. See the README's
@@ -44,9 +49,19 @@ project uses [semantic versioning](https://semver.org/).
   this repository on GitHub into `~/homebrew/data/Moonlight Sync/`,
   confirm it against the release's checksum file and the SHA-256 GitHub
   reports, and check that it really is a Moonlight Sync build (its name,
-  its version, no root, nothing outside its folder) before anything would
-  hand it to Decky's installer. The updater does not use it yet; nothing
-  is downloaded until it does.
+  its version, no root, nothing outside its folder) before it hands it to
+  Decky's installer. Every install from the Updates page goes this way,
+  releases included; Decky is never handed a web address.
+- **A Channel picker on Settings → Updates** (the new `update_channel`
+  setting). *Releases*, the default, follows the tested releases; a
+  branch (`main`, or any branch with published builds) follows that
+  branch's newest build, which is untested and can break syncing, so
+  choosing one asks "Follow <branch>?" first. The page then offers
+  **Switch to main @ abc1234** whenever the branch has a build you do not
+  have, the automatic check announces a new push as it does a release,
+  and each install from a branch checks GitHub again first so the build
+  downloaded is the current one. Picking *Releases* again offers the
+  newest release in its place. See the README's "Updating".
 
 ### Changed
 

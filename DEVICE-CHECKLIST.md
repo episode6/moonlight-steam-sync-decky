@@ -957,9 +957,13 @@ Every item here is the user's check, on a device; none is a merge
 criterion. Off-device the updater is covered (`updates.test.ts` over
 `tests/fixtures/update/releases.json`, `decky.test.ts` for the allowlist
 and the call's arguments, `controller.test.ts` "the updater" for the
-check, the refusals and the order *leave the page, then ask Decky*,
-`test_hard_rules.py` for hard rule 12's greps); Decky's own dialog, its
-download, the uninstall and the reload are what these check.
+check, the refusals and the order *check (on a branch), stage, leave the
+page, then ask Decky*, `test_hard_rules.py` for hard rule 12's greps,
+`test_backend_updates.py` for the staging); the backend's download on the
+device, Decky's own dialog, its install from the staged file, the
+uninstall and the reload are what these check. Since the staged hand-off
+(update spec 3.12.5) every install downloads first: the button reads
+*Downloading…*, then the page closes and Decky's dialog opens.
 
 The first release with the updater cannot be updated *to* anything, since
 nothing newer exists yet. V1 to V5 therefore use Settings → Updates →
@@ -984,13 +988,16 @@ the library's tile count.
       nothing), *Check for updates automatically* is on, and *Install
       another version* lists only releases from 0.12.0 up. About has a
       *Decky Loader* row with the loader's version.
-- [ ] **V1. [verify] Decky's dialog, then the install.** *Install another
-      version* → the installed version: Decky's dialog asks "Are you sure
-      you want to reinstall Moonlight Sync …?" (on a real update: "…update
-      Moonlight Sync to version X?"). Confirm: Decky downloads the zip
-      from the release's URL and installs it, on loader v3.2.9. If the
-      dialog never appears, or Decky's log shows an error, escalate with
-      the log.
+- [ ] **V1. [verify] The download, Decky's dialog, then the install.**
+      *Install another version* → the installed version: the button reads
+      *Downloading…* while the plugin's backend downloads and checks the
+      zip (the plugin's log shows `stage_update v…: staged …`), then Decky's
+      dialog asks "Are you sure you want to reinstall Moonlight Sync …?"
+      (on a real update: "…update Moonlight Sync to version X?"). Confirm:
+      Decky installs the staged zip from
+      `~/homebrew/data/Moonlight Sync/update/staged/`, on loader v3.2.9
+      (§17's V8 is the same check for a branch build). If the dialog never
+      appears, or Decky's log shows an error, escalate with both logs.
 - [ ] **V2. [verify] The page closes first, the plugin comes back.** The
       settings page is gone before Decky's dialog shows (Decision U4).
       After Confirm the plugin reloads at the chosen version (About), with
@@ -1008,16 +1015,22 @@ the library's tile count.
       escalate, and it blocks the release.
 - [ ] **V5. Cancel.** Start an install and press *Cancel* in Decky's
       dialog: the old version keeps running, the page's buttons are
-      usable again, and a second attempt opens the dialog again.
+      usable again, and a second attempt opens the dialog again (the zip
+      already staged is not downloaded twice: the plugin's log says
+      "already staged"). Then start one and press the page's own *Cancel*
+      under *Downloading…* at once: no toast, no dialog, the buttons are
+      usable again.
 - [ ] **V6. Where the plugin lands.** After a Confirm, note where Moonlight
       Sync sits in Decky's plugin list (expected: at the end, §2.3 of the
       update spec) and whether a hidden or frozen state it had in Decky's
       list survived. Write what you see into the README's "Updating"
       section.
-- [ ] **V7. Offline.** With Wi-Fi off, start an install and Confirm: the
-      old version still runs; note what Decky's progress does (expected: it
-      may stay on screen) and how it goes away. Write it into the README's
-      "Updating" section. Back online, the install works.
+- [ ] **V7. Offline.** With Wi-Fi off, start an install: the download
+      fails before Decky is asked, a toast says "Could not reach GitHub:
+      …", Decky's dialog never opens, the settings page stays, and the old
+      version still runs (Decky has nothing to download, so its progress
+      never shows). If Decky's dialog or progress appears, escalate. Back
+      online, the install works.
 - [ ] **The check's toast and the panel's row** (once a newer release
       exists). A plugin load (restart Steam) toasts "Version X is
       available. Settings → Updates" once, and the panel's last row reads
@@ -1026,3 +1039,80 @@ the library's tile count.
       until *Check now*.
 - [ ] **Off.** With the plugin toggled off: no toast at load, no row, and
       the settings route has no *Updates* page (§12).
+
+## 17. The staged hand-off and the channels (update spec 3.12.5, V8 to V10)
+
+Every item here is the user's check, on a device, before a release with
+the channel picker is cut; none is a merge criterion. Off-device the
+staging is covered (`test_fetch.py`, `test_updates.py`,
+`test_backend_updates.py` over `file://` trees), and so are the order
+*check, stage, leave, ask*, the forced check on a branch channel, a failed
+staging, *Cancel* and the picker (`controller.test.ts`), and the
+allowlist's `file://` rule (`decky.test.ts`); Decky's install from a
+`file://` path, the picker's modal and a real branch build are what these
+check.
+
+Start as for §16 (the plugin on, synced, a key and a default layout set,
+Decky's log tailed), with `main` publishing builds (`build-main` exists on
+the repository's releases, with a `build.json` among its assets). Keep an
+SSH session for V10's `moonlight-steam-sync --version` and `sha256sum
+~/.local/bin/moonlight-steam-sync`.
+
+- [ ] **The picker.** Settings → Updates' second row is *Channel*, reading
+      *Releases*, with the description "Releases are tested. Builds of a
+      branch are whatever was pushed last." Its list has *Releases*, then
+      `main`, then any other branch with a build. Choosing `main` asks
+      "Follow main?" ("Builds of a branch are untested and can break
+      syncing. You can return to Releases here at any time.", *Follow* /
+      *Cancel*). **[verify]** *Cancel* leaves *Releases* selected in the
+      dropdown (whether Steam's dropdown snaps back to the stored channel
+      after a cancelled confirm is unmeasured) and asks GitHub nothing.
+      Choosing *Releases* from a branch asks nothing.
+- [ ] **The branch's `build.json` through the loader's fetch.** The
+      `build.json` request is the plugin's first request through Decky's
+      `fetchNoCors` to `github.com/…/releases/download/…`, which answers
+      with a redirect (302) to another host; every request before it went
+      to `api.github.com`, which does not redirect. Follow `main` (the
+      picker checks at once): *Latest* must show the build, `main @
+      <sha7> · built … · checked …`, not "No build of main is published".
+      If it shows the latter although `build-main` has a `build.json`, the
+      loader's fetch did not follow the redirect (the check reports no
+      error then, since a failed second request never fails it): escalate
+      with Decky's log.
+- [ ] **V8. [verify] A `file://` artifact installs.** On `main`, press
+      *Switch to main @ <sha7>*: *Downloading…*, then the page closes and
+      Decky's dialog asks to overwrite Moonlight Sync with version
+      "<version> (main @ <sha7>)"; Confirm. Decky installs the zip from
+      `~/homebrew/data/Moonlight Sync/update/staged/` (a path with a space
+      in it) through `utilities/install_plugin`, and the plugin reloads.
+      If Decky refuses the artifact, cannot open the path, or its log shows
+      an error: escalate with the log. The fallback the spec allows then
+      (update spec 3.12.5, not built): releases keep the URL route of
+      update spec 3.5, and branch builds hand Decky the release asset's URL
+      after a successful staging, which has then proved what the URL
+      serves.
+- [ ] **V9. Follow `main`, install, a second push, back to Releases.**
+      After V8: *Installed* reads `<version> · main @ <sha7> · built …`,
+      *Latest* says "Up to date · checked …" and there is no install
+      button. Push a commit to `main`, wait for `builds.yml` to publish it,
+      then restart Steam (or press *Check now* a minute later): the toast
+      "Version main @ <new sha7> is available. Settings → Updates" and the
+      panel's row appear, and *Switch to main @ <new sha7>* installs it.
+      Then choose *Releases*: *Latest* names the newest release and the
+      button reads *Switch to <version>*; pressing it installs the release
+      (Decky asks to overwrite) and *Installed* reads the plain version
+      again. Anything else: escalate.
+- [ ] **V10. The CLI at each step of V9.** Before V8, after V8, after the
+      second push's install and after the return to *Releases*, note
+      `moonlight-steam-sync --version` and the sha256 of
+      `~/.local/bin/moonlight-steam-sync`, and About's CLI rows. Expected:
+      the version stays the release's number throughout; the bytes change
+      to the branch build's bundled CLI after V8 and after the second
+      push's install (a build of the same version with other bytes
+      replaces it, README "The bundled CLI"), and go back to the release's
+      after the return to *Releases*. Anything else: escalate.
+- [ ] **A failed staging leaves everything as it was.** With Wi-Fi off,
+      press *Switch to …* on `main`: the forced check fails first, a toast
+      says "Could not reach GitHub: …", nothing downloads, Decky's dialog
+      never opens. Back online, press it and at once the page's *Cancel*
+      under *Downloading…*: no toast, no dialog, and a second press works.

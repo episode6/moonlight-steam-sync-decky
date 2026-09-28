@@ -775,6 +775,7 @@ export function errorText(failure: Failure, now: Date = new Date()): string {
         : failure.message || "Timed out";
     case "busy":
       if (failure.kind === "key") return "A key fetch is already in progress";
+      if (failure.kind === "update") return "An update is already being downloaded";
       return failure.kind === "match"
         ? "A match change is still being saved"
         : "A sync is already running";
@@ -797,11 +798,37 @@ export function errorText(failure: Failure, now: Date = new Date()): string {
       return `Could not reach GitHub: ${failure.message}`;
     case "bad-release":
       return "GitHub's answer could not be read. Check again later";
+    // The staging's own (update spec 3.12.5).
+    case "hash-mismatch":
+      return "The download did not match its checksum. Nothing was installed";
+    case "bad-zip":
+      return "The download is not a Moonlight Sync build. Nothing was installed";
     case "bad-request":
     case "io":
     default:
       return failure.message;
   }
+}
+
+/**
+ * A `stage_update` failure's text (update spec 3.12.5). `errorText`'s,
+ * except for a `bad-release` that carries the backend's message: those
+ * messages are the spec's own words for the user (update spec 3.12.3 step
+ * 3: "A new build is being published. Try again in a minute", "the
+ * release's checksums disagree", "The release has no zip"), where
+ * `errorText`'s `bad-release` text is about the frontend's own check
+ * reading GitHub's list. The two are told apart by the caller: a
+ * `CheckFailure` is only ever turned into text by `errorText` (the page's
+ * *Latest*, *Check now*), a staging's answer only by this. `network` needs
+ * nothing of its own, since `errorText` already shows the message ("Could
+ * not reach GitHub: HTTP 503"). The message's first letter is upper-cased,
+ * as it starts a toast.
+ */
+export function stagingErrorText(failure: Failure, now: Date = new Date()): string {
+  if (failure.error === "bad-release" && failure.message) {
+    return failure.message.charAt(0).toUpperCase() + failure.message.slice(1);
+  }
+  return errorText(failure, now);
 }
 
 export function isFailure<T extends object>(result: Result<T>): result is Failure {

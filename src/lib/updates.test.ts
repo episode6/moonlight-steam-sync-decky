@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { fixtureText } from "../test/fixtures";
-import type { BuildInfo } from "./cli";
-import { RELEASE_ASSET, RELEASE_URL_PREFIX } from "./decky";
+import type { BuildInfo, StagedUpdate } from "./cli";
 import {
   ASSET,
   assetUrl,
@@ -31,6 +30,7 @@ import {
   REF_RE,
   RELEASES_API,
   REPO,
+  stagedMatches,
   TAG_RE,
   updateCheckEnabled,
   versionLabel,
@@ -114,11 +114,6 @@ describe("the constants", () => {
     expect(ASSET).toBe("Moonlight-Sync.zip");
     expect(PLUGIN_NAME).toBe("Moonlight Sync");
     expect(MIN_UPDATER_VERSION).toEqual([0, 12, 0]);
-  });
-
-  it("agree with decky.ts's allowlist, which spells its own", () => {
-    expect(RELEASE_URL_PREFIX).toBe(`${DOWNLOAD_BASE}/`);
-    expect(RELEASE_ASSET).toBe(ASSET);
   });
 });
 
@@ -737,33 +732,87 @@ describe("the loader", () => {
   });
 });
 
-describe("installRequestOf", () => {
-  const offer = (o: Partial<Extract<Offer, { kind: "release" }>> = {}): Offer => ({ ...release("0.13.0"), action: "update", label: "0.13.0", ...o });
+/** A staged zip's `file://` artifact, as the backend answers it (`updates.staged_path`). */
+const artifactOf = (hash: string) => `file:///data/Moonlight Sync/update/staged/Moonlight-Sync-${hash.slice(0, 12)}.zip`;
 
-  it("the asset's URL, the plugin's name, the version, the digest and the type", () => {
-    expect(installRequestOf(offer(), "v3.2.9")).toEqual({
-      artifact: "https://github.com/episode6/moonlight-steam-sync-decky/releases/download/v0.13.0/Moonlight-Sync.zip",
+describe("stagedMatches: the staging answered what the offer asked for", () => {
+  const offer: Offer = { ...release("0.13.0"), action: "update", label: "0.13.0" };
+  const good: StagedUpdate = { artifact: artifactOf(hex("a")), hash: hex("a"), version: "0.13.0", build: null };
+  const main: Offer = { ...branch("main"), action: "switch", label: "main @ abc1234" };
+  const goodMain: StagedUpdate = { artifact: artifactOf(hex("e")), hash: hex("e"), version: "0.12.0", build: buildInfo("main") };
+
+  it("a release: the offer's digest and version", () => {
+    expect(stagedMatches(offer, good)).toBe(true);
+    // a release's zip may carry a build.json of kind release: it plays no part
+    expect(stagedMatches(offer, { ...good, build: buildInfo("v0.13.0", MAIN_SHA, "release") })).toBe(true);
+    expect(stagedMatches(offer, { ...good, hash: hex("b") })).toBe(false);
+    expect(stagedMatches(offer, { ...good, hash: hex("A") })).toBe(false);
+    expect(stagedMatches(offer, { ...good, version: "0.13.1" })).toBe(false);
+    expect(stagedMatches(offer, { ...good, version: "v0.13.0" })).toBe(false);
+    expect(stagedMatches({ ...offer, digest: null }, good)).toBe(false);
+  });
+
+  it("the offer's digest is compared lower-cased", () => {
+    expect(stagedMatches({ ...offer, digest: hex("A") }, good)).toBe(true);
+  });
+
+  it("a branch build: the digest, and a build.json of kind branch with the offer's ref", () => {
+    expect(stagedMatches(main, goodMain)).toBe(true);
+    // the version is the zip's own, whatever it is
+    expect(stagedMatches(main, { ...goodMain, version: "0.99.0" })).toBe(true);
+    expect(stagedMatches(main, { ...goodMain, hash: hex("a") })).toBe(false);
+    expect(stagedMatches(main, { ...goodMain, build: null })).toBe(false);
+    expect(stagedMatches(main, { ...goodMain, build: buildInfo("main", MAIN_SHA, "release") })).toBe(false);
+    expect(stagedMatches(main, { ...goodMain, build: buildInfo("feature/x") })).toBe(false);
+    expect(stagedMatches(main, { ...goodMain, build: { ...buildInfo("main"), sha: "abc1234" } })).toBe(false);
+  });
+
+  it("an answer whose fields are not strings", () => {
+    expect(stagedMatches(offer, { ...good, artifact: null } as unknown as StagedUpdate)).toBe(false);
+    expect(stagedMatches(offer, { ...good, version: 13 } as unknown as StagedUpdate)).toBe(false);
+    expect(stagedMatches(offer, { ...good, hash: undefined } as unknown as StagedUpdate)).toBe(false);
+  });
+});
+
+describe("installRequestOf: the staged zip", () => {
+  const offer = (o: Partial<Extract<Offer, { kind: "release" }>> = {}): Offer => ({ ...release("0.13.0"), action: "update", label: "0.13.0", ...o });
+  const staged: StagedUpdate = { artifact: artifactOf(hex("a")), hash: hex("a"), version: "0.13.0", build: null };
+
+  it("the staged artifact and hash, the plugin's name, the release's version and the type", () => {
+    expect(installRequestOf(offer(), staged, "v3.2.9")).toEqual({
+      artifact: artifactOf(hex("a")),
       name: "Moonlight Sync",
       version: "0.13.0",
       hash: hex("a"),
       installType: 2,
     });
-    expect(installRequestOf(offer({ action: "downgrade" }), "v3.0.4").installType).toBe(2);
-    expect(installRequestOf(offer({ action: "reinstall" }), "v3.2.9").installType).toBe(1);
-  });
-
-  it("throws without a digest", () => {
-    expect(() => installRequestOf(offer({ digest: null }), "v3.2.9")).toThrow();
+    expect(installRequestOf(offer({ action: "downgrade" }), staged, "v3.0.4").installType).toBe(2);
+    expect(installRequestOf(offer({ action: "reinstall" }), staged, "v3.2.9").installType).toBe(1);
   });
 
   it("a switch back to a release is install type 4 (2 before loader v3.1.0)", () => {
-    expect(installRequestOf(offer({ action: "switch" }), "v3.2.9")).toMatchObject({ version: "0.13.0", installType: 4 });
-    expect(installRequestOf(offer({ action: "switch" }), "v3.0.4").installType).toBe(2);
+    expect(installRequestOf(offer({ action: "switch" }), staged, "v3.2.9")).toMatchObject({ version: "0.13.0", installType: 4 });
+    expect(installRequestOf(offer({ action: "switch" }), staged, "v3.0.4").installType).toBe(2);
   });
 
-  it("throws for a branch build: never handed to Decky by URL", () => {
+  it("a branch build: the version from the staged zip's own version and build.json", () => {
     const build: Offer = { ...branch("main"), action: "switch", label: "main @ abc1234" };
-    expect(() => installRequestOf(build, "v3.2.9")).toThrow();
+    const zip: StagedUpdate = {
+      artifact: artifactOf(hex("e")),
+      hash: hex("e"),
+      version: "0.12.0",
+      build: buildInfo("main", OTHER_SHA),
+    };
+    // the zip's commit, not the one the list said
+    expect(installRequestOf(build, zip, "v3.2.9")).toEqual({
+      artifact: artifactOf(hex("e")),
+      name: "Moonlight Sync",
+      version: "0.12.0 (main @ fedcba9)",
+      hash: hex("e"),
+      installType: 4,
+    });
+    expect(installRequestOf(build, zip, "v3.0.4").installType).toBe(2);
+    expect(() => installRequestOf(build, { ...zip, build: null }, "v3.2.9")).toThrow();
   });
 });
 
@@ -861,6 +910,7 @@ describe("the texts (update spec 3.7)", () => {
   it("installButtonText", () => {
     expect(installButtonText(offer, "idle")).toBe("Update to 0.13.0");
     expect(installButtonText(offer, "checking")).toBe("Update to 0.13.0");
+    expect(installButtonText(offer, "downloading")).toBe("Downloading…");
     expect(installButtonText(offer, "asking")).toBe("Waiting for Decky…");
   });
 
@@ -868,6 +918,7 @@ describe("the texts (update spec 3.7)", () => {
     const build: Offer = { ...branch("main"), action: "switch", label: "main @ abc1234" };
     expect(installButtonText(build, "idle")).toBe("Switch to main @ abc1234");
     expect(installButtonText({ ...offer, action: "switch" }, "idle")).toBe("Switch to 0.13.0");
+    expect(installButtonText(build, "downloading")).toBe("Downloading…");
     expect(installButtonText(build, "asking")).toBe("Waiting for Decky…");
   });
 });
