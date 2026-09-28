@@ -93,8 +93,9 @@ export interface TitleRow {
   layoutSource: number | null;
   /**
    * When the plugin first saw the row's entry in `status` (the *Recently
-   * added* order); `null` for a row without an entry and for a title that
-   * was there before the plugin kept track.
+   * added* order); `null` for a row without an entry, for a host app (the
+   * backend dates none) and for a title that was there before the plugin
+   * kept track.
    */
   added: string | null;
 }
@@ -313,7 +314,7 @@ function addedTime(row: TitleRow): number | null {
 /**
  * `rows` in `sort`'s order, as a new array. `recent` puts the titles with
  * a time first, the latest on top, and the rest (there before the plugin
- * kept track, or without a shortcut: ignored, duplicate) after them; the
+ * kept track, a host app, or without a shortcut: ignored, duplicate) after them; the
  * titles of one sync share a time, so a tie is by name, as the rest is.
  */
 export function sortRows(rows: readonly TitleRow[], sort: TitleSort): TitleRow[] {

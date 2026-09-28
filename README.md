@@ -512,8 +512,12 @@ are in name order among themselves. Press it again for the order by name.
 The page remembers the choice (the `titles_recent_first` setting). The
 plugin notes when it first sees a title, so the titles that were already
 there when this feature arrived have no time and come after the dated
-ones, by name; so do the rows without a shortcut (ignored, duplicate). A
-title that is removed and synced again later counts as added again.
+ones, by name; so do the rows without a shortcut (ignored, duplicate) and
+the host apps (`Desktop`, `Steam Big Picture`), which are never dated. A
+title that is removed and synced again later counts as added again. The
+time goes with the title's name, as its shortcut does: a title another
+host already has parked is known, so it is not new when the active host
+starts publishing it too.
 
 **Change match** searches Steam's store and SteamGridDB (prefilled with
 the title's name; edit it and **Search** again) and shows the results as
@@ -742,7 +746,8 @@ Steam's:
   or `null` when the selection is one you made), `added.json` (when the
   plugin first saw each title, for the Titles page's *Recently added*
   order: `{"version": 1, "titles": {"<Moonlight name>": "<time>"}}`, the
-  time `null` for a title that was there before the plugin kept track;
+  time `null` for a title that was there before the plugin kept track,
+  and neither the Moonlight client nor a host app in it;
   deleting the file starts over, with every title undated).
 - `~/homebrew/logs/Moonlight Sync/moonlight-sync.log`: every CLI call with
   its arguments, the CLI's own messages verbatim, and both CLI versions at

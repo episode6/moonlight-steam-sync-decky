@@ -863,7 +863,8 @@ src/components/             adoptDefault (inspectLayout -> refusal toasts -> Con
                             TitlesPage (the *Recently added* chip beside *Show
                             parked*: setSettings({titles_recent_first}), the rows
                             through sortRows() after the filter, each with
-                            addedText() while it is on, the headline's sortText();
+                            addedText() while it is on, the headline's sortText(),
+                            during a sync only for `recent`;
                             layout text; the *Layout* menu:
                             *Choose layout…* and *Use as the default layout*, which
                             inspects, toasts the refusal texts or confirms), ChangeMatchModal,
@@ -1114,7 +1115,9 @@ none, and a run's `title` events name the titles that were already there
 too (the art phase covers every owned entry), so they cannot say what a
 sync added. `status()` therefore carries an additive `added`
 (`{<Moonlight name>: <iso time> | null}` over the entries it just read,
-never the client entry) and keeps it in `added.json`
+never the client entry nor a `host_app` one: a new host's `Desktop` /
+`Steam Big Picture` would otherwise sit among the games its first sync
+added, PR 68's review) and keeps it in `added.json`
 (`Backend._note_added` -> `Store.note_titles`): a name seen for the first
 time is stamped with `iso_now()`, a known one keeps its time, one that is
 gone is dropped (so a title removed and synced again counts as added
@@ -1124,7 +1127,15 @@ first `status` after the sync that added the title (the frontend asks for
 one when a run ends and at every load), not the commit itself; the titles
 of one sync share it. A kind flip keeps the name, so a replaced entry is
 not new; a sync run from the bare CLI is stamped at the plugin's next
-`status`. A file that cannot be written fails nothing (`status` answers
+`status`. The record is by Moonlight name, across hosts, not per host or
+per entry, which is the shortcut's own identity (its appid is `crc32(Exe
++ AppName)`): `status` lists every host's entries, so a name another
+host's parked entry already carries is known, and the active host
+publishing it later unparks that entry and stamps nothing. Nothing is
+awaited between `note_titles`'s read and its write, so two `status` calls
+in flight at once (`refreshStatus` and `loadTitles` when a run ends with
+the Titles page open) record one after the other and the second keeps
+the first's stamp. A file that cannot be written fails nothing (`status` answers
 the times it has), a broken one reads as no file, and a failed `status`
 records nothing. No CLI flag, event or file is involved (hard rules 1 and
 7 stand). `settings.titles_recent_first` (default `false`,
@@ -1132,8 +1143,9 @@ records nothing. No CLI flag, event or file is involved (hard rules 1 and
 page reopens in the order last chosen; the frontend reads it through
 `join.ts`'s `titleSortOf` and sorts with `sortRows` after the filter,
 before the pages of 50. `tests/test_backend.py` holds the record (the
-baseline, the stamp, the drop, the unchanged file not rewritten, broken
-files, a refused write), `__tests__/join.test.ts` the order, and
+baseline, the stamp, the drop, a host app never stamped, two calls at
+once, the unchanged file not rewritten, broken files, a refused write),
+`__tests__/join.test.ts` the order, and
 `controller.test.ts` that `loadTitles` hands `added` on (`{}` from a
 backend without it or a failed `status`) and that the setting moves
 nothing in the library.

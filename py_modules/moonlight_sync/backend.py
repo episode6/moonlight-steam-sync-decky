@@ -887,9 +887,11 @@ class Backend:
 
     def _note_added(self, entries: list[dict[str, Any]]) -> dict[str, str | None]:
         """``status``'s additive ``added``: ``{<Moonlight name>: <iso time>}``
-        over the entries just read (never the client entry), from
-        ``added.json``, for the Titles page's *Recently added* order (the
-        user's decision of 2026-09-28).
+        over the entries just read, from ``added.json``, for the Titles
+        page's *Recently added* order (the user's decision of 2026-09-28).
+        Never the client entry nor a host app (``Desktop`` / ``Steam Big
+        Picture``): the order is for the games a sync brought in, and a new
+        host's pair would sit among them.
 
         The CLI records no time for a shortcut and ``shortcuts.vdf`` has
         none, and a run's ``title`` events name the titles that were
@@ -898,11 +900,23 @@ class Backend:
         is ``None`` for a title that was there when the plugin started
         keeping track. A file that cannot be written fails nothing: the
         times it already has are answered, and the rest next time.
+
+        The record is by Moonlight name, across hosts, as the shortcut
+        itself is (its appid is ``crc32(Exe + AppName)``): a name another
+        host's parked entry already carries is known, so the active host
+        publishing it later unparks that entry and stamps nothing.
+
+        Nothing is awaited between the read and the write, so two
+        ``status`` calls in flight at once (a run's end with the Titles
+        page open) record one after the other: the second finds the
+        first's stamp and keeps it.
         """
         names = [
             entry["name"]
             for entry in entries
-            if isinstance(entry.get("name"), str) and entry.get("client") is not True
+            if isinstance(entry.get("name"), str)
+            and entry.get("client") is not True
+            and entry.get("host_app") is not True
         ]
         try:
             return self.store.note_titles(names, when=iso_now())

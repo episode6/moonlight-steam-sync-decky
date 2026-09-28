@@ -175,7 +175,9 @@ function headline(data: TitlesData, rows: readonly TitleRow[], sort: TitleSort):
   const published = publishedCount(rows);
   const when = data.cachedWhen ? ` · listed ${relativeTime(data.cachedWhen)}` : "";
   if (data.source === "syncing") {
-    return `${published} published by ${data.host}${when} · refreshes when the sync finishes`;
+    // the rows below are in the chosen order during a sync too; by name goes unsaid, as before
+    const order = sort === "recent" ? ` · ${sortText(sort)}` : "";
+    return `${published} published by ${data.host}${when} · refreshes when the sync finishes${order}`;
   }
   return `${published} published by ${data.host}${when} · ${sortText(sort)}`;
 }

@@ -762,7 +762,7 @@ def test_status_parsing(backend) -> None:
     owned(backend)
     result = run(backend.status())
     entries = [e for e in load_fixture("common/status.ndjson") if e["event"] == "entry"]
-    added = {e["name"]: None for e in entries if not e["client"]}
+    added = {e["name"]: None for e in entries if not e["client"] and not e["host_app"]}
     assert result == {"ok": True, "entries": entries, "notes": [], "added": added}
 
 
@@ -776,11 +776,13 @@ def _write_added(backend, titles) -> None:
 
 def test_status_added_baseline_is_every_title_without_a_time(backend) -> None:
     """The first `status` records what is there with no time: those titles
-    were added before the plugin kept track. Never the client entry."""
+    were added before the plugin kept track. Never the client entry nor a
+    host app: the order is for the games a sync brought in."""
     owned(backend)
     assert not _added_file(backend).exists()
     added = run(backend.status())["added"]
-    assert len(added) == 7 and "Moonlight" not in added
+    assert len(added) == 5
+    assert not {"Moonlight", "Desktop", "Steam Big Picture"} & set(added)
     assert set(added.values()) == {None}
     assert json.loads(_added_file(backend).read_text()) == {"version": 1, "titles": added}
     assert not Path(str(_added_file(backend)) + ".tmp").exists()
@@ -799,6 +801,37 @@ def test_status_added_stamps_a_new_title_and_keeps_the_known_ones(backend, monke
     # and the time stays what it was, however often status is asked
     monkeypatch.setattr(backend_module, "iso_now", lambda: "2026-09-29T00:00:00Z")
     assert run(backend.status())["added"] == added
+
+
+def test_status_added_never_stamps_a_host_app(backend, monkeypatch) -> None:
+    """A new host's `Desktop` / `Steam Big Picture` are not among the titles
+    its first sync added, and one recorded by an earlier build goes."""
+    owned(backend)
+    known = dict(run(backend.status())["added"])
+    _write_added(backend, {**known, "Desktop": "2026-09-27T10:00:00Z"})
+    monkeypatch.setattr(backend_module, "iso_now", lambda: "2026-09-28T09:30:00Z")
+    assert run(backend.status())["added"] == known
+    assert json.loads(_added_file(backend).read_text())["titles"] == known
+
+
+def test_status_added_is_the_same_from_two_calls_at_once(backend, monkeypatch) -> None:
+    """Two `status` calls in flight together (a run's end with the Titles
+    page open) stamp a new title once: the read and the write are not
+    interleaved, so the second call keeps the first's time."""
+    owned(backend)
+    known = dict(run(backend.status())["added"])
+    del known["Tunic"]
+    _write_added(backend, known)
+    ticks = iter(range(60))  # another time at every call
+    monkeypatch.setattr(backend_module, "iso_now", lambda: f"2026-09-28T09:30:{next(ticks):02d}Z")
+
+    async def both():
+        return await asyncio.gather(backend.status(), backend.status())
+
+    first, second = run(both())
+    assert first["added"] == second["added"]
+    assert first["added"]["Tunic"].startswith("2026-09-28T09:")
+    assert json.loads(_added_file(backend).read_text())["titles"] == first["added"]
 
 
 def test_status_added_drops_a_title_that_is_gone(backend) -> None:
@@ -827,7 +860,7 @@ def test_status_added_reads_a_broken_file_as_nothing_recorded(backend, text) -> 
     owned(backend)
     _added_file(backend).write_text(text, encoding="utf-8")
     added = run(backend.status())["added"]
-    assert len(added) == 7 and set(added.values()) == {None}
+    assert len(added) == 5 and set(added.values()) == {None}
     assert json.loads(_added_file(backend).read_text())["titles"] == added
 
 
