@@ -62,6 +62,15 @@ project uses [semantic versioning](https://semver.org/).
   and each install from a branch checks GitHub again first so the build
   downloaded is the current one. Picking *Releases* again offers the
   newest release in its place. See the README's "Updating".
+- **Recently added on the Titles page.** A new **Recently added** chip
+  beside the filters lists the titles added last first, so the games
+  your latest sync brought in are at the top, each row saying when it was
+  added; press it again for the order by name. The page remembers the
+  choice (the new `titles_recent_first` setting, off by default). The
+  plugin notes when it first sees a title (`added.json` in its settings
+  directory), so titles that were already there when you update have no
+  time and come after the dated ones, by name. See the README's "The
+  Titles page".
 
 ### Changed
 

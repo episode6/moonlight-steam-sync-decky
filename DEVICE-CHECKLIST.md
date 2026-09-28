@@ -273,6 +273,16 @@ to `~/homebrew/logs/steam-input-probe/steam-input-probe.log` (the loader's
       write attempts.
 - [ ] **Paging.** With 300+ rows, page through with the D-pad; expect pages
       of 50 and correct navigation at both ends.
+- [ ] **Recently added.** After updating to a build with the chip, open
+      Titles: the order is by name and `added.json` in the settings
+      directory lists every title with `null`. Publish a new app on the
+      host, *Sync now*, restart when prompted, reopen Titles and press
+      **Recently added**: the chip lights, the headline ends "sorted by
+      recently added", the new title is the first row and reads "added
+      today HH:MM", every other row follows by name with no "added" text,
+      and `added.json` has a time for the new title alone. Pick a filter:
+      the order holds. Leave the page and reopen it: still newest first.
+      Press the chip again: by name, no "added" text.
 - [ ] **Show more keeps your place.** Press *Show 50 more* with the D-pad.
       Expect focus on the last row that was already shown (not on the
       button, now 50 rows further down), and one press of down to land on

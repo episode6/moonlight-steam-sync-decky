@@ -877,7 +877,39 @@ class Backend:
         if fail is not None:
             return fail
         assert result is not None
-        return {"ok": True, "entries": self._of(result, "entry"), "notes": self._notes(result)}
+        entries = self._of(result, "entry")
+        return {
+            "ok": True,
+            "entries": entries,
+            "notes": self._notes(result),
+            "added": self._note_added(entries),
+        }
+
+    def _note_added(self, entries: list[dict[str, Any]]) -> dict[str, str | None]:
+        """``status``'s additive ``added``: ``{<Moonlight name>: <iso time>}``
+        over the entries just read (never the client entry), from
+        ``added.json``, for the Titles page's *Recently added* order (the
+        user's decision of 2026-09-28).
+
+        The CLI records no time for a shortcut and ``shortcuts.vdf`` has
+        none, and a run's ``title`` events name the titles that were
+        already there too, so the plugin notes when a name first shows up
+        in ``status``: the frontend asks for one after every run. The time
+        is ``None`` for a title that was there when the plugin started
+        keeping track. A file that cannot be written fails nothing: the
+        times it already has are answered, and the rest next time.
+        """
+        names = [
+            entry["name"]
+            for entry in entries
+            if isinstance(entry.get("name"), str) and entry.get("client") is not True
+        ]
+        try:
+            return self.store.note_titles(names, when=iso_now())
+        except OSError as exc:
+            self._log(f"could not write added.json: {exc}")
+            known = self.store.added() or {}
+            return {name: known.get(name) for name in names}
 
     def _list_result(self, result: RunResult) -> Result:
         apps = self._of(result, "app")

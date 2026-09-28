@@ -345,7 +345,20 @@ export interface Settings {
    * `channelOf` cannot read; the backend refuses to store such a value.
    */
   update_channel?: string;
+  /**
+   * The Titles page lists the titles added last first, instead of by name
+   * (its *Recently added* chip; the user's decision of 2026-09-28). Absent
+   * reads as off.
+   */
+  titles_recent_first?: boolean;
 }
+
+/**
+ * `status`'s `added` (additive; absent from a backend before it):
+ * `{<Moonlight name>: <iso time>}`, when the plugin first saw the title in
+ * `status`; `null` for one that was there before it kept track.
+ */
+export type AddedTitles = Record<string, string | null>;
 
 /** `update_channel`'s two forms, as `updates.ts`'s `channelOf` answers them. */
 export type UpdateChannel = "stable" | `branch:${string}`;
@@ -361,6 +374,7 @@ export type SettingsPatch = Partial<
     | "hide_stream_shortcuts"
     | "streaming_collection"
     | "update_check"
+    | "titles_recent_first"
   >
 > & { update_channel?: UpdateChannel };
 
@@ -602,7 +616,7 @@ export interface Backend {
   cli_capabilities(): Promise<Result<{ art_commit: boolean }>>;
   doctor(): Promise<Result<{ lines: Record<string, string>; raw: string }>>;
   log_tail(n: number): Promise<Result<{ lines: string[] }>>;
-  status(): Promise<Result<{ entries: EntryEvent[]; notes: string[] }>>;
+  status(): Promise<Result<{ entries: EntryEvent[]; notes: string[]; added?: AddedTitles }>>;
   list_apps(): Promise<Result<ListResult>>;
   list_cached(host: string): Promise<Result<ListResult>>;
   check_host(name: string, force: boolean): Promise<Result<HostCheck>>;

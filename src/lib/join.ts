@@ -6,14 +6,25 @@
  *   match line and thumbnail. Parked entries only `status` knows about (the
  *   other hosts' titles, hidden in place) become parked rows too.
  * - `filterRows` / `pageOf` are the five filters, the *Show parked* chip and
- *   the pages of 50.
+ *   the pages of 50; `sortRows` is the *Recently added* chip's order.
  * - `candidateRows` / `noMatchRow` / `matchSummary` are the Change match
  *   modal: one list, owned games first, then Steam before SteamGridDB, each
  *   with the outcome a pin would produce, the current match marked, and a
  *   final *No match*.
  */
 
-import type { AppEvent, CandidateEvent, EntryEvent, LayoutEntry, Match, PinnedEvent, SameGameAs } from "./cli";
+import type {
+  AddedTitles,
+  AppEvent,
+  CandidateEvent,
+  EntryEvent,
+  LayoutEntry,
+  Match,
+  PinnedEvent,
+  SameGameAs,
+  Settings,
+} from "./cli";
+import { relativeTime } from "./format";
 import { layoutStatusText } from "./layouts";
 
 // ---------------------------------------------------------------------------
@@ -80,6 +91,12 @@ export interface TitleRow {
    * parked -- a Stream entry, a visible shortcut or a host app alike.
    */
   layoutSource: number | null;
+  /**
+   * When the plugin first saw the row's entry in `status` (the *Recently
+   * added* order); `null` for a row without an entry and for a title that
+   * was there before the plugin kept track.
+   */
+  added: string | null;
 }
 
 export const BADGES: Record<BadgeId, Badge> = {
@@ -134,6 +151,7 @@ interface RowInput {
   entry: EntryEvent | null;
   ignoredBy: "plugin" | "config" | null;
   layouts: Readonly<Record<string, LayoutEntry>>;
+  added: Readonly<AddedTitles>;
 }
 
 /**
@@ -195,6 +213,11 @@ function buildRow(input: RowInput): TitleRow {
     layout,
     layoutTarget,
     layoutSource,
+    // own keys only: a title may be called "constructor"
+    added:
+      entry && Object.prototype.hasOwnProperty.call(input.added, entry.name)
+        ? (input.added[entry.name] ?? null)
+        : null,
   };
 }
 
@@ -212,13 +235,15 @@ export function compareNames(a: string, b: string): number {
  * in it is ignored (and can be unignored) even before the next `list` says
  * so; a name `list` calls ignored that is not in it is ignored by the CLI's
  * `config.toml`, which the plugin never writes. `layouts` is `layouts.json`'s
- * `entries`, for the stream rows' layout text.
+ * `entries`, for the stream rows' layout text; `added` is `status`'s, for
+ * `sortRows`. The rows come sorted by name.
  */
 export function joinTitles(
   apps: readonly AppEvent[],
   entries: readonly EntryEvent[],
   ignoreFile: readonly string[] = [],
   layouts: Readonly<Record<string, LayoutEntry>> = {},
+  added: Readonly<AddedTitles> = {},
 ): TitleRow[] {
   const byName = new Map<string, EntryEvent>();
   for (const entry of entries) {
@@ -242,6 +267,7 @@ export function joinTitles(
         entry: byName.get(app.name) ?? null,
         ignoredBy,
         layouts,
+        added,
       }),
     );
   }
@@ -259,10 +285,57 @@ export function joinTitles(
         entry,
         ignoredBy: inFile.has(entry.name) ? "plugin" : null,
         layouts,
+        added,
       }),
     );
   }
   return rows.sort((a, b) => compareNames(a.name, b.name));
+}
+
+// ---------------------------------------------------------------------------
+// the order
+
+/** `name`: by name; `recent`: the titles added last first (the *Recently added* chip). */
+export type TitleSort = "name" | "recent";
+
+/** The order the settings ask for (`titles_recent_first`; absent reads as by name). */
+export function titleSortOf(settings: Pick<Settings, "titles_recent_first"> | null | undefined): TitleSort {
+  return settings?.titles_recent_first === true ? "recent" : "name";
+}
+
+/** A row's `added` as a time, or `null` when it has none or it does not parse. */
+function addedTime(row: TitleRow): number | null {
+  if (!row.added) return null;
+  const time = Date.parse(row.added);
+  return Number.isNaN(time) ? null : time;
+}
+
+/**
+ * `rows` in `sort`'s order, as a new array. `recent` puts the titles with
+ * a time first, the latest on top, and the rest (there before the plugin
+ * kept track, or without a shortcut: ignored, duplicate) after them; the
+ * titles of one sync share a time, so a tie is by name, as the rest is.
+ */
+export function sortRows(rows: readonly TitleRow[], sort: TitleSort): TitleRow[] {
+  const byName = (a: TitleRow, b: TitleRow) => compareNames(a.name, b.name);
+  if (sort === "name") return [...rows].sort(byName);
+  const times = new Map(rows.map((row) => [row, addedTime(row)]));
+  return [...rows].sort((a, b) => {
+    const left = times.get(a) ?? null;
+    const right = times.get(b) ?? null;
+    if (left === null || right === null) return left === right ? byName(a, b) : left === null ? 1 : -1;
+    return right - left || byName(a, b);
+  });
+}
+
+/** The headline's last part: "sorted by name" / "sorted by recently added". */
+export function sortText(sort: TitleSort): string {
+  return sort === "recent" ? "sorted by recently added" : "sorted by name";
+}
+
+/** A row's "added today 14:02" under the `recent` order; `null` for a row without a time. */
+export function addedText(row: TitleRow, now: Date = new Date()): string | null {
+  return addedTime(row) === null ? null : `added ${relativeTime(row.added, now)}`;
 }
 
 // ---------------------------------------------------------------------------

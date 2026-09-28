@@ -968,6 +968,16 @@ describe("the Titles page (spec 3.8)", () => {
     expect(load.data.ignored).toEqual(["Demo Launcher"]);
     expect(load.data.host).toBe("MY-GAMING-PC");
     expect(load.data.cachedWhen).toBe("2026-09-18T14:02:00Z");
+    expect(load.data.added).toEqual({}); // a backend from before `added`
+  });
+
+  it("hands the page status's added times (the Recently added order)", async () => {
+    const added = { Balatro: "2026-09-27T10:00:00Z", "Hades II": null };
+    const controller = await loaded({
+      status: { ok: true, entries: eventsOf(loadFixture("common/status.ndjson"), "entry"), notes: [], added },
+    });
+    const load = await controller.loadTitles();
+    expect(load.ok && load.data.added).toEqual(added);
   });
 
   it("reads the same cache while a run is going, as 'syncing'", async () => {
@@ -1068,6 +1078,7 @@ describe("the Titles page (spec 3.8)", () => {
     });
     const load = await controller.loadTitles();
     expect(load.ok && load.data.entries).toEqual([]);
+    expect(load.ok && load.data.added).toEqual({});
     expect(load.ok && load.data.statusError).toBe("status went wrong");
   });
 
@@ -1785,6 +1796,18 @@ describe("hidden state and the Streaming group (spec 3.15, 3.17)", () => {
     steam.lib.collections.set(STREAMING_COLLECTION, new Set([BALATRO, HADES, SPIRITFARER, 570]));
     await loaded();
     expect(members()).toEqual(sorted([HADES, SPIRITFARER, 570]));
+  });
+
+  it("the Titles page's order is stored and moves nothing in the library", async () => {
+    const controller = await loaded({ set_settings: patched });
+    steam.lib.log = [];
+    calls.length = 0;
+    const result = await controller.setSettings({ titles_recent_first: true });
+    expect(result.ok).toBe(true);
+    expect(calls).toEqual([["set_settings", [{ titles_recent_first: true }]]]);
+    expect(controller.state.settings?.titles_recent_first).toBe(true);
+    await controller.reconcileLibrary();
+    expect(steam.lib.log).toEqual([]);
   });
 
   it("with Stream shortcuts shown, leaves a parked title alone: it may be live on another device", async () => {

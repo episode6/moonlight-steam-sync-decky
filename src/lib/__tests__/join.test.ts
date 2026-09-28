@@ -4,6 +4,7 @@ import { loadFixture } from "../../test/fixtures";
 import type { AppEvent, CandidateEvent, EntryEvent, Match } from "../cli";
 import { eventsOf, lastOf } from "../events";
 import {
+  addedText,
   applyPin,
   candidateRows,
   capsuleUrl,
@@ -21,7 +22,10 @@ import {
   pageOf,
   parkedCount,
   publishedCount,
+  sortRows,
+  sortText,
   STALE_ART_TEXT,
+  titleSortOf,
   type TitleRow,
 } from "../join";
 
@@ -331,6 +335,99 @@ describe("sorting and pages of 50", () => {
     expect(page.rows).toHaveLength(9);
     expect(page.hasMore).toBe(false);
     expect(page.remaining).toBe(0);
+  });
+});
+
+describe("the Recently added order", () => {
+  const entryOf = (name: string): EntryEvent => ({ ...entries[0], name, app_name: name, client: false, parked: false });
+  const joined = (added: Record<string, string | null>, listed = Object.keys(added)) =>
+    joinTitles(
+      listed.map((name) => app(name)),
+      listed.map(entryOf),
+      [],
+      {},
+      added,
+    );
+
+  it("the setting alone picks the order, and absent reads as by name", () => {
+    expect(titleSortOf({ titles_recent_first: true })).toBe("recent");
+    expect(titleSortOf({ titles_recent_first: false })).toBe("name");
+    expect(titleSortOf({})).toBe("name");
+    expect(titleSortOf(null)).toBe("name");
+    expect(sortText("name")).toBe("sorted by name");
+    expect(sortText("recent")).toBe("sorted by recently added");
+  });
+
+  it("rows carry status's time by their entry's name, null without one", () => {
+    const rows = joinTitles(apps, entries, [], {}, { Balatro: "2026-09-27T10:00:00Z", "Hades II": null });
+    expect(byName(rows, "Balatro").added).toBe("2026-09-27T10:00:00Z");
+    expect(byName(rows, "Hades II").added).toBeNull(); // there before the plugin kept track
+    expect(byName(rows, "Sea of Stars").added).toBeNull(); // a backend that did not say
+    expect(rowsOf().every((row) => row.added === null)).toBe(true);
+  });
+
+  it("a row without an entry has no time, whatever the map says", () => {
+    const rows = joinTitles([app("Ghost")], [], [], {}, { Ghost: "2026-09-27T10:00:00Z" });
+    expect(rows[0].added).toBeNull();
+  });
+
+  it("a title named like an Object member reads its own key only", () => {
+    expect(joined({}, ["constructor", "toString"]).map((row) => row.added)).toEqual([null, null]);
+    expect(joined({ constructor: "2026-09-27T10:00:00Z" })[0].added).toBe("2026-09-27T10:00:00Z");
+  });
+
+  it("the titles added last come first, one sync's by name, the rest after them by name", () => {
+    const rows = joined({
+      Apple: null,
+      Banana: "2026-09-20T08:00:00Z",
+      Cherry: "2026-09-27T10:00:00Z",
+      Damson: "2026-09-27T10:00:00Z",
+      Elder: "2026-09-25T23:59:59Z",
+      Zebra: null,
+    });
+    expect(names(sortRows(rows, "recent"))).toEqual(["Cherry", "Damson", "Elder", "Banana", "Apple", "Zebra"]);
+    expect(names(sortRows([...rows].reverse(), "recent"))).toEqual(names(sortRows(rows, "recent")));
+  });
+
+  it("by name is the join's own order, and neither order changes the rows it was given", () => {
+    const rows = joined({ Banana: "2026-09-20T08:00:00Z", Apple: null, Cherry: "2026-09-27T10:00:00Z" });
+    const before = names(rows);
+    expect(before).toEqual(["Apple", "Banana", "Cherry"]);
+    expect(names(sortRows(rows, "name"))).toEqual(before);
+    expect(names(sortRows(rows, "recent"))).toEqual(["Cherry", "Banana", "Apple"]);
+    expect(names(rows)).toEqual(before);
+  });
+
+  it("a time that does not parse counts as none", () => {
+    const rows = joined({ Apple: "last week", Banana: "2026-09-20T08:00:00Z" });
+    expect(names(sortRows(rows, "recent"))).toEqual(["Banana", "Apple"]);
+    expect(addedText(byName(rows, "Apple"))).toBeNull();
+  });
+
+  it("with no times at all the order is by name", () => {
+    expect(names(sortRows(rowsOf(), "recent"))).toEqual(names(rowsOf()));
+  });
+
+  it("sorts what a filter left, so the pages follow the order", () => {
+    const many = Object.fromEntries(
+      Array.from({ length: 60 }, (_, i) => [
+        `Title ${String(i).padStart(2, "0")}`,
+        i === 57 ? "2026-09-27T10:00:00Z" : null,
+      ]),
+    );
+    const page = pageOf(sortRows(filterRows(joined(many), "shortcut"), "recent"), 1);
+    expect(page.rows[0].name).toBe("Title 57");
+    expect(page.rows[1].name).toBe("Title 00");
+    expect(page.remaining).toBe(10);
+  });
+
+  it("says when a row was added", () => {
+    const now = new Date(2026, 8, 28, 12, 0);
+    const at = (date: Date) => joined({ Apple: date.toISOString() })[0];
+    expect(addedText(at(new Date(2026, 8, 28, 9, 5)), now)).toBe("added today 09:05");
+    expect(addedText(at(new Date(2026, 8, 27, 21, 30)), now)).toBe("added yesterday 21:30");
+    expect(addedText(at(new Date(2026, 8, 25, 12, 0)), now)).toBe("added 3 days ago");
+    expect(addedText(joined({ Apple: null })[0], now)).toBeNull();
   });
 });
 
