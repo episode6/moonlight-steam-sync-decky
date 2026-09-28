@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import json
 import os
 import re
 import subprocess
+import sys
 
 from conftest import ROOT, run
 from moonlight_sync import sgdbpage
@@ -727,3 +729,68 @@ def test_publish_flags(tmp_path) -> None:
             assert ("--verify-tag" in call) == (verb == "create"), call
             if verb in ("create", "edit"):
                 assert call.endswith("--prerelease --latest=false"), call
+
+
+# The update downloader (update spec 3.12.3): the code that decides which
+# bytes Decky later installs as root.
+PY_MODULES = ROOT / "py_modules"
+FETCH_PY = PY_MODULES / "moonlight_sync" / "fetch.py"
+
+
+def backend_python_files():
+    yield from PY_MODULES.rglob("*.py")
+    yield ROOT / "main.py"
+
+
+def imports_of(path) -> list[tuple[str, int, list[str]]]:
+    """``(module, level, names)`` for every import statement in ``path``."""
+    found = []
+    for node in ast.walk(ast.parse(path.read_text(), str(path))):
+        if isinstance(node, ast.Import):
+            found.extend((alias.name, 0, []) for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            found.append((node.module or "", node.level, [alias.name for alias in node.names]))
+    return found
+
+
+def test_fetch_py_imports_the_standard_library_only() -> None:
+    for module, level, _ in imports_of(FETCH_PY):
+        assert level == 0, "fetch.py makes a relative import"
+        top = module.split(".")[0]
+        assert top != "moonlight_sync"
+        assert top == "__future__" or top in sys.stdlib_module_names, module
+
+
+def test_fetch_py_parses_as_python_3_11() -> None:
+    """The system interpreter runs it; the CLI's floor is 3.11."""
+    ast.parse(FETCH_PY.read_text(), str(FETCH_PY), feature_version=(3, 11))
+
+
+def test_nothing_imports_fetch_py() -> None:
+    """The backend runs the downloader as a script; it never imports it."""
+    for path in backend_python_files():
+        for module, _, names in imports_of(path):
+            assert module.split(".")[-1] != "fetch", path
+            assert "fetch" not in names, path
+
+
+def test_no_py_module_turns_certificate_verification_off() -> None:
+    patterns = (
+        re.compile(r"CERT_NONE"),
+        re.compile(r"_create_unverified_context"),
+        re.compile(r"check_hostname\s*=\s*False"),
+        re.compile(r"verify_mode\s*=(?!=)"),
+    )
+    for path in backend_python_files():
+        text = path.read_text()
+        for pattern in patterns:
+            assert not pattern.search(text), (path, pattern.pattern)
+
+
+def test_the_download_source_is_a_test_seam_only() -> None:
+    """``main.py`` never passes ``update_source`` (so the plugin downloads
+    from GitHub only), and nothing in the backend turns ``allow_file`` on."""
+    main = (ROOT / "main.py").read_text()
+    assert "update_source" not in main and "allow_file" not in main
+    for path in PY_MODULES.rglob("*.py"):
+        assert not re.search(r"allow_file\s*=\s*True", path.read_text()), path

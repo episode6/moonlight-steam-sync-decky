@@ -15,6 +15,8 @@
   ``cdp.CONNECT`` (spec 3.20): the Game Mode browser as the seams see it,
   serving ``tests/fixtures/sgdb`` through ``tests/fakedom.py``, so no test
   opens a socket to a debugger.
+- ``no_network``   fails the test on a socket ``connect`` anywhere but the
+  loopback (the update tests: the downloader is exercised over ``file://``).
 
 pytest-asyncio is not used: async callables are driven with :func:`run`.
 """
@@ -24,6 +26,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import socket
 import stat
 import sys
 import urllib.parse
@@ -140,6 +143,7 @@ def make_backend(tmp_path: Path, request: pytest.FixtureRequest) -> Callable[...
             log_dir=str(tmp_path / "logs"),
             plugin_dir=str(tmp_path / "plugin"),
             home=str(home),
+            runtime_dir=str(tmp_path / "runtime"),
             plugin_version="0.1.0",
             emit=recorder,
             cli=[sys.executable, str(FAKE_CLI)],
@@ -209,6 +213,41 @@ class InstallEnv:
 @pytest.fixture
 def install_env(tmp_path: Path) -> InstallEnv:
     return InstallEnv(tmp_path)
+
+
+LOOPBACK = {"127.0.0.1", "::1", "localhost"}
+
+
+@pytest.fixture
+def no_network(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fail the test on any socket ``connect`` to a non-loopback address.
+
+    Used by the update tests (``pytestmark``), whose whole point is that the
+    downloader's checks work without the network: nothing there may reach
+    GitHub or anywhere else. Not autouse: ``tests/test_cdp.py`` talks to a
+    loopback fake debugger on purpose, which this would allow anyway, but
+    the guard stays where it is asked for.
+    """
+
+    def refuse(address: Any) -> None:
+        host = address[0] if isinstance(address, tuple) else address
+        if isinstance(host, str) and (host in LOOPBACK or host.startswith("/")):
+            return
+        raise AssertionError(f"a test tried to open a socket to {address!r}")
+
+    real_connect = socket.socket.connect
+    real_connect_ex = socket.socket.connect_ex
+
+    def connect(self: socket.socket, address: Any) -> None:
+        refuse(address)
+        return real_connect(self, address)
+
+    def connect_ex(self: socket.socket, address: Any) -> int:
+        refuse(address)
+        return real_connect_ex(self, address)
+
+    monkeypatch.setattr(socket.socket, "connect", connect)
+    monkeypatch.setattr(socket.socket, "connect_ex", connect_ex)
 
 
 # ---------------------------------------------------------------------------

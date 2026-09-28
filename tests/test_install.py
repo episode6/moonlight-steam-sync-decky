@@ -59,12 +59,70 @@ def test_newer_installed_is_untouched(install_env) -> None:
     assert install_env.installed_path.read_bytes() == before
 
 
-def test_same_version_is_untouched(install_env) -> None:
+def test_same_version_and_same_bytes_is_untouched(install_env, monkeypatch) -> None:
+    install_env.bundled("moonlight-steam-sync.pyz 0.4.0")
+    install_env.installed_path.parent.mkdir(parents=True)
+    install_env.installed_path.write_bytes(install_env.bundled_path.read_bytes())
+    install_env.installed_path.chmod(0o700)
+    monkeypatch.setattr(install, "install_file", None)  # never reached
+    report = ensure(install_env)
+    assert report.action == "kept"
+    assert report.error is None
+    assert stat.S_IMODE(install_env.installed_path.stat().st_mode) == 0o700
+
+
+def test_same_version_with_other_bytes_is_replaced(install_env, monkeypatch) -> None:
+    """Decision U12: a branch build carries the last release's version, so an
+    equal version with other bytes is replaced, through the atomic install."""
     install_env.bundled("moonlight-steam-sync.pyz 0.4.0")
     install_env.installed("moonlight-steam-sync 0.4.0")
+    calls = []
+    real_replace = os.replace
+
+    def spy(src, dst):
+        calls.append((src, dst))
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(install.os, "replace", spy)
+    report = ensure(install_env)
+    assert report.action == "replaced"
+    assert report.error is None
+    assert report.installed == (0, 4, 0)
+    assert calls == [(str(install_env.installed_path) + ".tmp", str(install_env.installed_path))]
+    assert install_env.installed_path.read_bytes() == install_env.bundled_path.read_bytes()
+
+
+def test_newer_installed_is_kept_whatever_its_bytes(install_env) -> None:
+    """Nothing is ever downgraded: the hash is only asked of an equal version."""
+    install_env.bundled("moonlight-steam-sync.pyz 0.4.0")
+    install_env.installed("moonlight-steam-sync 0.5.0")
     before = install_env.installed_path.read_bytes()
     assert ensure(install_env).action == "kept"
     assert install_env.installed_path.read_bytes() == before
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root can write a read-only directory")
+def test_a_failed_replace_leaves_the_installed_file(install_env) -> None:
+    install_env.bundled("moonlight-steam-sync.pyz 0.4.0")
+    install_env.installed("moonlight-steam-sync 0.4.0")
+    before = install_env.installed_path.read_bytes()
+    install_env.installed_path.parent.chmod(0o555)
+    try:
+        report = ensure(install_env)
+    finally:
+        install_env.installed_path.parent.chmod(0o755)
+    assert report.action == "failed"
+    assert report.error and "could not install" in report.error
+    assert install_env.installed_path.read_bytes() == before
+    assert not os.path.exists(str(install_env.installed_path) + ".tmp")
+
+
+def test_sha256_file_reads_in_chunks(tmp_path) -> None:
+    import hashlib
+
+    path = tmp_path / "blob"
+    path.write_bytes(b"x" * 200_001)
+    assert install.sha256_file(str(path), chunk=4096) == hashlib.sha256(b"x" * 200_001).hexdigest()
 
 
 def test_unreadable_bundle_is_an_error_and_nothing_is_replaced(install_env) -> None:
@@ -146,6 +204,7 @@ def make_backend_with_shim(tmp_path, install_env) -> Backend:
         log_dir=str(tmp_path / "logs"),
         plugin_dir=str(install_env.plugin_dir),
         home=str(install_env.home),
+        runtime_dir=str(tmp_path / "runtime"),
         plugin_version="0.1.0",
         emit=None,
         python=str(install_env.python),

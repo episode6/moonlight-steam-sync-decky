@@ -183,3 +183,17 @@ def test_the_real_plugin_json_names_the_directory() -> None:
     meta = json.loads((ROOT / "plugin.json").read_text())
     assert meta["name"] == TOP
     assert meta["flags"] == []
+
+
+def test_the_downloader_and_the_staging_are_packaged(tree: Path) -> None:
+    """Update spec 3.12.6: fetch.py ships beside the backend (which runs it
+    from there as a script), with updates.py."""
+    pkg = tree / "py_modules" / "moonlight_sync"
+    for name in ("fetch.py", "updates.py"):
+        (pkg / name).write_bytes((ROOT / "py_modules" / "moonlight_sync" / name).read_bytes())
+    result = package(tree, "--list")
+    assert result.returncode == 0, result.stderr
+    modes = {info.filename: stat.S_IMODE(info.external_attr >> 16) for info in entries(tree)}
+    for name in ("fetch.py", "updates.py"):
+        assert modes[f"{TOP}/py_modules/moonlight_sync/{name}"] == 0o755
+        assert f"{TOP}/py_modules/moonlight_sync/{name}" in result.stdout.splitlines()

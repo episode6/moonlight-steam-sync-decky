@@ -121,6 +121,12 @@ describe("makeBackend", () => {
       ["start_sgdb_key_fetch", []],
       ["cancel_sgdb_key_fetch", []],
     ]);
+    await backend.stage_update("build-main", "ab".repeat(32), null, "main");
+    await backend.cancel_update();
+    expect(calls.slice(5)).toEqual([
+      ["stage_update", ["build-main", "ab".repeat(32), null, "main"]],
+      ["cancel_update", []],
+    ]);
     const stopped = await backend.stop_sync();
     expect(stopped.ok).toBe(false);
     expect(stopped.ok === false && stopped.error).toBe("io");
