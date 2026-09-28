@@ -95,13 +95,18 @@ def build_info(kind: str, ref: str, sha: str, run: str | None, now: float | None
 def _git(root: Path, *args: str) -> tuple[str | None, str]:
     """git's answer in ``root`` and ``""``, or ``None`` and why there is none:
     the first line git wrote to stderr (``""`` when it wrote nothing, as
-    ``--quiet`` has it), or that git did not run or did not answer."""
+    ``--quiet`` has it), or that git did not run or did not answer.
+
+    git's bytes are read as UTF-8 whatever the locale, a byte that is not
+    becoming U+FFFD: a branch named in another encoding is then a name
+    ``REF_RE`` refuses, not a ``UnicodeDecodeError``."""
     env = {key: value for key, value in os.environ.items() if key not in GIT_LOCATION_ENV}
     try:
         result = subprocess.run(
             ["git", "-C", str(root), *args],
             capture_output=True,
-            text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
             env=env,
             timeout=GIT_TIMEOUT_S,

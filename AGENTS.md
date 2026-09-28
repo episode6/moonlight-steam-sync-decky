@@ -318,7 +318,10 @@ scripts/build_info.py       build.json (update spec 3.12.1): --kind release|bran
                             github.ref_name is, never `--short` (which answers
                             `heads/main` beside a tag named `main`); a failure of
                             git's own carries the first line of its stderr, or
-                            that git did not run / did not answer
+                            that git did not run / did not answer; git's bytes
+                            are read as UTF-8 with errors="replace" whatever the
+                            locale, so a branch named in other bytes is a refused
+                            name, never a UnicodeDecodeError
 scripts/package.py          Docker-free zip: out/Moonlight-Sync.zip ("Moonlight Sync/");
                             OPTIONAL_ROOT_FILES (build.json) from the root when it
                             exists, 0644, after the five root files; without a root
@@ -1548,7 +1551,8 @@ There is no Steam Deck during development; everything else is tested.
   `updates.parse_build`, the root's file (or a directory of its name)
   winning over git, a tag named `main` beside the branch, and none for an
   edited, untracked or staged change, a detached `HEAD`, a refused branch
-  name, a tree inside another checkout, no checkout, a checkout git calls
+  name (one in UTF-8 and one in Latin-1 bytes too, under `LC_ALL=C` with
+  `PYTHONUTF8=0`), a tree inside another checkout, no checkout, a checkout git calls
   dubious (`GIT_TEST_ASSUME_DIFFERENT_OWNER=1`, git's own message quoted)
   and no `git` on `PATH`; each asserts the stderr line.
   `tests/test_build_info.py` runs `scripts/build_info.py` with

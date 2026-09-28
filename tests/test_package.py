@@ -312,6 +312,27 @@ def test_a_branch_name_build_json_cannot_carry(checkout: Path) -> None:
     assert "package.py: no build.json: --ref must match" in result.stderr
 
 
+@pytest.mark.parametrize("name", ["café".encode(), "café".encode("latin-1")])
+def test_a_branch_named_in_bytes_that_are_not_ascii_is_refused_not_a_crash(
+    checkout: Path, name: bytes
+) -> None:
+    """UTF-8 or not (a Latin-1 é is no UTF-8 at all), under a C locale with
+    Python's UTF-8 mode off: the name is refused and the zip is still built."""
+    git(checkout, "switch", "--quiet", "--create", os.fsdecode(name))
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "--root", str(checkout)],
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        env={**os.environ, "LC_ALL": "C", "LANG": "C", "PYTHONUTF8": "0"},
+    )
+    assert result.returncode == 0, result.stderr
+    assert "Traceback" not in result.stderr
+    assert packaged_build(checkout) is None
+    assert "package.py: no build.json: --ref must match" in result.stderr
+
+
 def test_a_directory_inside_another_checkout_is_not_that_commit(
     tree: Path, tmp_path: Path
 ) -> None:
