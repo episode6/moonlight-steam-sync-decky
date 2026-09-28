@@ -318,6 +318,8 @@ def test_loader_version_is_empty_without_decky_version(plugin, monkeypatch) -> N
     """A ``decky`` module with no ``DECKY_VERSION`` reads as unknown, ``""``,
     rather than failing to build the backend."""
     instance, decky, _ = plugin
+    # The Backend is built by the first callable (``_get``), not by the
+    # fixture, so the attribute is gone before ``main.py`` reads it.
     monkeypatch.delattr(decky, "DECKY_VERSION")
     version = run(instance.cli_version())
     assert version["ok"] is True
