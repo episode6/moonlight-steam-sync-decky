@@ -950,3 +950,79 @@ button is the Moonlight entry's. Needs a synced host that publishes
       Moonlight · Sync once to enable" and the layout line "Sync once to
       enable".
 - [ ] **While a game runs** every icon and both layout buttons still work.
+
+## 16. Updating from the plugin (update spec 3.9, V1 to V7)
+
+Every item here is the user's check, on a device; none is a merge
+criterion. Off-device the updater is covered (`updates.test.ts` over
+`tests/fixtures/update/releases.json`, `decky.test.ts` for the allowlist
+and the call's arguments, `controller.test.ts` "the updater" for the
+check, the refusals and the order *leave the page, then ask Decky*,
+`test_hard_rules.py` for hard rule 12's greps); Decky's own dialog, its
+download, the uninstall and the reload are what these check.
+
+The first release with the updater cannot be updated *to* anything, since
+nothing newer exists yet. V1 to V5 therefore use Settings → Updates →
+*Install another version* → the installed version (*reinstall*), which
+takes the same route with install type 1 (Decky's dialog then says
+"reinstall" rather than "update"). The first real update, with the
+panel's *Update to …* row and the toast, is checked when the release
+after it ships; repeat V1, V2 and V5 then.
+
+Start with the build installed by `install.sh` (every file root-owned),
+the plugin on, synced, a SteamGridDB key set and a default layout set,
+and an SSH session tailing Decky's log (`journalctl -u plugin_loader -f`).
+Before V1, copy what V4 compares: `~/homebrew/settings/Moonlight Sync/`
+(settings.json, pending.json, layouts.json, ignore.json),
+`~/.config/moonlight-steam-sync/`, `~/.cache/moonlight-steam-sync/` and
+the library's tile count.
+
+- [ ] **The page.** Settings shows *Updates* between *Advanced* and
+      *About*: *Installed* is the plugin's version, *Latest* says "Up to
+      date · checked today HH:MM" (or the newer release, once there is
+      one), *Check now* asks again (a second press within a minute asks
+      nothing), *Check for updates automatically* is on, and *Install
+      another version* lists only releases from 0.12.0 up. About has a
+      *Decky Loader* row with the loader's version.
+- [ ] **V1. [verify] Decky's dialog, then the install.** *Install another
+      version* → the installed version: Decky's dialog asks "Are you sure
+      you want to reinstall Moonlight Sync …?" (on a real update: "…update
+      Moonlight Sync to version X?"). Confirm: Decky downloads the zip
+      from the release's URL and installs it, on loader v3.2.9. If the
+      dialog never appears, or Decky's log shows an error, escalate with
+      the log.
+- [ ] **V2. [verify] The page closes first, the plugin comes back.** The
+      settings page is gone before Decky's dialog shows (Decision U4).
+      After Confirm the plugin reloads at the chosen version (About), with
+      no loader or Steam restart. If the screen shows anything else (a
+      blank route, a frozen page), escalate with what it showed.
+- [ ] **V3. [verify] Over both kinds of install.** V1 over the copy
+      `install.sh` put there (root-owned), then once more over the copy
+      Decky just installed. Both work; if either fails, escalate.
+- [ ] **V4. [verify] Nothing of yours changes. Blocking.** After the
+      update: settings.json, pending.json, layouts.json and ignore.json
+      are what they were, the key file is there with mode 0600 (Artwork →
+      *Test* accepts it), the CLI's config and caches are unchanged, the
+      default layout is still set (Advanced), and the library has the same
+      tiles, Stream buttons and Streaming tab. Anything different:
+      escalate, and it blocks the release.
+- [ ] **V5. Cancel.** Start an install and press *Cancel* in Decky's
+      dialog: the old version keeps running, the page's buttons are
+      usable again, and a second attempt opens the dialog again.
+- [ ] **V6. Where the plugin lands.** After a Confirm, note where Moonlight
+      Sync sits in Decky's plugin list (expected: at the end, §2.3 of the
+      update spec) and whether a hidden or frozen state it had in Decky's
+      list survived. Write what you see into the README's "Updating"
+      section.
+- [ ] **V7. Offline.** With Wi-Fi off, start an install and Confirm: the
+      old version still runs; note what Decky's progress does (expected: it
+      may stay on screen) and how it goes away. Write it into the README's
+      "Updating" section. Back online, the install works.
+- [ ] **The check's toast and the panel's row** (once a newer release
+      exists). A plugin load (restart Steam) toasts "Version X is
+      available. Settings → Updates" once, and the panel's last row reads
+      *Update to X*; pressing it opens Settings → Updates. With *Check for
+      updates automatically* off, a load toasts nothing and adds no row
+      until *Check now*.
+- [ ] **Off.** With the plugin toggled off: no toast at load, no row, and
+      the settings route has no *Updates* page (§12).

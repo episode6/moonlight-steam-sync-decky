@@ -2,7 +2,9 @@
 
 The harness-neutral guide for this repo; `CLAUDE.md` is a symlink to it.
 The design is `~/specs/moonlight-steam-sync/decky-plugin.md` (sections 3.6
-to 3.13 are the plugin); this file is the day-to-day summary.
+to 3.13 are the plugin); the self-update is
+`~/specs/moonlight-steam-sync/self-update.md` (cited as "update spec
+§N"); this file is the day-to-day summary.
 
 ## What this is
 
@@ -10,7 +12,8 @@ to 3.13 are the plugin); this file is the day-to-day summary.
 moonlight-steam-sync CLI from Game Mode: a Python backend that shells out to
 `~/.local/bin/moonlight-steam-sync --json …` and relays its NDJSON events,
 and a TypeScript frontend (Quick Access panel, settings route with the
-Titles page, restart prompt). The CLI is the product; the plugin is a thin
+Titles page, restart prompt, and the updater that hands a newer release
+to Decky's own installer). The CLI is the product; the plugin is a thin
 UI over it.
 
 **The CLI lives in `cli/`** (moved here from the now-archived
@@ -82,6 +85,29 @@ Breaking any of these is a blocker, not a judgement call.
     (`probe.yml`); the root tooling ignores it explicitly (below).
 11. Anything the spec does not settle that changes behaviour, a contract,
     a file or scope: stop and escalate (spec §5), do not improvise.
+12. **Updates go through Decky's installer, confirmed by the user.** The
+    plugin never writes its own plugin directory. It hands Decky
+    (`utilities/install_plugin`) either a release asset's URL on this
+    repository or a zip its backend staged and verified, always with a
+    non-empty sha256, the name `Moonlight Sync` and a version that is
+    never `dev`. It never calls `utilities/confirm_plugin_install`: the
+    confirmation is the user's, in Decky's dialog. Download URLs are
+    built from constants and a validated tag, never taken from a
+    response. `main.py`'s `_uninstall` does nothing, since Decky runs it
+    on every update. `src/lib/decky.ts` is the only place that touches
+    Decky's globals.
+
+The updater's further invariants (update spec §3.2), each held by a
+test: nothing is installed unasked (a check may run on its own, a
+hand-off only follows a button press); the updater is silent while the
+plugin is off (no check, no toast, no panel row, no *Updates* page); it
+never runs a Moonlight command and never touches the Steam directory; the
+SteamGridDB key is not involved; an update is never offered without a
+hash. `tests/test_hard_rules.py` greps `src/` for rule 12's names:
+`confirm_plugin_install` nowhere, `DeckyBackend` and `utilities/` only in
+`lib/decky.ts` (and its test), `api.github.com` only in `lib/updates.ts`
+(and its test), `fetchNoCors` only in `instance.tsx`, the
+repository's slug only in `updates.ts` and `decky.ts` (and their tests).
 
 ## Module map
 
@@ -102,7 +128,9 @@ cli/                        the moonlight-steam-sync CLI (its own AGENTS.md, REA
 DEVICE-CHECKLIST.md         every on-device check (PR-0 probes, PR-5/6/7/8 items, §3.14,
                             §3.15 and the §3.16 default layout's [verify] items, then
                             §3.17-§3.20; the key fetch is §14, the panel's launch and
-                            layout rows §15), in order
+                            layout rows §15, updating from the plugin §16: V1-V7 of
+                            update spec §3.9, via *Install another version* ->
+                            reinstall until a newer release exists), in order
 main.py                     thin decky Plugin: builds Backend, one line per callable;
                             no __init__ and `_backend` / `_startup` as class attributes, with
                             `_get` / `_ready` as classmethods, so it is correct whether the
@@ -110,7 +138,8 @@ main.py                     thin decky Plugin: builds Backend, one line per call
                             through the bare class (api_version 0); passes
                             `getattr(decky, "DECKY_VERSION", "")` as the Backend's
                             `loader_version`; `_uninstall` is `pass` on purpose (Decky
-                            runs it on every update, update spec §2.3 / §3.3)
+                            runs it on every update, hard rule 12, update spec
+                            §2.3 / §3.3)
 py_modules/moonlight_sync/  the backend (imports nothing from decky)
   backend.py                every callable, the _spawn seam, NDJSON relay, busy guard,
                             timeouts, pending rules on sync_done. _spawn is where the
@@ -210,17 +239,74 @@ src/index.tsx               definePlugin: events (sync_event / sync_done, sgdb_k
 src/instance.tsx            the Controller wired to callable / Steam / showModal / toaster;
                             the Steam seam's navigateToExternalWeb / navigateBack pass
                             @decky/ui's Navigation to steam.ts's openExternalWeb() /
-                            leaveExternalWeb()
+                            leaveExternalWeb(); the UiPort's updater seams (update spec
+                            §3.5): installer() = decky.ts's deckyInstaller(), net() =
+                            one `fetchNoCors(url, {method: "GET", headers})` read into
+                            an HttpAnswer (status, the four headers through
+                            `headers.get`, text()), leaveSettings() =
+                            Navigation.NavigateBack() (guarded); SETTINGS_ROUTE,
+                            TITLES_ROUTE, UPDATES_ROUTE (`/moonlight-sync/updates`)
 src/lib/                    pure modules (vitest)
   cli.ts                    every §3.4.6 event type, Result/Failure, Backend, makeBackend,
                             errorText (the §3.8 strings; the key fetch's `no-debugger` /
                             `cancelled` / `sgdb-page` / `timeout` are the backend's text
-                            verbatim, `busy` kind `"key"` its own sentence),
+                            verbatim, `busy` kind `"key"` its own sentence; the
+                            updater's frontend-only codes, update spec §3.6:
+                            `update-unsupported`, `rate-limited` with "Try again
+                            <timeUntil(retryAt)>" (errorText's optional `now`),
+                            `network`, `bad-release`),
                             SGDB_API_PAGE, KeyFetchState, SgdbKeyEventPayload /
                             SgdbKeyDonePayload (its failure `error` narrowed to
                             SgdbKeyFetchError) (spec 3.20)
   events.ts                 NDJSON parsing, lastOf/eventsOf
+  updates.ts                the updater's logic (update spec §3.4, §3.7): REPO (the
+                            repository's slug, spelled here and in decky.ts only),
+                            RELEASES_API, DOWNLOAD_BASE, ASSET, PLUGIN_NAME,
+                            MIN_UPDATER_VERSION ([0, 12, 0], [verify] at release time),
+                            MIN_LOADER_VERSION, INSTALL_TYPES_LOADER_VERSION,
+                            CHECK_MIN_INTERVAL_MS, NOTES_MAX_CHARS, TAG_RE,
+                            RELEASE_TAG_RE, INSTALL_TYPE; the NetPort / HttpAnswer
+                            seam; Release / Offer / CheckResult / UpdateInfo /
+                            UpdatePhase; parseReleases() (drafts, prereleases,
+                            non-vX.Y.Z tags and releases without the zip skipped, the
+                            zip's `digest` as 64 lower-case hex or null, highest
+                            first, no URL kept), assetUrl() (throws on a bad tag),
+                            checkReleases() (one GET; the §3.4 table: bad-release,
+                            rate-limited with retryAt from `retry-after` else
+                            `x-ratelimit-reset`, network), offerOf() / installable()
+                            (a digest and >= MIN_UPDATER_VERSION only; installable()
+                            empty when the installed version does not parse),
+                            installType(), loaderSupported(), updateCheckEnabled(),
+                            installRequestOf() (throws without a digest), and the
+                            texts: updateRowView() (the panel's row), installedText(),
+                            latestText(), versionLabel(), installButtonText()
+  updates.test.ts           the fixture parsed, every digest form, assetUrl's refusals,
+                            one test per checkReleases row, offerOf / installable,
+                            installType / loaderSupported, installRequestOf, the texts
+  decky.ts                  the Decky seam (update spec §3.5), the one module touching
+                            Decky's globals (hard rule 12): INSTALL_ROUTE,
+                            RELEASE_URL_PREFIX / RELEASE_ASSET / INSTALL_NAME (literals,
+                            not imported from updates.ts, so the allowlist does not
+                            move with it), InstallRequest, DeckyInstaller,
+                            deckyInstaller(scope = globalThis): the router is
+                            `scope.DeckyBackend`, else `scope.opener.DeckyBackend`,
+                            every read guarded; request() reads each field once and
+                            refuses (calling nothing) unless the artifact is exactly
+                            `<prefix><tag>/Moonlight-Sync.zip` (a TAG_RE tag, not only
+                            dots; no `..`, `?`, `#`), the hash is 64 lower-case hex
+                            digits (Decky compares against a lower-case hexdigest and
+                            a mismatch removes the plugin), the name is `Moonlight
+                            Sync`, the version is non-empty, not `dev` in any case and
+                            of `[0-9A-Za-z.+-]`, and the install type an integer 1-4;
+                            then one positional `call(INSTALL_ROUTE, artifact, name,
+                            version, hash, installType)`, false when it throws
+  decky.test.ts             the router on the scope / on `opener` / absent / behind a
+                            throwing getter, the call's arguments, every refusal (with
+                            the encoded, backslash, whitespace and getter cases), the
+                            constants equal to updates.ts's
   state.ts                  AppState, Store, reducers (runs, counters, stream map),
+                            `update` (the updater's releases / checkedAt / error, null
+                            while off) and `updatePhase` (idle / checking / asking),
                             `titlesEpoch` (bumped by a match-cache reset; a mounted
                             TitlesPage re-lists off it), `sgdbKey` (sgdb_key_state:
                             source + hint, never the key) and `keyFetch` ({state} of
@@ -259,6 +345,29 @@ src/lib/                    pure modules (vitest)
                             map (spec §3.14.1); the layout walk reads `entries`, not
                             the map, so the host apps and the client are walked too
   controller.ts             load order, runs, restart flow, hosts, settings actions,
+                            the updater (update spec §3.6; UiPort's installer() /
+                            net() / leaveSettings()): loadUpdates() (doLoad's last
+                            step, after the finally, never awaited; skipped while off
+                            and once `update` is set, so a load re-run after a failed
+                            cli_version() does not ask twice; the empty state, then
+                            checkUpdates(false) when update_check is on and the
+                            loader is supported), checkUpdates(manual) (nothing
+                            unless idle and on; no request before a rate-limited
+                            retryAt, nor for Check now within CHECK_MIN_INTERVAL_MS,
+                            which toasts the stored failure; the automatic check
+                            toasts only an offer, a manual one only its failure; a
+                            failure keeps the last releases; an epoch drops a check
+                            that lands after the plugin went off),
+                            updatesSupported(), setUpdateCheck(),
+                            installUpdate(tag) (refused with a toast while off, during
+                            a run, the walk or a key fetch, when unsupported, for a
+                            tag not in installable(); silently while not idle; else
+                            `asking`, leaveSettings(), then installer().request(), a
+                            toast when Decky did not take it, `idle`), run() answers
+                            "An update is being installed" while `asking`,
+                            setEnabled(false) clears `update`, setEnabled(true) runs
+                            loadUpdates(). The updater calls no backend callable but
+                            set_settings,
                             wakeHost() (spec 3.18: `wake_host` on the active host, a
                             toast either way, never held back),
                             refreshSgdbKey(), fetchSgdbKey() (spec 3.20.4:
@@ -434,7 +543,9 @@ src/lib/                    pure modules (vitest)
   __tests__/join.test.ts    the join, every badge/chip, filters, sort, paging (fixtures)
   restart.ts                restartDecision() (the §3.9 table), modal text
   version.ts                version parsing, the CLI-missing / too-old row
-  format.ts                 relative times, the Last sync line
+  format.ts                 relative times (relativeTime(); timeUntil(), the future
+                            form: "in 12 minutes", a missing or past time "in a
+                            minute"), dateText(), the Last sync line
   steam.ts                  ownedApps() (a throwing `allAppsCollection` getter, as early
                             in the client's boot, is "not loaded yet"), currentSteamId3(), runShortcut(),
                             shutdownSteam(), watchRunningApps(), steamInput() over
@@ -527,8 +638,20 @@ src/components/             adoptDefault (inspectLayout -> refusal toasts -> Con
                             of its own under the switcher, which draws the divider
                             the Field then leaves out; then *Check* + *Wake*
                             whenever the host is not known reachable, the latter
-                            only when `wakeInfoOf` finds a MAC), SyncProgress,
-                            RestartModal, SettingsPage, HostPage (no MAC field since
+                            only when `wakeInfoOf` finds a MAC; UpdateRow, the
+                            panel's very last row in every panel state with the
+                            plugin on and no run going: *Update to X* over
+                            `updateRowView`, opening UPDATES_ROUTE and closing the
+                            side menus as the header's buttons do), SyncProgress,
+                            RestartModal, SettingsPage (Host, Titles, Artwork,
+                            Advanced, Updates, About; while off none of them),
+                            UpdatesPage (update spec §3.7: *Installed*, *Latest*
+                            with *Check now*, the offer's install button, *What's new
+                            in X* in About's log-box style, *Check for updates
+                            automatically*, *Install another version* over
+                            installable() / versionLabel(); only *Installed* and the
+                            unsupported text when !updatesSupported(); no confirm of
+                            its own, Decky's dialog is it), HostPage (no MAC field since
                             2026-09-26: Moonlight's list is the one Wake source),
                             TitlesPage (layout text; the *Layout* menu:
                             *Choose layout…* and *Use as the default layout*, which
@@ -558,7 +681,8 @@ src/components/             adoptDefault (inspectLayout -> refusal toasts -> Con
                             shortcut collection when Stream shortcuts are shown; never
                             disabled, the tab needs no client call), *Reset match
                             cache* (a ConfirmModal, then resetMatchCache(); disabled
-                            while a run is going), AboutPage,
+                            while a run is going), AboutPage (its rows, *Decky
+                            Loader* = `loader_version`, the log tail),
                             EnabledToggle (spec 3.19: the *Enable Sync* on/off
                             ToggleField, at the top of the panel in every state
                             and, while off, the whole settings route; no
@@ -772,9 +896,12 @@ carries an additive `loader_version`, Decky Loader's version as
 passes `getattr(decky, "DECKY_VERSION", "")` to `Backend(loader_version=…)`.
 And `main.py`'s `_uninstall` stays `pass`: Decky's installer stops the old
 copy with `stop(uninstall=True)` on every update, not only on a real
-uninstall, so anything there would run at each update (the update spec's
-hard rule 12, §3.2); `tests/test_main.py` holds it to returning `None`
-and writing, removing and spawning nothing.
+uninstall, so anything there would run at each update (hard rule 12);
+`tests/test_main.py` holds it to returning `None` and writing, removing
+and spawning nothing. Everything else of the updater is the frontend's
+(`updates.ts`, `decky.ts`, the controller's `loadUpdates` /
+`checkUpdates` / `installUpdate`): the backend makes no request, and the
+updater calls no backend callable but `set_settings({update_check})`.
 The key fetch from the Game Mode browser (spec 3.20) needs no CLI and is
 not under the runs' busy guard (Decision 62: no `matches.json` involved, so
 a sync may run meanwhile and a fetch may start during a sync); it has its
@@ -925,6 +1052,26 @@ There is no Steam Deck during development; everything else is tested.
   `steam.test.ts` the `NavigateToExternalWeb` / `steam://openurl/`
   fallback; the modal, the browser and `NavigateBack` are device checks
   (DEVICE-CHECKLIST §14).
+- The updater (update spec §3.9) never makes a request in a test.
+  `tests/fixtures/update/releases.json` is GitHub's releases list,
+  hand-written and trimmed (nothing real; hashes are 64 repeated hex
+  digits; download URLs on `example.invalid`, so "no URL kept" is
+  provable): a newer `v0.13.0`, the installed `v0.12.0`, `v0.11.0` below
+  `MIN_UPDATER_VERSION`, a draft, a prerelease, a `build-main` prerelease
+  (skipped until phase 2), `v0.12.1` with a `null` digest, `v0.12.2`
+  without the zip, a `v1.2` tag and one string entry, out of order.
+  `updates.test.ts` reads it through `src/test/fixtures.ts`'s
+  `fixtureText` and scripts a `NetPort` per §3.4 table row;
+  `decky.test.ts` drives `deckyInstaller` over plain scope objects (a
+  recording router, `opener`, throwing getters); `controller.test.ts`'s
+  `FakeUi` carries the three `UiPort` members: `net()` answers
+  `netAnswer` (by default a 200 with no release, so older tests see no
+  update toast and their calls are unchanged; an `Error` rejects;
+  `holdNet` parks the GET), `installer()` records requests and pushes
+  `install:<version>` to the `order` log (`holdInstall` parks it), and
+  `leaveSettings()` pushes `leave`, so "leave, then ask Decky" is
+  asserted in order. Decky's dialog, its download and the reload are
+  device checks (DEVICE-CHECKLIST §16).
 - `tests/conftest.py`: `backend` / `make_backend` (a started Backend over
   the fake; `@pytest.mark.scenario("full-sync")` puts that scenario in front
   of `common/`), `steam_gone`, `install_env` (a `python3` shim that prints
@@ -942,7 +1089,13 @@ There is no Steam Deck during development; everything else is tested.
   shares the number does not count), the CLI's empty `dependencies`, the
   placeholder SteamGridDB key (`tests/fixtures/sgdb/api.html`'s) spelled nowhere else under `tests/`
   but that file, and, over a whole browser fetch, the key in no result,
-  event or log line (hard rule 4 for spec 3.20).
+  event or log line (hard rule 4 for spec 3.20); and hard rule 12's names
+  under `src/` (`files_naming`, comments and tests included):
+  `confirm_plugin_install` nowhere, `DeckyBackend` and `utilities/` only in
+  `lib/decky.ts` and its test, `api.github.com` only in `lib/updates.ts`
+  and its test, `fetchNoCors` only in `instance.tsx`, the repository's
+  slug only in `updates.ts`, `decky.ts` and their tests. Each is an
+  equality, so a rename that loses the name fails too.
 - The key fetch (spec 3.20) never opens a socket in a test: `conftest.py`'s
   `fake_browser` fixture installs a `FakeBrowser` as `cdp.TARGETS` /
   `cdp.CONNECT` (the Game Mode browser as the seams see it: the page
@@ -1102,6 +1255,13 @@ Moonlight layout row, the shorter host row hidden with a single host), the
 Titles page's never-synced state, the Host page's MAC field removed, and
 fixes to the Stream button's focus order and to the key fetch's stale tab;
 the CLI takes `0.11.0`, the minimum stays `0.4.0`.
+The first release that carries the updater must be the version in
+`updates.ts`'s `MIN_UPDATER_VERSION` (`0.12.0`, a **[verify]** of update
+spec §3.4): if the user picks another number, that release's PR changes
+the constant and the README's "Updating" section with it. After the
+merge and before that release, the user installs the build with
+`install.sh` and walks DEVICE-CHECKLIST §16 (the human gate after
+PR-U2).
 
 Once everything intended for the release has merged to `main`
 (substitute the version being cut for `X.Y.Z`):
@@ -1150,8 +1310,8 @@ Then walk `DEVICE-CHECKLIST.md` from the top.
 
 ## Docs to keep current
 
-README (install, panel, restart, hosts, Titles page, hidden shortcuts and
-the Streaming tab, key, files, the CLI-only install,
+README (install, updating, panel, restart, hosts, Titles page, hidden
+shortcuts and the Streaming tab, key, files, the CLI-only install,
 developing), this file (module map, harness, release), `CHANGELOG.md`
 `[Unreleased]`, `DEVICE-CHECKLIST.md`, and docstrings, in the same PR as
 the change. A CLI change also keeps `cli/README.md` (its usage and
