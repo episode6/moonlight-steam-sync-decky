@@ -96,6 +96,7 @@ def test_startup_creates_settings_and_ignore(backend) -> None:
     assert settings["layout_strategy"] == "copy"
     assert settings["hide_stream_shortcuts"] is True
     assert settings["streaming_collection"] is True
+    assert settings["update_check"] is True
     assert json.loads(Path(settings_path(backend, "ignore.json")).read_text()) == []
 
 
@@ -138,10 +139,18 @@ def test_cli_version_shape(backend, tmp_path) -> None:
         "installed_path": str(Path(backend.home) / ".local" / "bin" / "moonlight-steam-sync"),
         "bundled_path": str(plugin / "bin" / "moonlight-steam-sync.pyz"),
         "plugin_version": "0.1.0",
+        "loader_version": "",
         "log_path": str(tmp_path / "logs" / "moonlight-sync.log"),
         "install_error": None,
         "capabilities": {"art_commit": False},
     }
+
+
+def test_cli_version_carries_loader_version(make_backend) -> None:
+    """Update spec 3.3: the loader's version as decky.DECKY_VERSION spells it,
+    passed through untouched; ``""`` (above) when the constructor had none."""
+    backend = make_backend(loader_version="v3.2.9")
+    assert run(backend.cli_version())["loader_version"] == "v3.2.9"
 
 
 # ----------------------------------------------------------------------
@@ -1207,6 +1216,10 @@ def test_settings_round_trip_and_validation(backend) -> None:
     off = run(backend.set_settings({"enabled": False}))
     assert off["settings"]["enabled"] is False
     assert run(backend.set_settings({"enabled": True}))["settings"]["enabled"] is True
+    checks = run(backend.set_settings({"update_check": False}))
+    assert checks["settings"]["update_check"] is False
+    assert run(backend.get_settings())["settings"]["update_check"] is False
+    assert run(backend.set_settings({"update_check": True}))["settings"]["update_check"] is True
     at_max = run(backend.set_settings({"restart_countdown_s": 30}))
     assert at_max["settings"]["restart_countdown_s"] == 30
     for bad in (
@@ -1218,6 +1231,9 @@ def test_settings_round_trip_and_validation(backend) -> None:
         {"hide_stream_shortcuts": "no"},
         {"enabled": "off"},
         {"streaming_collection": 0},
+        {"update_check": "yes"},
+        {"update_check": 1},
+        {"update_check": None},
         {"layout_strategy": "mirror"},
         {"hosts": ["X"]},
         {"default_layout": {"url": "workshop://1", "title": "x", "when": "2026-09-21T00:00:00Z"}},

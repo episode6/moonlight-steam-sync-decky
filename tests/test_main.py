@@ -12,6 +12,7 @@ import asyncio
 import importlib
 import json
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -299,3 +300,65 @@ def test_reset_match_cache_through_main_py(plugin, monkeypatch, tmp_path) -> Non
 
     assert result == {"ok": True, "removed": True, "titles": 1, "pins": 0}
     assert not path.exists()
+
+
+# ---- the self-update's part (update spec 3.3) --------------------------------
+
+
+def test_loader_version_reaches_the_backend(plugin) -> None:
+    """``decky.DECKY_VERSION`` goes into the Backend's ``loader_version`` and
+    comes back out of ``cli_version()`` as it is spelled."""
+    instance, decky, _ = plugin
+    version = run(instance.cli_version())
+    assert version["loader_version"] == decky.DECKY_VERSION == "v3.0.0-test"
+    assert instance._backend.loader_version == "v3.0.0-test"
+
+
+def test_loader_version_is_empty_without_decky_version(plugin, monkeypatch) -> None:
+    """A ``decky`` module with no ``DECKY_VERSION`` reads as unknown, ``""``,
+    rather than failing to build the backend."""
+    instance, decky, _ = plugin
+    # The Backend is built by the first callable (``_get``), not by the
+    # fixture, so the attribute is gone before ``main.py`` reads it.
+    monkeypatch.delattr(decky, "DECKY_VERSION")
+    version = run(instance.cli_version())
+    assert version["ok"] is True
+    assert version["loader_version"] == ""
+
+
+def _tree(root: Path) -> dict[str, bytes | None]:
+    """Every path under ``root`` with its bytes (``None`` for a directory)."""
+    return {
+        str(path.relative_to(root)): None if path.is_dir() else path.read_bytes()
+        for path in sorted(root.rglob("*"))
+    }
+
+
+def test_uninstall_does_nothing(plugin, monkeypatch) -> None:
+    """Decky runs ``_uninstall`` on every update (update spec 2.3), so it
+    returns ``None`` and writes, removes and spawns nothing: the settings, the
+    installed CLI, the logs and the plugin directory stay as they were."""
+    instance, decky, tmp_path = plugin
+    run(instance._main())
+    before = _tree(tmp_path)
+    emitted = list(decky.emitted)
+    spawned: list[tuple] = []
+
+    async def no_exec(*args, **kwargs):
+        spawned.append(args)
+        raise AssertionError("_uninstall spawned a process")
+
+    def no_popen(*args, **kwargs):
+        spawned.append(args)
+        raise AssertionError("_uninstall spawned a process")
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", no_exec)
+    monkeypatch.setattr(asyncio, "create_subprocess_shell", no_exec)
+    monkeypatch.setattr(subprocess, "Popen", no_popen)
+
+    result = run(instance._uninstall())
+
+    assert result is None
+    assert spawned == []
+    assert _tree(tmp_path) == before
+    assert decky.emitted == emitted

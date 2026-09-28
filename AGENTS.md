@@ -107,7 +107,10 @@ main.py                     thin decky Plugin: builds Backend, one line per call
                             no __init__ and `_backend` / `_startup` as class attributes, with
                             `_get` / `_ready` as classmethods, so it is correct whether the
                             loader instantiates the class (api_version > 0, ours) or calls
-                            through the bare class (api_version 0)
+                            through the bare class (api_version 0); passes
+                            `getattr(decky, "DECKY_VERSION", "")` as the Backend's
+                            `loader_version`; `_uninstall` is `pass` on purpose (Decky
+                            runs it on every update, update spec §2.3 / §3.3)
 py_modules/moonlight_sync/  the backend (imports nothing from decky)
   backend.py                every callable, the _spawn seam, NDJSON relay, busy guard,
                             timeouts, pending rules on sync_done. _spawn is where the
@@ -758,6 +761,20 @@ The on/off toggle (spec 3.19) is one boolean, `settings.enabled` (default
 backend knows nothing else of it, the frontend reads it everywhere it
 touches the client (`pluginEnabled`), and a run started before the toggle
 went off finishes on its own.
+The self-update's backend part (update spec §3.3; the update spec is
+`~/specs/moonlight-steam-sync/self-update.md`) is three small things,
+with no request and no new callable.
+`settings.update_check` (default `true`, `BOOL_SETTINGS`, a plain
+`set_settings` key) is the switch for checking for a newer release when
+the plugin loads; the check itself is the frontend's. `cli_version()`
+carries an additive `loader_version`, Decky Loader's version as
+`decky.DECKY_VERSION` spells it (`"v3.2.9"`), `""` when unknown: `main.py`
+passes `getattr(decky, "DECKY_VERSION", "")` to `Backend(loader_version=…)`.
+And `main.py`'s `_uninstall` stays `pass`: Decky's installer stops the old
+copy with `stop(uninstall=True)` on every update, not only on a real
+uninstall, so anything there would run at each update (the update spec's
+hard rule 12, §3.2); `tests/test_main.py` holds it to returning `None`
+and writing, removing and spawning nothing.
 The key fetch from the Game Mode browser (spec 3.20) needs no CLI and is
 not under the runs' busy guard (Decision 62: no `matches.json` involved, so
 a sync may run meanwhile and a fetch may start during a sync); it has its
@@ -916,7 +933,8 @@ There is no Steam Deck during development; everything else is tested.
   one coroutine (`backend.wait_for_run()`).
 - `tests/test_main.py` imports the real `main.py` through the
   `tests/stubs/decky.py` stub, with the fake CLI copied to
-  `<home>/.local/bin/moonlight-steam-sync`.
+  `<home>/.local/bin/moonlight-steam-sync`. The stub's `DECKY_VERSION`
+  is `v3.0.0-test`; a test deletes it to prove `loader_version` reads `""`.
 - `tests/test_hard_rules.py` greps for what can be proven mechanically:
   `flags: []`, no live shortcut API call in `src/`, one version
   (`package.json`'s, spelled once more as the CLI's `__version__` and in no

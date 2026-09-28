@@ -308,6 +308,8 @@ export interface Settings {
   streaming_collection?: boolean;
   /** The plugin's adopted controller layout (spec 3.16.2); `null` when unset. */
   default_layout: DefaultLayout | null;
+  /** Check for a newer release when the plugin loads (update spec 3.3); absent reads as on. */
+  update_check?: boolean;
 }
 
 export type SettingsPatch = Partial<
@@ -320,6 +322,7 @@ export type SettingsPatch = Partial<
     | "layout_strategy"
     | "hide_stream_shortcuts"
     | "streaming_collection"
+    | "update_check"
   >
 >;
 
@@ -331,6 +334,8 @@ export interface CliVersion {
   installed_path: string;
   bundled_path: string;
   plugin_version: string | null;
+  /** Decky Loader's version as `decky.DECKY_VERSION` spells it (`"v3.2.9"`), `""` when unknown (update spec 3.3). */
+  loader_version?: string;
   log_path: string;
   install_error: string | null;
   capabilities: { art_commit: boolean };
