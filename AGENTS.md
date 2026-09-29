@@ -757,8 +757,10 @@ src/lib/                    pure modules (vitest)
                             dateText(), the Last sync line
   steam.ts                  ownedApps() (a throwing `allAppsCollection` getter, as early
                             in the client's boot, is "not loaded yet"), steamClock24h()
-                            (`settingsStore.m_FriendSettings.b24HourClock`, `null` when
-                            absent or throwing; which toggle sets it is a [verify]),
+                            (Settings → System → *24-hour clock*:
+                            `settingsStore.friendSettings.b24HourClock`, else
+                            `m_FriendSettings`, measured on a Deck 2026-09-29; `null`
+                            when absent or throwing),
                             currentSteamId3(), runShortcut(),
                             shutdownSteam(), watchRunningApps(), steamInput() over
                             SteamClient.Input (clearConfig only when the client has

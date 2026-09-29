@@ -287,13 +287,12 @@ to `~/homebrew/logs/steam-input-probe/steam-input-probe.log` (the loader's
       Press the chip again: by name, no "added" text. With the chip on,
       start a sync and reopen Titles: the headline ends "refreshes when
       the sync finishes · sorted by recently added".
-- [ ] **The clock follows Steam's [verify].** Find the toggle in Steam's
-      settings that sets `settingsStore.m_FriendSettings.b24HourClock` (in
-      the CEF console's `SharedJSContext`; it read `false` on the Deck on
-      2026-09-29) and report it. With it off, the Titles page's "added
-      today 2:02 PM" and the panel's *Last sync* use the 12-hour clock;
-      turn it on and reopen them: "added today 14:02", "Today 14:02 · …",
-      with no plugin reload.
+- [ ] **The clock follows Steam's.** With Steam's **Settings → System →
+      24-hour clock** off (measured on the Deck 2026-09-29: the toggle
+      writes `settingsStore.friendSettings.b24HourClock`, which the header
+      clock reads too), the Titles page's "added today 2:02 PM" and the
+      panel's *Last sync* use the 12-hour clock; turn it on and reopen
+      them: "added today 14:02", "Today 14:02 · …", with no plugin reload.
 - [ ] **No layout text on the rows.** No Titles row says `layout: …`;
       the note beside a game's Stream button still does while a default is
       set.

@@ -116,17 +116,27 @@ export function ownedApps(): Record<string, string> | null {
   return Object.keys(owned).length ? owned : null;
 }
 
+interface FriendSettingsLike {
+  b24HourClock?: unknown;
+}
+
 /**
- * Steam's own 24-hour clock preference, `settingsStore.m_FriendSettings.b24HourClock`
- * (seen on a Deck 2026-09-29, `false` there; which of Steam's toggles sets it is a
- * **[verify]**): `true` / `false`, or `null` when the client has no such value
- * or reading it throws. Read at every formatted time (`format.ts`'s
- * `setClockSource`), so a change shows at the next render.
+ * Steam's own 24-hour clock preference: Settings → System → *24-hour clock*
+ * ("Always display timestamps in 24-hour format"; Friends & Chat's *Always
+ * display timestamps in 24-hour format* is the same value), which Steam's
+ * own header clock follows. `settingsStore.friendSettings.b24HourClock`,
+ * else the `m_FriendSettings` field that getter returns (both measured on a
+ * Deck 2026-09-29). The toggle replaces the whole object, so it is read
+ * afresh at every formatted time (`format.ts`'s `setClockSource`) and a
+ * change shows at the next render. `null` when the client has no such
+ * value or reading it throws.
  */
 export function steamClock24h(): boolean | null {
   try {
-    const store = globals().settingsStore as { m_FriendSettings?: { b24HourClock?: unknown } } | undefined;
-    const value = store?.m_FriendSettings?.b24HourClock;
+    const store = globals().settingsStore as
+      | { friendSettings?: FriendSettingsLike; m_FriendSettings?: FriendSettingsLike }
+      | undefined;
+    const value = (store?.friendSettings ?? store?.m_FriendSettings)?.b24HourClock;
     return typeof value === "boolean" ? value : null;
   } catch {
     return null;

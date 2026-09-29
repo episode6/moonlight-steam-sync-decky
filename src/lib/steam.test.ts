@@ -66,6 +66,9 @@ describe("the globals", () => {
 
   it("steamClock24h reads Steam's 24-hour clock setting, null when the client has none", () => {
     expect(steamClock24h()).toBeNull();
+    // the getter the client's own code reads, over the field it returns
+    g.settingsStore = { friendSettings: { b24HourClock: true }, m_FriendSettings: { b24HourClock: false } };
+    expect(steamClock24h()).toBe(true);
     g.settingsStore = { m_FriendSettings: { b24HourClock: true } };
     expect(steamClock24h()).toBe(true);
     g.settingsStore = { m_FriendSettings: { b24HourClock: false } };

@@ -325,7 +325,8 @@ was packaged without the CLI)" and you can install the CLI on its own (see
 - Four counters from the last status: **Stream buttons** (hidden entries for
   games you own), **Shortcuts**, **Unmatched**, **Ignored**; and **Last
   sync** ("Today 2:02 PM · 2 added, 1 removed"; every time the plugin
-  shows follows Steam's 12 / 24-hour clock setting). The two host apps count
+  shows follows Steam's **Settings → System → 24-hour clock**). The two
+  host apps count
   toward none of the first three.
 - **Update to X**, the last row, only while a newer release is offered
   (see "Updating"): it opens Settings → Updates.

@@ -23,8 +23,9 @@ project uses [semantic versioning](https://semver.org/).
 
 - **Times follow Steam's 12 / 24-hour clock.** Every time the plugin shows
   (the Titles page's "added today 2:02 PM", the panel's *Last sync*, a
-  host's *last seen*, the Updates and About pages) uses Steam's own clock
-  setting, and the 12-hour clock where the client does not say.
+  host's *last seen*, the Updates and About pages) uses Steam's
+  **Settings → System → 24-hour clock**, and the 12-hour clock where the
+  client does not say.
 
 ## [0.12.0] - 2026-09-28
 
