@@ -984,9 +984,9 @@ controller. Should a later client break the set, flip the constant to
 `"picker"` and rewrite the README's "Controller layouts" section; nothing
 else moves. Under `picker` no Steam Input call is made anywhere
 (`defaultLayoutOf()` is `null`, so the whole §3.16 feature is off and its
-UI hidden, and the walk clears its flag at once); *Choose layout…*
-(`SteamClient.Apps.ShowControllerConfigurator`, hidden when absent) is the
-only layout affordance.
+UI hidden, and the walk clears its flag at once); *Layout* (the Titles
+rows' and the panel's, `SteamClient.Apps.ShowControllerConfigurator`,
+hidden when absent) is the only layout affordance.
 
 ## Backend contract in one paragraph
 

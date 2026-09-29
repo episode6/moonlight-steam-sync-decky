@@ -289,8 +289,8 @@ was packaged without the CLI)" and you can install the CLI on its own (see
   without one, the other icons widen to fill the row.
   Like the Stream button, they work while a game is already running too:
   Moonlight's own UI handles a stream that is already going. Their
-  controller layouts are set from the Titles page (**Layout** → *Choose
-  layout…* on the `Desktop` / `Steam Big Picture` row), and they take the
+  controller layouts are set from the Titles page (**Layout** on the
+  `Desktop` / `Steam Big Picture` row opens the configurator), and they take the
   default layout like every other entry.
   - **Getting the tiles back.** There is no plugin setting for this. From a
     terminal (Desktop Mode or SSH), run the plugin's own sync without

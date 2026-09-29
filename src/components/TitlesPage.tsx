@@ -77,7 +77,7 @@ function Row({
   /** A run is going: both edits are held until it finishes. */
   locked: boolean;
   ignoring: boolean;
-  /** `SteamClient.Apps.ShowControllerConfigurator` exists (else *Choose layout…* is hidden, spec 3.10). */
+  /** `SteamClient.Apps.ShowControllerConfigurator` exists (else the *Layout* button is hidden, spec 3.10). */
   canChooseLayout: boolean;
   onChangeMatch(): void;
   onIgnore(): void;
