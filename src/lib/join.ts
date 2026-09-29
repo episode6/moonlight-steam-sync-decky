@@ -18,14 +18,12 @@ import type {
   AppEvent,
   CandidateEvent,
   EntryEvent,
-  LayoutEntry,
   Match,
   PinnedEvent,
   SameGameAs,
   Settings,
 } from "./cli";
 import { relativeTime } from "./format";
-import { layoutStatusText } from "./layouts";
 
 // ---------------------------------------------------------------------------
 // rows
@@ -72,13 +70,6 @@ export interface TitleRow {
   unmatched: boolean;
   duplicateOf: string | null;
   sameGameAs: SameGameAs[];
-  /**
-   * The last layout result for the row's entry ("default layout" / "own
-   * layout" / "Steam default" / "unavailable" / "picker opened", spec 3.10,
-   * 3.16); `null` for a row without a non-parked entry and before any
-   * record.
-   */
-  layout: string | null;
   /**
    * When the plugin first saw the row's entry in `status` (the *Recently
    * added* order); `null` for a row without an entry, for a host app (the
@@ -139,13 +130,7 @@ interface RowInput {
   sameGameAs: SameGameAs[];
   entry: EntryEvent | null;
   ignoredBy: "plugin" | "config" | null;
-  layouts: Readonly<Record<string, LayoutEntry>>;
   added: Readonly<AddedTitles>;
-}
-
-/** The entry the row's layout text is for: any non-parked entry, a Stream entry, a visible shortcut or a host app alike. */
-export function layoutEntryOf(entry: EntryEvent | null): number | null {
-  return entry && !entry.parked ? entry.appid : null;
 }
 
 function buildRow(input: RowInput): TitleRow {
@@ -153,8 +138,6 @@ function buildRow(input: RowInput): TitleRow {
   const ignored = ignoredBy !== null;
   const kind: RowKind = ignored ? "ignored" : input.kind;
   const unmatched = kind === "shortcut" && !hasIds(match);
-  const layoutEntry = layoutEntryOf(entry);
-  const layout = layoutEntry !== null ? layoutStatusText(input.layouts[String(layoutEntry)]) : null;
 
   let badge: Badge;
   if (kind === "shortcut") badge = unmatched ? BADGES.unmatched : BADGES.shortcut;
@@ -183,7 +166,6 @@ function buildRow(input: RowInput): TitleRow {
     unmatched,
     duplicateOf,
     sameGameAs,
-    layout,
     // own keys only: a title may be called "constructor"
     added:
       entry && Object.prototype.hasOwnProperty.call(input.added, entry.name)
@@ -205,15 +187,13 @@ export function compareNames(a: string, b: string): number {
  * parked entry `list` did not mention. `ignoreFile` is `ignore.json`: a name
  * in it is ignored (and can be unignored) even before the next `list` says
  * so; a name `list` calls ignored that is not in it is ignored by the CLI's
- * `config.toml`, which the plugin never writes. `layouts` is `layouts.json`'s
- * `entries`, for the stream rows' layout text; `added` is `status`'s, for
+ * `config.toml`, which the plugin never writes. `added` is `status`'s, for
  * `sortRows`. The rows come sorted by name.
  */
 export function joinTitles(
   apps: readonly AppEvent[],
   entries: readonly EntryEvent[],
   ignoreFile: readonly string[] = [],
-  layouts: Readonly<Record<string, LayoutEntry>> = {},
   added: Readonly<AddedTitles> = {},
 ): TitleRow[] {
   const byName = new Map<string, EntryEvent>();
@@ -237,7 +217,6 @@ export function joinTitles(
         sameGameAs: app.same_game_as ?? [],
         entry: byName.get(app.name) ?? null,
         ignoredBy,
-        layouts,
         added,
       }),
     );
@@ -255,7 +234,6 @@ export function joinTitles(
         sameGameAs: [],
         entry,
         ignoredBy: inFile.has(entry.name) ? "plugin" : null,
-        layouts,
         added,
       }),
     );
@@ -304,7 +282,7 @@ export function sortText(sort: TitleSort): string {
   return sort === "recent" ? "sorted by recently added" : "sorted by name";
 }
 
-/** A row's "added today 14:02" under the `recent` order; `null` for a row without a time. */
+/** A row's "added today 2:02 PM" (Steam's clock, `format.ts`) under the `recent` order; `null` for a row without a time. */
 export function addedText(row: TitleRow, now: Date = new Date()): string | null {
   return addedTime(row) === null ? null : `added ${relativeTime(row.added, now)}`;
 }

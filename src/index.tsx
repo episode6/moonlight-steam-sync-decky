@@ -6,7 +6,8 @@ import { QuickAccess } from "./components/QuickAccess";
 import { SettingsPage } from "./components/SettingsPage";
 import { SETTINGS_ROUTE, TITLES_ROUTE, controller } from "./instance";
 import type { SgdbKeyDonePayload, SgdbKeyEventPayload, SyncDonePayload, SyncEventPayload } from "./lib/cli";
-import { watchControllers, watchRunningApps } from "./lib/steam";
+import { setClockSource } from "./lib/format";
+import { steamClock24h, watchControllers, watchRunningApps } from "./lib/steam";
 import { patchLibraryApp } from "./routes/libraryApp";
 import { patchLibraryTabs } from "./routes/libraryTabs";
 
@@ -64,6 +65,9 @@ export default definePlugin(() => {
   } catch (error) {
     console.warn("Moonlight Sync: could not watch running apps", error);
   }
+
+  // Every time the plugin shows follows Steam's own 12 / 24-hour clock.
+  setClockSource(steamClock24h);
 
   // The controller list, for the Deck controller's index (spec 3.10).
   let unwatchControllers: () => void = () => undefined;

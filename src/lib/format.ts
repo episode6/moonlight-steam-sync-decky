@@ -10,13 +10,47 @@ function startOfDay(date: Date): number {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
 }
 
-/** "today 14:02", "yesterday 09:15", "3 days ago", or the date for older ones. */
-export function relativeTime(iso: string | null | undefined, now: Date = new Date()): string {
+let clockSource: () => boolean | null = () => null;
+
+/**
+ * Where the 24-hour preference comes from: Steam's own setting at plugin
+ * load (`steam.ts`'s `steamClock24h`), asked at every formatted time.
+ * `null` (unknown, or no source set) is the 12-hour clock.
+ */
+export function setClockSource(source: () => boolean | null): void {
+  clockSource = source;
+}
+
+function uses24h(): boolean {
+  try {
+    return clockSource() === true;
+  } catch {
+    return false;
+  }
+}
+
+/** A time of day, "14:02", or with `hour12` "2:02 PM" (midnight "12:00 AM"). */
+function clockText(when: Date, hour12: boolean): string {
+  const hours = when.getHours();
+  if (!hour12) return `${pad(hours)}:${pad(when.getMinutes())}`;
+  return `${hours % 12 || 12}:${pad(when.getMinutes())} ${hours < 12 ? "AM" : "PM"}`;
+}
+
+/**
+ * "today 2:02 PM", "yesterday 9:15 AM", "3 days ago", or the date for older
+ * ones. The clock follows Steam's 24-hour setting ("today 14:02") unless
+ * `hour12` says otherwise.
+ */
+export function relativeTime(
+  iso: string | null | undefined,
+  now: Date = new Date(),
+  { hour12 = !uses24h() }: { hour12?: boolean } = {},
+): string {
   if (!iso) return "never";
   const when = new Date(iso);
   if (Number.isNaN(when.getTime())) return iso;
   const days = Math.round((startOfDay(now) - startOfDay(when)) / 86_400_000);
-  const clock = `${pad(when.getHours())}:${pad(when.getMinutes())}`;
+  const clock = clockText(when, hour12);
   if (days <= 0) return `today ${clock}`;
   if (days === 1) return `yesterday ${clock}`;
   if (days < 7) return `${days} days ago`;
@@ -64,7 +98,7 @@ export function summaryLine(summary: SummaryEvent): string {
   return parts.length ? parts.join(", ") : "nothing to do";
 }
 
-/** The panel's *Last sync* row: "Today 14:02 · 2 added, 1 removed" (mockup screen 1). */
+/** The panel's *Last sync* row: "Today 2:02 PM · 2 added, 1 removed" (mockup screen 1). */
 export function lastSyncLine(pending: Pending | null, now: Date = new Date()): string {
   if (!pending?.last_summary) return "Never";
   return `${capitalize(relativeTime(pending.since, now))} · ${summaryLine(pending.last_summary)}`;

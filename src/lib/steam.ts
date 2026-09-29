@@ -116,6 +116,23 @@ export function ownedApps(): Record<string, string> | null {
   return Object.keys(owned).length ? owned : null;
 }
 
+/**
+ * Steam's own 24-hour clock preference, `settingsStore.m_FriendSettings.b24HourClock`
+ * (seen on a Deck 2026-09-29, `false` there; which of Steam's toggles sets it is a
+ * **[verify]**): `true` / `false`, or `null` when the client has no such value
+ * or reading it throws. Read at every formatted time (`format.ts`'s
+ * `setClockSource`), so a change shows at the next render.
+ */
+export function steamClock24h(): boolean | null {
+  try {
+    const store = globals().settingsStore as { m_FriendSettings?: { b24HourClock?: unknown } } | undefined;
+    const value = store?.m_FriendSettings?.b24HourClock;
+    return typeof value === "boolean" ? value : null;
+  } catch {
+    return null;
+  }
+}
+
 /** The logged-in user's steamid3, derived from `App.m_CurrentUser.strSteamID`
  * (spec 3.9: `steamid3 = steam64 - 76561197960265728`). */
 export function currentSteamId3(): number | null {

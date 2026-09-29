@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import type { Pending, SummaryEvent } from "./cli";
-import { dateText, lastSyncLine, relativeTime, summaryLine, timeUntil } from "./format";
+import { dateText, lastSyncLine, relativeTime, setClockSource, summaryLine, timeUntil } from "./format";
 
 const now = new Date(2026, 8, 18, 15, 30);
 const local = (d: number, h: number, m: number) => new Date(2026, 8, d, h, m).toISOString();
@@ -22,12 +22,45 @@ const summary: SummaryEvent = {
 };
 
 describe("relativeTime", () => {
+  afterEach(() => setClockSource(() => null));
+
   it("today, yesterday, days, dates", () => {
-    expect(relativeTime(local(18, 14, 2), now)).toBe("today 14:02");
-    expect(relativeTime(local(17, 9, 5), now)).toBe("yesterday 09:05");
+    expect(relativeTime(local(18, 14, 2), now)).toBe("today 2:02 PM");
+    expect(relativeTime(local(17, 9, 5), now)).toBe("yesterday 9:05 AM");
     expect(relativeTime(local(15, 9, 5), now)).toBe("3 days ago");
     expect(relativeTime(local(1, 9, 5), now)).toBe("2026-09-01");
     expect(relativeTime(null, now)).toBe("never");
+  });
+
+  it("the 12-hour clock around midnight and noon", () => {
+    expect(relativeTime(local(18, 0, 7), now)).toBe("today 12:07 AM");
+    expect(relativeTime(local(18, 12, 0), now)).toBe("today 12:00 PM");
+    expect(relativeTime(local(17, 23, 59), now)).toBe("yesterday 11:59 PM");
+  });
+
+  it("follows Steam's 24-hour setting, read at every call", () => {
+    let steam24h: boolean | null = true;
+    setClockSource(() => steam24h);
+    expect(relativeTime(local(18, 14, 2), now)).toBe("today 14:02");
+    expect(relativeTime(local(17, 9, 5), now)).toBe("yesterday 09:05");
+    expect(lastSyncLine({ since: local(18, 14, 2), last_summary: summary } as Pending, now)).toBe(
+      "Today 14:02 · 2 added, 1 removed",
+    );
+    steam24h = false;
+    expect(relativeTime(local(18, 14, 2), now)).toBe("today 2:02 PM");
+    steam24h = null; // the client has no such setting: the 12-hour clock
+    expect(relativeTime(local(18, 14, 2), now)).toBe("today 2:02 PM");
+    setClockSource(() => {
+      throw new Error("no store");
+    });
+    expect(relativeTime(local(18, 14, 2), now)).toBe("today 2:02 PM");
+  });
+
+  it("an explicit hour12 wins over the source", () => {
+    setClockSource(() => true);
+    expect(relativeTime(local(18, 14, 2), now, { hour12: true })).toBe("today 2:02 PM");
+    setClockSource(() => false);
+    expect(relativeTime(local(18, 14, 2), now, { hour12: false })).toBe("today 14:02");
   });
 });
 
@@ -77,7 +110,7 @@ describe("the Last sync row", () => {
       last_kind: "sync",
       synced_hosts: {},
     };
-    expect(lastSyncLine(pending, now)).toBe("Today 14:02 · 2 added, 1 removed");
+    expect(lastSyncLine(pending, now)).toBe("Today 2:02 PM · 2 added, 1 removed");
     expect(lastSyncLine(null, now)).toBe("Never");
   });
 

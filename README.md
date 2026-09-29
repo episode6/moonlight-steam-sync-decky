@@ -324,7 +324,8 @@ was packaged without the CLI)" and you can install the CLI on its own (see
   game is running.
 - Four counters from the last status: **Stream buttons** (hidden entries for
   games you own), **Shortcuts**, **Unmatched**, **Ignored**; and **Last
-  sync** ("Today 14:02 · 2 added, 1 removed"). The two host apps count
+  sync** ("Today 2:02 PM · 2 added, 1 removed"; every time the plugin
+  shows follows Steam's 12 / 24-hour clock setting). The two host apps count
   toward none of the first three.
 - **Update to X**, the last row, only while a newer release is offered
   (see "Updating"): it opens Settings → Updates.
@@ -510,7 +511,7 @@ finishes") and re-lists on its own as soon as the run ends.
 
 **Recently added**, beside the filters, lists the titles added last first,
 so the games your latest sync brought in are at the top; each row then
-says when it was added ("added today 14:02"), and the titles of one sync
+says when it was added ("added today 2:02 PM"), and the titles of one sync
 are in name order among themselves. Press it again for the order by name.
 The page remembers the choice (the `titles_recent_first` setting). The
 plugin notes when it first sees a title, so the titles that were already
@@ -615,12 +616,11 @@ entry it manages starts on, and each title stays customisable on its own.
   This uses a Steam client call that has not been measured on a device
   yet; on a client without it, the default is still cleared and titles keep
   the layout they have (the toast says so).
-- **What you see.** Each row of the Titles page shows the last result for
-  its entry: **default layout**, **own layout** (a choice of yours),
-  **Steam default**, **unavailable** (no controller was connected, or the
-  selection did not stick when read back) or **picker opened**. The
-  library page's note next to the Stream button shows the same while a
-  default is set. The results live in `layouts.json` in the plugin's
+- **What you see.** While a default is set, the note next to a game's
+  Stream button shows the last result for its entry: **default layout**,
+  **own layout** (a choice of yours), **Steam default**, **unavailable** (no
+  controller was connected, or the selection did not stick when read back)
+  or **picker opened**. The results live in `layouts.json` in the plugin's
   settings directory; the plugin never writes Steam's controller config
   files, only asks Steam Input to select (or clear) a layout.
 - **Which controller.** Layouts are per controller. The Deck's built-in

@@ -280,12 +280,23 @@ to `~/homebrew/logs/steam-input-probe/steam-input-probe.log` (the loader's
       host, *Sync now*, restart when prompted, reopen Titles and press
       **Recently added**: the chip lights, the headline ends "sorted by
       recently added", the new title is the first row and reads "added
-      today HH:MM", every other row follows by name with no "added" text,
+      today h:MM AM/PM" (or "HH:MM" with Steam's 24-hour clock on), every
+      other row follows by name with no "added" text,
       and `added.json` has a time for the new title alone. Pick a filter:
       the order holds. Leave the page and reopen it: still newest first.
       Press the chip again: by name, no "added" text. With the chip on,
       start a sync and reopen Titles: the headline ends "refreshes when
       the sync finishes · sorted by recently added".
+- [ ] **The clock follows Steam's [verify].** Find the toggle in Steam's
+      settings that sets `settingsStore.m_FriendSettings.b24HourClock` (in
+      the CEF console's `SharedJSContext`; it read `false` on the Deck on
+      2026-09-29) and report it. With it off, the Titles page's "added
+      today 2:02 PM" and the panel's *Last sync* use the 12-hour clock;
+      turn it on and reopen them: "added today 14:02", "Today 14:02 · …",
+      with no plugin reload.
+- [ ] **No layout text on the rows.** No Titles row says `layout: …`;
+      the note beside a game's Stream button still does while a default is
+      set.
 - [ ] **Show more keeps your place.** Press *Show 50 more* with the D-pad.
       Expect focus on the last row that was already shown (not on the
       button, now 50 rows further down), and one press of down to land on
@@ -322,7 +333,7 @@ and superseded by §8.*
       (§8), press *Stream*, then *Sync now* and restart when prompted.
       Expect the hidden shortcut to keep the hand-picked layout after all
       three, `layouts.json` to read `"kept"` with that URL and `"applied":
-      null`, the row to read "own layout".
+      null`, the game page's Stream note to read "own layout".
 - [ ] ~~**Steam default.**~~ Superseded by §8: with a default set, a
       hidden shortcut on Steam's default gets the default layout on its
       first press (`"default"`); without one, nothing is written.
@@ -538,7 +549,7 @@ otherwise.
       layout · set today …`; `layouts.json` with `"default"` and `"applied"`
       set to the URL for each. A fresh title (a game the host just started
       publishing, after its sync and restart) streams on it without any
-      press first, and its Titles row reads "default layout".
+      press first.
 - [ ] **No other place adopts.** The Titles rows have no *Layout* button
       (Decision 75), and a streamed game's gear menu has no *Use as
       Moonlight Sync default layout* (Decision 74).
@@ -567,7 +578,7 @@ otherwise.
       settings while it streams), then give
       the Moonlight entry another layout and adopt it as a *second* default.
       Expect the hand-picked title unchanged (`"kept"`, `"applied": null`,
-      row "own layout"), every plugin-applied title on the new default, the
+      Stream note "own layout"), every plugin-applied title on the new default, the
       Moonlight entry (the source) unchanged, and the toast's `M kept
       their own` counting the hand-picked one and the source.
 - [ ] **A pre-upgrade copied title moves.** On an install upgraded from a

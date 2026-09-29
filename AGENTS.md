@@ -737,25 +737,29 @@ src/lib/                    pure modules (vitest)
                             noMatchRow, matchSummary); the `host-app` kind (badge
                             `host app`, under *All* only, never unmatched, every
                             candidate `art only`);
-                            layoutEntryOf() (any non-parked entry: what the row's
-                            layout text is for);
                             the order (spec 3.21): a row's
                             `added` (status's time for its entry's name, own keys
                             only), TitleSort, titleSortOf(settings)
                             (`titles_recent_first`, absent = by name), sortRows()
                             (`recent`: rows with a time first, the latest on top,
                             ties and the rest by name; a new array), sortText() (the
-                            headline's), addedText() ("added today 14:02")
+                            headline's), addedText() ("added today 2:02 PM")
   __tests__/join.test.ts    the join, every badge/chip, filters, sort, paging (fixtures)
   restart.ts                restartDecision() (the §3.9 table), modal text
   version.ts                version parsing, the CLI-missing / too-old row,
                             BUNDLED_CLI_RULE (About's text for when the bundled CLI
                             is installed, Decision U12's equal-version replace included)
-  format.ts                 relative times (relativeTime(); timeUntil(), the future
-                            form: "in 12 minutes", a missing or past time "in a
-                            minute"), dateText(), the Last sync line
+  format.ts                 relative times (relativeTime(), its clock 12-hour unless
+                            setClockSource()'s source, steam.ts's steamClock24h at
+                            plugin load and read at every call, says 24-hour, or an
+                            explicit `hour12`; timeUntil(), the future form: "in 12
+                            minutes", a missing or past time "in a minute"),
+                            dateText(), the Last sync line
   steam.ts                  ownedApps() (a throwing `allAppsCollection` getter, as early
-                            in the client's boot, is "not loaded yet"), currentSteamId3(), runShortcut(),
+                            in the client's boot, is "not loaded yet"), steamClock24h()
+                            (`settingsStore.m_FriendSettings.b24HourClock`, `null` when
+                            absent or throwing; which toggle sets it is a [verify]),
+                            currentSteamId3(), runShortcut(),
                             shutdownSteam(), watchRunningApps(), steamInput() over
                             SteamClient.Input (clearConfig only when the client has
                             ClearSelectedConfigForApp, unmeasured), controllerIndex() (ControllerStore or
@@ -857,10 +861,9 @@ src/components/             adoptDefault (inspectLayout -> refusal toasts -> Con
                             parked*: setSettings({titles_recent_first}), the rows
                             through sortRows() after the filter, each with
                             addedText() while it is on, the headline's sortText(),
-                            during a sync only for `recent`;
-                            layout text, and no layout action (Decision 75: the
-                            panel's *Layout* and *Make default* are the only
-                            ones)), ChangeMatchModal,
+                            during a sync only for `recent`; no layout text and no
+                            layout action (Decisions 75 and 76: the panel's *Layout*
+                            and *Make default* are the only ones)), ChangeMatchModal,
                             Pill, StreamButton (renders only when streamMap has the
                             appid; the layout line only while a default is set), ArtworkPage
                             (the key field over the store's `sgdbKey`; in the `none` /
