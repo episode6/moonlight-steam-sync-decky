@@ -709,17 +709,6 @@ src/lib/                    pure modules (vitest)
                             DISABLED_TEXT is under the settings route's toggle only),
                             collectionDiff(wanted, current, removable)
                             (removes only removable members)
-  contextMenu.ts            spec 3.16.5, the gear menu's lookup, pure: MODULE_MARKER
-                            (an export reading `.LibraryContextMenu)`), WRAPPER_PATTERN
-                            (`{navigator:t,instance:r,...e}`, `$` allowed in the
-                            names), wrappersOf() over a module's exports (every
-                            match, export order), menuClassOf() (the fake-rendered
-                            element's type, a class with `render` and
-                            MENU_CLASS_METHOD = `GetTargetApps`), findMenuClass()
-                            (the first candidate that renders it); the measured
-                            sources are in contextMenu.test.ts. Until 2026-09-23 the
-                            lookup keyed on `().appDetailsSpotlight`, which the client
-                            has in no component, so the item never appeared
   tabs.ts                   spec 3.17, the Streaming tab's pure half: STREAMING_TAB_ID,
                             findElement() (a React-element walk with no React),
                             templateOf() (the first built-in tab's element with a
@@ -749,8 +738,8 @@ src/lib/                    pure modules (vitest)
                             `host app`, under *All* only, never unmatched, every
                             candidate `art only`) and layoutTargetOf(), whose
                             `realAppid` is `null` for a hidden host-app row;
-                            layoutSourceOf() (any non-parked entry: what *Use as the
-                            default layout* reads, and what the row's layout text is for);
+                            layoutEntryOf() (any non-parked entry: what the row's
+                            layout text is for);
                             the order (spec 3.21): a row's
                             `added` (status's time for its entry's name, own keys
                             only), TitleSort, titleSortOf(settings)
@@ -813,31 +802,13 @@ src/routes/libraryApp.tsx   the /library/app/:appid patch (routerHook.addPatch, 
                             renderFunc's output does not, found on device 2026-09-21),
                             written fresh; injects StreamButton directly before the
                             overview panel (`appPage.ts`'s `streamRowIndex`)
-src/routes/libraryContextMenu.tsx  the library gear menu patch (spec 3.16.5, Decision 56):
-                            the menu class is reached through its wrapper component
-                            (findModuleChild over `contextMenu.ts`'s `wrappersOf`,
-                            fakeRenderComponent on each candidate, the element's
-                            `type`, checked by `menuClassOf`), its `render`
-                            afterPatch'ed to append one keyed MenuItem, *Use as
-                            Moonlight Sync default layout*, on a real game in the
-                            stream map (reads the game's own selection) or a
-                            non-parked entry's own page (`menuLayoutSourceOf`), for
-                            the page in the menu's own `props.overview` (or a bare
-                            `appid` prop); `copy` only. The scan is not on the boot
-                            path: `ensureLibraryContextMenuPatched()` runs it once,
-                            from the two route patches' first render, and never
-                            again (@decky/ui's module map is filled once at init
-                            and never sees a later chunk, so a retry would find
-                            nothing new); an unrecognised client warns and is left
-                            alone; markers, menu class and the `overview` prop
-                            measured on the SteamOS box 2026-09-23, the item in an
-                            open menu a device check
-src/routes/tree.ts          Overview / TreeNode / isOverview, shared by the three
+src/routes/tree.ts          Overview / TreeNode / isOverview, shared by the two
                             route patches
 src/components/             adoptDefault (inspectLayout -> refusal toasts -> ConfirmModal
-                            -> setDefaultLayout, shared by the Titles row, the gear
-                            menu and the panel's *Make default*, each with its own
-                            "no layout chosen yet" hint; the walk-running refusal),
+                            -> setDefaultLayout for the panel's *Make default*, the one
+                            place a default is adopted since Decision 74 (the Titles
+                            row's and the library gear menu's items went); the
+                            walk-running refusal),
                             QuickAccess (Decision 67: LaunchRow, the Moonlight /
                             Desktop / Steam Big Picture icon buttons on one line, the
                             caption under it following `onGamepadFocus` and back to
@@ -888,9 +859,9 @@ src/components/             adoptDefault (inspectLayout -> refusal toasts -> Con
                             through sortRows() after the filter, each with
                             addedText() while it is on, the headline's sortText(),
                             during a sync only for `recent`;
-                            layout text; the *Layout* menu:
-                            *Choose layout…* and *Use as the default layout*, which
-                            inspects, toasts the refusal texts or confirms), ChangeMatchModal,
+                            layout text; *Layout*, which opens Steam's configurator
+                            directly (chooseLayout; no menu since Decision 74)),
+                            ChangeMatchModal,
                             Pill, StreamButton (renders only when streamMap has the
                             appid; the layout line only while a default is set), ArtworkPage
                             (the key field over the store's `sgdbKey`; in the `none` /
@@ -963,9 +934,9 @@ no `unpin` yet (the spec's modal has no unpin action); the callable exists
 for the contract.
 
 **The default controller layout (spec §3.16).** One layout the user adopts
-from a title they set up with Steam's own configurator (Titles → *Layout*
-→ *Use as the default layout*: `inspectLayout` reads that title's
-selection, refuses `autosave://` / `default://` / unselected with the
+from the Moonlight entry they set up with Steam's own configurator (the
+panel's *Layout*, then *Make default*, the one place since Decision 74:
+`inspectLayout` reads that entry's selection, refuses `autosave://` / `default://` / unselected with the
 §3.16.5 texts, a `ConfirmModal`, then `setDefaultLayout`), stored by the
 backend as `settings.default_layout` and put on every non-parked entry by
 `applyDefault` -- on each Stream press, in the walk after a sync's restart
@@ -991,9 +962,9 @@ flag check under the old default, so `doWalk` leaves the flag set when
 with `status` unavailable (`entries === null`) the walk is deferred
 (`layoutWalk()` resolves `null`, the flag stays) and the toast says the
 layout is applied, or taken off, once the titles have loaded (Decision
-54) rather than counting a walk that never ran. *Use as the default
-layout* is refused with a toast while `state.walking` (the Titles row
-cannot say why, as Advanced's disabled *Clear* cannot either).
+54) rather than counting a walk that never ran. *Make default* is
+refused with a toast while `state.walking` (a disabled button could not
+say why, as Advanced's disabled *Clear* cannot either).
 
 **The layout strategy switch (spec §3.10).** PR-7 was built before the PR-0
 probes ran. `DEFAULT_LAYOUT_STRATEGY = "copy"` in `src/lib/layouts.ts` is

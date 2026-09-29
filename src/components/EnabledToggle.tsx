@@ -8,7 +8,7 @@ import type { AppState } from "../lib/state";
  * The plugin's on/off toggle (spec 3.19), *Enable Sync*, at the top of the
  * Quick Access panel and, while off, the one control the settings route
  * shows. Off hides every Moonlight shortcut, keeps the Stream buttons, the
- * Streaming tab and the gear-menu item out of the library, refuses runs and
+ * Streaming tab out of the library, refuses runs and
  * locks the other settings: for a Deck travelling away from its host. It is
  * disabled while a run is going (the run owns the library until it ends)
  * and until the settings have loaded.

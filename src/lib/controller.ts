@@ -193,7 +193,7 @@ export interface WalkCounts {
   unavailable: number;
 }
 
-/** What *Use as the default layout* finds on a title (spec 3.16.5). */
+/** What the panel's *Make default* finds on the client entry (spec 3.16.5). */
 export type LayoutInspection =
   | { ok: true; url: string; title: string }
   | { ok: false; reason: "no-controller" | "unselected" | "not-shareable" };
@@ -1377,7 +1377,7 @@ export class Controller {
   }
 
   /**
-   * *Use as the default layout* on a Titles row (spec 3.16.5): one read of
+   * The panel's *Make default* (spec 3.16.5, Decision 74): one read of
    * the title's selection for the controller in use. `title` is the
    * config's own `Title`, else the layout's kind. A layout Steam cannot
    * report (a throwing call) reads as not chosen.

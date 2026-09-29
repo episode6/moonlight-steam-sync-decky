@@ -1,4 +1,4 @@
-import { DialogButton, Field, Focusable, Menu, MenuItem, Spinner, showContextMenu, showModal } from "@decky/ui";
+import { DialogButton, Field, Focusable, Spinner, showModal } from "@decky/ui";
 import { toaster } from "@decky/api";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
 
@@ -6,7 +6,6 @@ import { controller } from "../instance";
 import { errorText, isFailure, type PinnedEvent } from "../lib/cli";
 import type { TitlesData, TitlesLoad } from "../lib/controller";
 import { relativeTime } from "../lib/format";
-import { layoutStrategy } from "../lib/layouts";
 import {
   addedText,
   applyPin,
@@ -26,7 +25,6 @@ import {
   type TitleSort,
 } from "../lib/join";
 import { actionsReady } from "../lib/state";
-import { adoptAsDefault } from "./adoptDefault";
 import { ChangeMatchModal } from "./ChangeMatchModal";
 import { Pill } from "./Pill";
 import { useStore } from "./useStore";
@@ -69,7 +67,6 @@ function Row({
   locked,
   ignoring,
   canChooseLayout,
-  canSetDefault,
   onChangeMatch,
   onIgnore,
   rowRef,
@@ -82,33 +79,13 @@ function Row({
   ignoring: boolean;
   /** `SteamClient.Apps.ShowControllerConfigurator` exists (else *Choose layout…* is hidden, spec 3.10). */
   canChooseLayout: boolean;
-  /** The strategy is `copy` (under `picker` the default layout is off and hidden, spec 3.16). */
-  canSetDefault: boolean;
   onChangeMatch(): void;
   onIgnore(): void;
   /** Set on the last row shown, which *Show more* focuses before it grows the page. */
   rowRef?: RefObject<HTMLDivElement | null>;
 }) {
   const chooseLayout = row.layoutTarget && canChooseLayout ? row.layoutTarget : null;
-  const useAsDefaultSource = canSetDefault ? row.layoutSource : null;
   const added = showAdded ? addedText(row) : null;
-  // The *Layout* menu (Decision 50): both layout actions in one button.
-  const layoutMenu = (event: MouseEvent) =>
-    showContextMenu(
-      <Menu label={row.name}>
-        {chooseLayout ? (
-          <MenuItem onSelected={() => void controller.chooseLayout(chooseLayout.shortcutAppid, chooseLayout.realAppid)}>
-            Choose layout…
-          </MenuItem>
-        ) : null}
-        {useAsDefaultSource !== null ? (
-          <MenuItem onSelected={() => void adoptAsDefault(useAsDefaultSource, row.name, "titles")}>
-            Use as the default layout
-          </MenuItem>
-        ) : null}
-      </Menu>,
-      event.currentTarget ?? undefined,
-    );
   return (
     <Focusable
       ref={rowRef}
@@ -148,8 +125,11 @@ function Row({
           Change match
         </DialogButton>
       ) : null}
-      {chooseLayout || useAsDefaultSource !== null ? (
-        <DialogButton style={SMALL} onClick={layoutMenu}>
+      {chooseLayout ? (
+        <DialogButton
+          style={SMALL}
+          onClick={() => void controller.chooseLayout(chooseLayout.shortcutAppid, chooseLayout.realAppid)}
+        >
           Layout
         </DialogButton>
       ) : null}
@@ -189,10 +169,10 @@ function headline(data: TitlesData, rows: readonly TitleRow[], sort: TitleSort):
  * load-more row; *Change match* opens the picker, *Ignore* / *Unignore*
  * edits `ignore.json`. A row with a non-parked entry also shows its last
  * layout result ("default layout" / "own layout" / "Steam default" /
- * "unavailable", spec 3.10, 3.16) and has a *Layout* menu: *Choose
- * layout…*, Steam's own picker for the hidden shortcut (hidden when the
- * client lacks it), and *Use as the default layout*, which adopts this
- * title's layout for every entry (spec 3.16.5). The *Recently added* chip
+ * "unavailable", spec 3.10, 3.16); a hidden Stream entry or host app has
+ * a *Layout* button, Steam's own picker for the hidden shortcut (hidden
+ * when the client lacks it). The default layout is adopted from the
+ * panel's *Make default* alone (Decision 74). The *Recently added* chip
  * (the `titles_recent_first` setting, so the page reopens in the order last
  * chosen) lists the titles added last first, each with when it was added,
  * instead of by name. Nothing here restarts Steam: a pin or
@@ -250,7 +230,6 @@ export function TitlesPage() {
   );
   const sort = titleSortOf(state.settings);
   const canChooseLayout = controller.canChooseLayout();
-  const canSetDefault = layoutStrategy(state.settings) === "copy";
   const shown = useMemo(
     () => sortRows(filterRows(rows, filter, showParked), sort),
     [rows, filter, showParked, sort],
@@ -419,7 +398,6 @@ export function TitlesPage() {
             locked={running}
             ignoring={ignoring === row.name}
             canChooseLayout={canChooseLayout}
-            canSetDefault={canSetDefault}
             onChangeMatch={() => changeMatch(row)}
             onIgnore={() => void toggleIgnore(row)}
           />

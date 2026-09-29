@@ -13,7 +13,7 @@ import {
   filterCounts,
   filterRows,
   joinTitles,
-  layoutSourceOf,
+  layoutEntryOf,
   layoutTargetOf,
   loadMoreLabel,
   matchSummary,
@@ -657,18 +657,13 @@ describe("the layout text per row (spec 3.10)", () => {
     expect(layoutTargetOf("stream", { ...entries[0], parked: true })).toBeNull();
   });
 
-  it("layoutSource: the entry Use as the default layout adopts from, on every non-parked row (spec 3.16.5)", () => {
-    const rows = rowsOf();
-    expect(byName(rows, "Balatro").layoutSource).toBe(2718281828); // a Stream entry
-    expect(byName(rows, "Hades II").layoutSource).toBe(3000000011); // a visible shortcut
-    expect(byName(rows, "Tunic").layoutSource).toBe(3000000007); // unmatched, still an entry
-    expect(byName(rows, "Desktop").layoutSource).toBe(3000000101); // a host app
-    expect(byName(rows, "Spiritfarer").layoutSource).toBeNull(); // parked
-    expect(byName(rows, "Demo Launcher").layoutSource).toBeNull(); // ignored: no entry
-    expect(byName(rows, "Sea of Stars (GOG)").layoutSource).toBeNull(); // duplicate: no entry
-    expect(layoutSourceOf(null)).toBeNull();
-    expect(layoutSourceOf({ ...entries[0], parked: true })).toBeNull();
-    // the row's layout text follows the same entry, so a visible shortcut shows its walk result too
+  it("layoutEntryOf: the row's layout text is for any non-parked entry", () => {
+    expect(layoutEntryOf(entries.find((e) => e.name === "Balatro")!)).toBe(2718281828); // a Stream entry
+    expect(layoutEntryOf(entries.find((e) => e.name === "Hades II")!)).toBe(3000000011); // a visible shortcut
+    expect(layoutEntryOf(entries.find((e) => e.name === "Desktop")!)).toBe(3000000101); // a host app
+    expect(layoutEntryOf(null)).toBeNull();
+    expect(layoutEntryOf({ ...entries[0], parked: true })).toBeNull();
+    // so a visible shortcut shows its walk result too
     const walked = joinTitles(apps, entries, [], {
       "3000000011": { real_appid: 1145360, result: "default", url: "workshop://1", when, applied: "workshop://1" },
     });

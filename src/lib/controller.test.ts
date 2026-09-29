@@ -1317,7 +1317,7 @@ describe("the Stream button and the default controller layout (spec 3.9, 3.10, 3
     expect(names()).toContain("layouts");
   });
 
-  describe("inspectLayout (Use as the default layout, spec 3.16.5)", () => {
+  describe("inspectLayout (the panel's Make default, spec 3.16.5)", () => {
     it("reads one selection: the URL and its title, else the layout's kind", async () => {
       const controller = await loaded();
       steam.steamInput.urls.set(BALATRO_SHORTCUT, DEFAULT.url);

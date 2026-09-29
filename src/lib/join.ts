@@ -86,12 +86,6 @@ export interface TitleRow {
    */
   layoutTarget: { shortcutAppid: number; realAppid: number | null } | null;
   /**
-   * The entry *Use as the default layout* reads the layout from (spec
-   * 3.16.5, Decision 48): the row's entry when it has one and it is not
-   * parked -- a Stream entry, a visible shortcut or a host app alike.
-   */
-  layoutSource: number | null;
-  /**
    * When the plugin first saw the row's entry in `status` (the *Recently
    * added* order); `null` for a row without an entry, for a host app (the
    * backend dates none) and for a title that was there before the plugin
@@ -170,8 +164,8 @@ export function layoutTargetOf(kind: RowKind, entry: EntryEvent | null): TitleRo
   return { shortcutAppid: entry.appid, realAppid: steam };
 }
 
-/** The entry *Use as the default layout* adopts from: any non-parked entry (spec 3.16.5). */
-export function layoutSourceOf(entry: EntryEvent | null): number | null {
+/** The entry the row's layout text is for: any non-parked entry, a Stream entry, a visible shortcut or a host app alike. */
+export function layoutEntryOf(entry: EntryEvent | null): number | null {
   return entry && !entry.parked ? entry.appid : null;
 }
 
@@ -181,8 +175,8 @@ function buildRow(input: RowInput): TitleRow {
   const kind: RowKind = ignored ? "ignored" : input.kind;
   const unmatched = kind === "shortcut" && !hasIds(match);
   const layoutTarget = layoutTargetOf(kind, entry);
-  const layoutSource = layoutSourceOf(entry);
-  const layout = layoutSource !== null ? layoutStatusText(input.layouts[String(layoutSource)]) : null;
+  const layoutEntry = layoutEntryOf(entry);
+  const layout = layoutEntry !== null ? layoutStatusText(input.layouts[String(layoutEntry)]) : null;
 
   let badge: Badge;
   if (kind === "shortcut") badge = unmatched ? BADGES.unmatched : BADGES.shortcut;
@@ -213,7 +207,6 @@ function buildRow(input: RowInput): TitleRow {
     sameGameAs,
     layout,
     layoutTarget,
-    layoutSource,
     // own keys only: a title may be called "constructor"
     added:
       entry && Object.prototype.hasOwnProperty.call(input.added, entry.name)

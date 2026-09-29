@@ -243,7 +243,7 @@ was packaged without the CLI)" and you can install the CLI on its own (see
 - **Enable Sync**, the on/off toggle at the top. Turn it off when the
   Deck travels away from its host: every Moonlight shortcut is hidden in
   the library (the visible ones and the Moonlight client entry too), the
-  Stream buttons, the *Streaming* tab and the gear-menu item disappear,
+  Stream buttons and the *Streaming* tab disappear,
   nothing syncs, the host is not probed, and the settings route shows the
   toggle alone until it is on again. Turning it on puts everything back
   as the last status and your settings say, and runs a controller-layout
@@ -316,8 +316,8 @@ was packaged without the CLI)" and you can install the CLI on its own (see
 - **The layout row**, for the Moonlight entry. **Layout** opens Steam's
   controller configurator for the hidden Moonlight shortcut (left out on a
   Steam client that cannot open it). **Make default** makes that layout the
-  default for every streaming entry, the same as *Use as the default
-  layout* (see "Controller layouts"): it asks you to confirm first. The
+  default for every streaming entry (see "Controller layouts"), and is the
+  one place a default is set: it asks you to confirm first. The
   line under the row names the current default ("Moonlight's layout ·
   default for streams: …", or "no default for streams yet"). Both buttons
   are disabled until the first sync creates the shortcut, and work while a
@@ -482,8 +482,7 @@ match line (`Balatro · Steam 2379780`, `Sea of Stars · SGDB 5322710`, or
   panel's button launches (see "The Quick Access panel"). It is listed
   under *All* only. **Change match** still works and only changes its
   artwork (every result reads **art only**: no match makes a host app a
-  Stream button); **Layout** → *Choose layout…* opens its controller
-  configurator, and *Use as the default layout* adopts the layout it has;
+  Stream button); **Layout** opens its controller configurator;
   **Ignore** removes the entry, and its panel button, on the next sync.
 - **ignored**: nothing is created for it.
 - **duplicate**: matched to the same owned game as another title (the line
@@ -573,17 +572,11 @@ The plugin therefore keeps **one default controller layout** that every
 entry it manages starts on, and each title stays customisable on its own.
 
 - **Adopting a default.** There is no layout list of the plugin's own (Steam
-  has no API that returns a picked layout by name). Instead, set a layout up
-  on a game with Steam's own controller settings, then open that game's
-  gear menu (the one with *Controller settings* in it) and choose **Use as
-  Moonlight Sync default layout**. The item is there on every game you
-  stream and on the plugin's own visible entries. The same action is on the
-  Titles page as **Layout** → *Use as the default layout*, which reads the
-  layout the title's own entry has, hidden or visible (a hidden one is set
-  with **Layout** → *Choose layout…*). The quickest place is the Quick
-  Access panel: **Layout** sets the Moonlight entry's layout and **Make
-  default** adopts it. Every way, the plugin reads the layout for the controller in
-  use, asks you to confirm, and
+  has no API that returns a picked layout by name). Instead, set the layout
+  up on the Moonlight entry from the Quick Access panel: **Layout** opens
+  Steam's controller configurator for it, and **Make default** adopts the
+  layout it has. The plugin reads that layout for the controller in use,
+  asks you to confirm, and
   puts it on every entry that has no layout of its own: Stream buttons'
   hidden shortcuts, visible shortcuts, `Desktop` / `Steam Big Picture` and
   the Moonlight entry. A toast says how many titles took it and how many
@@ -593,15 +586,14 @@ entry it manages starts on, and each title stays customisable on its own.
   **exported** (both read back from Steam Input as `workshop://…`), or one
   of Steam's built-in templates (`template://…`). A layout you edited in
   place without exporting only exists for that one title (`autosave://…`):
-  *Use as the default layout* refuses it and says so. In Steam's layout
-  screen choose **Export**, select the exported copy on that title, then
-  try again. A title that has no layout chosen yet cannot be adopted from
-  either.
+  **Make default** refuses it and says so. In Steam's layout screen choose
+  **Export**, select the exported copy on the Moonlight entry, then try
+  again. With no layout chosen yet there is nothing to adopt either.
 - **What is overwritten, and what never is.** The plugin only ever changes a
   selection it made itself (it remembers, per shortcut, the last layout it
   set). A layout you chose yourself on a title, a layout you edited in
   place after the default landed, and the title you adopted the default
-  *from* are left alone, by every Stream press, every sync and every
+  *from* (the Moonlight entry) are left alone, by every Stream press, every sync and every
   change of the default. A title still on the plugin's earlier default
   moves to the new one; a title copied from its Steam game by an older
   version of the plugin counts as plugin-set and moves too. A hand-picked
@@ -613,7 +605,7 @@ entry it manages starts on, and each title stays customisable on its own.
   never loads is recorded as unavailable and gets it on its next press),
   and at once when the default is set or cleared. Changing the default is
   not held back by a running game or a sync. While that walk is running,
-  *Use as the default layout* answers "A layout walk is still running" and
+  **Make default** answers "A layout walk is still running" and
   **Clear** is disabled; if the plugin has not loaded your titles yet (its
   status check failed), the change is kept and the toast says the layout is
   applied, or taken off, once they have loaded.
@@ -644,8 +636,8 @@ entry it manages starts on, and each title stays customisable on its own.
   enum value. On a device with no built-in controller (a SteamOS box with
   a separate pad) the plugin uses the active controller, or the only
   connected one; with several pads and none active, or none connected,
-  nothing is set (**unavailable**, and *Use as the default layout* asks you
-  to connect a controller first).
+  nothing is set (**unavailable**, and **Make default** asks you to connect
+  a controller first).
 
 **The PR-0 device probes ran on 2026-09-20**, on a SteamOS machine with a
 separate Steam Controller rather than a Deck. Probe V2 confirmed that a
@@ -670,8 +662,8 @@ untested. The fallback stays built in:
   device without a rebuild. Under `picker` the plugin makes no Steam Input
   calls at all: a Stream press just launches, there is no walk after a
   sync's restart, the default layout is off (the Advanced field says so and
-  *Use as the default layout* is not offered), and **Layout** → *Choose
-  layout…* (recorded as *picker opened*) is the only layout affordance.
+  **Make default** is not offered), and **Layout** (recorded as *picker
+  opened*) is the only layout affordance.
 - The default lives in one place, `DEFAULT_LAYOUT_STRATEGY` in
   `src/lib/layouts.ts`. If a later client breaks the set, flipping that
   constant to `"picker"` and rewriting this section is the whole change.

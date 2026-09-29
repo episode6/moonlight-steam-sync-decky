@@ -32,7 +32,6 @@ import type { ReactElement } from "react";
 import { StreamButton } from "../components/StreamButton";
 import { hasClass, streamRowIndex } from "../lib/appPage";
 import { SHORTCUT_APPID_FLOOR } from "../lib/steam";
-import { ensureLibraryContextMenuPatched } from "./libraryContextMenu";
 import { isOverview, type Overview, type TreeNode } from "./tree";
 
 export const LIBRARY_APP_ROUTE = "/library/app/:appid";
@@ -105,12 +104,6 @@ interface RenderableChild {
 /** Install the route patch; the returned function removes it (`onDismount`). */
 export function patchLibraryApp(): () => void {
   const patch = routerHook.addPatch(LIBRARY_APP_ROUTE, (route) => {
-    // The gear menu's patch installs on the first library render, not at load.
-    try {
-      ensureLibraryContextMenuPatched();
-    } catch (error) {
-      console.warn("Moonlight Sync: could not patch the library context menu", error);
-    }
     const child = route.children as RenderableChild | undefined;
     if (!child || typeof child !== "object" || !child.props || typeof child.props.renderFunc !== "function") {
       return route;

@@ -8,7 +8,6 @@ import { SETTINGS_ROUTE, TITLES_ROUTE, controller } from "./instance";
 import type { SgdbKeyDonePayload, SgdbKeyEventPayload, SyncDonePayload, SyncEventPayload } from "./lib/cli";
 import { watchControllers, watchRunningApps } from "./lib/steam";
 import { patchLibraryApp } from "./routes/libraryApp";
-import { patchLibraryContextMenu } from "./routes/libraryContextMenu";
 import { patchLibraryTabs } from "./routes/libraryTabs";
 
 function runningAppids(): number[] {
@@ -90,14 +89,6 @@ export default definePlugin(() => {
     console.warn("Moonlight Sync: could not patch the library tabs", error);
   }
 
-  // *Use as Moonlight Sync default layout* in the library gear menu (spec 3.16.5).
-  let unpatchMenu: () => void = () => undefined;
-  try {
-    unpatchMenu = patchLibraryContextMenu();
-  } catch (error) {
-    console.warn("Moonlight Sync: could not patch the library context menu", error);
-  }
-
   // The load order runs here, not when the panel opens (spec 3.8); it starts
   // the post-restart layout walk when one is pending (spec 3.10).
   void controller.load();
@@ -116,7 +107,6 @@ export default definePlugin(() => {
       unwatchControllers();
       unpatchLibrary();
       unpatchTabs();
-      unpatchMenu();
       routerHook.removeRoute(SETTINGS_ROUTE);
     },
   };
