@@ -80,12 +80,6 @@ export interface TitleRow {
    */
   layout: string | null;
   /**
-   * The hidden shortcut and the owned game *Choose layout* works on.
-   * `realAppid: null` is a host-app row: there is no retail game behind it
-   * (spec 3.14.1).
-   */
-  layoutTarget: { shortcutAppid: number; realAppid: number | null } | null;
-  /**
    * When the plugin first saw the row's entry in `status` (the *Recently
    * added* order); `null` for a row without an entry, for a host app (the
    * backend dates none) and for a title that was there before the plugin
@@ -149,21 +143,6 @@ interface RowInput {
   added: Readonly<AddedTitles>;
 }
 
-/**
- * The hidden shortcut *Choose layout* works on: a stream row whose entry is
- * hidden, not parked, and matched to a Steam appid (the stream map's rule).
- * A host-app row's hidden entry is a target too, with no game behind it
- * (`realAppid: null`, whatever its match says): it has no library page, so
- * *Choose layout* is the only way to its configurator.
- */
-export function layoutTargetOf(kind: RowKind, entry: EntryEvent | null): TitleRow["layoutTarget"] {
-  if (!entry || !entry.hidden || entry.parked || entry.client) return null;
-  if (kind === "host-app") return { shortcutAppid: entry.appid, realAppid: null };
-  const steam = entry.match?.steam_appid;
-  if (kind !== "stream" || typeof steam !== "number") return null;
-  return { shortcutAppid: entry.appid, realAppid: steam };
-}
-
 /** The entry the row's layout text is for: any non-parked entry, a Stream entry, a visible shortcut or a host app alike. */
 export function layoutEntryOf(entry: EntryEvent | null): number | null {
   return entry && !entry.parked ? entry.appid : null;
@@ -174,7 +153,6 @@ function buildRow(input: RowInput): TitleRow {
   const ignored = ignoredBy !== null;
   const kind: RowKind = ignored ? "ignored" : input.kind;
   const unmatched = kind === "shortcut" && !hasIds(match);
-  const layoutTarget = layoutTargetOf(kind, entry);
   const layoutEntry = layoutEntryOf(entry);
   const layout = layoutEntry !== null ? layoutStatusText(input.layouts[String(layoutEntry)]) : null;
 
@@ -206,7 +184,6 @@ function buildRow(input: RowInput): TitleRow {
     duplicateOf,
     sameGameAs,
     layout,
-    layoutTarget,
     // own keys only: a title may be called "constructor"
     added:
       entry && Object.prototype.hasOwnProperty.call(input.added, entry.name)

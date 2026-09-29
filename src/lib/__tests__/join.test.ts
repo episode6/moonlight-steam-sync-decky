@@ -14,7 +14,6 @@ import {
   filterRows,
   joinTitles,
   layoutEntryOf,
-  layoutTargetOf,
   loadMoreLabel,
   matchSummary,
   noMatchRow,
@@ -176,7 +175,6 @@ describe("joinTitles: list joined with status by name", () => {
     expect(row.kind).toBe("ignored");
     expect(row.badge.id).toBe("ignored");
     expect(row.ignoredBy).toBe("plugin");
-    expect(row.layoutTarget).toBeNull();
   });
 
   it("a name in ignore.json is ignored before the next list says so", () => {
@@ -644,17 +642,7 @@ describe("the layout text per row (spec 3.10)", () => {
     expect(byName(rowsOf(), "Balatro").layout).toBeNull(); // no layouts.json yet
     for (const name of ["Hades II", "Tunic", "Demo Launcher", "Sea of Stars (GOG)", "Spiritfarer"]) {
       expect(byName(rows, name).layout).toBeNull();
-      expect(byName(rows, name).layoutTarget).toBeNull();
     }
-  });
-
-  it("names the pair Choose layout works on", () => {
-    const rows = joinTitles(apps, entries, [], layouts);
-    expect(byName(rows, "Balatro").layoutTarget).toEqual({ shortcutAppid: 2718281828, realAppid: 2379780 });
-    expect(byName(rows, "Sea of Stars").layoutTarget).toEqual({ shortcutAppid: 2987654321, realAppid: 1244090 });
-    expect(layoutTargetOf("stream", null)).toBeNull();
-    expect(layoutTargetOf("shortcut", entries[0])).toBeNull();
-    expect(layoutTargetOf("stream", { ...entries[0], parked: true })).toBeNull();
   });
 
   it("layoutEntryOf: the row's layout text is for any non-parked entry", () => {
@@ -668,24 +656,14 @@ describe("the layout text per row (spec 3.10)", () => {
       "3000000011": { real_appid: 1145360, result: "default", url: "workshop://1", when, applied: "workshop://1" },
     });
     expect(byName(walked, "Hades II").layout).toBe("default layout");
-    expect(byName(walked, "Hades II").layoutTarget).toBeNull();
   });
 
-  it("a host-app row is picker only: a target with no real appid (spec 3.14.1)", () => {
-    const desktopEntry = entries.find((e) => e.name === "Desktop")!;
+  it("a host-app row shows its entry's layout result (spec 3.14.1)", () => {
     const rows = joinTitles(apps, entries, [], {
       ...layouts,
       "3000000101": { real_appid: null, result: "picker", url: null, when },
     });
-    // Desktop's match has a Steam appid; it is still never the copy's source.
-    expect(desktopEntry.match?.steam_appid).toBe(226620);
-    expect(byName(rows, "Desktop").layoutTarget).toEqual({ shortcutAppid: 3000000101, realAppid: null });
     expect(byName(rows, "Desktop").layout).toBe("picker opened");
-    expect(byName(rows, "Steam Big Picture").layoutTarget).toEqual({ shortcutAppid: 3000000102, realAppid: null });
     expect(byName(rows, "Steam Big Picture").layout).toBeNull();
-    // Still a visible tile (not synced under the flag yet): its library page has the configurator.
-    expect(layoutTargetOf("host-app", { ...desktopEntry, hidden: false })).toBeNull();
-    expect(layoutTargetOf("host-app", { ...desktopEntry, parked: true })).toBeNull();
-    expect(layoutTargetOf("host-app", null)).toBeNull();
   });
 });

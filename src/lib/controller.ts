@@ -1346,12 +1346,12 @@ export class Controller {
   }
 
   /**
-   * *Choose layout* on a Titles row: Steam's own layout picker for the
-   * hidden shortcut, recorded as `picker` (under either strategy; under
-   * `picker` it is the only layout affordance). `false` when the client has
-   * no such method, in which case the pages hide the action. `realAppid`
-   * is `null` for a default host app (its Titles row, spec 3.14.1) and the
-   * client (the panel's *Layout*, Decision 67): no game behind it, only the
+   * *Choose layout*: Steam's own layout picker for a hidden shortcut,
+   * recorded as `picker` (under either strategy; under `picker` it is the
+   * only layout affordance). `false` when the client has no such method, in
+   * which case the panel hides the action. `realAppid` is `null` for the
+   * client (the panel's *Layout*, Decision 67, its one caller since the
+   * Titles rows lost theirs, Decision 75): no game behind it, only the
    * picker.
    */
   async chooseLayout(shortcutAppid: number, realAppid: number | null): Promise<boolean> {
@@ -1363,7 +1363,7 @@ export class Controller {
   /**
    * The panel's *Layout* button (Decision 67): the controller configurator
    * for the Moonlight client shortcut, picker only (no game behind it).
-   * Desktop and Steam Big Picture reach theirs from the Titles page. Like
+   * Like
    * the launch row above it, it is not held back while a game runs
    * (Decision 57).
    */

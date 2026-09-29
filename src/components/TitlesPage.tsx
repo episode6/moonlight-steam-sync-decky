@@ -66,7 +66,6 @@ function Row({
   showAdded,
   locked,
   ignoring,
-  canChooseLayout,
   onChangeMatch,
   onIgnore,
   rowRef,
@@ -77,14 +76,11 @@ function Row({
   /** A run is going: both edits are held until it finishes. */
   locked: boolean;
   ignoring: boolean;
-  /** `SteamClient.Apps.ShowControllerConfigurator` exists (else the *Layout* button is hidden, spec 3.10). */
-  canChooseLayout: boolean;
   onChangeMatch(): void;
   onIgnore(): void;
   /** Set on the last row shown, which *Show more* focuses before it grows the page. */
   rowRef?: RefObject<HTMLDivElement | null>;
 }) {
-  const chooseLayout = row.layoutTarget && canChooseLayout ? row.layoutTarget : null;
   const added = showAdded ? addedText(row) : null;
   return (
     <Focusable
@@ -125,14 +121,6 @@ function Row({
           Change match
         </DialogButton>
       ) : null}
-      {chooseLayout ? (
-        <DialogButton
-          style={SMALL}
-          onClick={() => void controller.chooseLayout(chooseLayout.shortcutAppid, chooseLayout.realAppid)}
-        >
-          Layout
-        </DialogButton>
-      ) : null}
       {row.ignoredBy === "config" ? (
         <DialogButton style={SMALL} disabled>
           Ignored in config.toml
@@ -169,10 +157,9 @@ function headline(data: TitlesData, rows: readonly TitleRow[], sort: TitleSort):
  * load-more row; *Change match* opens the picker, *Ignore* / *Unignore*
  * edits `ignore.json`. A row with a non-parked entry also shows its last
  * layout result ("default layout" / "own layout" / "Steam default" /
- * "unavailable", spec 3.10, 3.16); a hidden Stream entry or host app has
- * a *Layout* button, Steam's own picker for the hidden shortcut (hidden
- * when the client lacks it). The default layout is adopted from the
- * panel's *Make default* alone (Decision 74). The *Recently added* chip
+ * "unavailable", spec 3.10, 3.16), but no layout action: the panel's
+ * *Layout* and *Make default* are the only ones (Decisions 74 and 75). The
+ * *Recently added* chip
  * (the `titles_recent_first` setting, so the page reopens in the order last
  * chosen) lists the titles added last first, each with when it was added,
  * instead of by name. Nothing here restarts Steam: a pin or
@@ -229,7 +216,6 @@ export function TitlesPage() {
     [data, layouts],
   );
   const sort = titleSortOf(state.settings);
-  const canChooseLayout = controller.canChooseLayout();
   const shown = useMemo(
     () => sortRows(filterRows(rows, filter, showParked), sort),
     [rows, filter, showParked, sort],
@@ -397,7 +383,6 @@ export function TitlesPage() {
             showAdded={sort === "recent"}
             locked={running}
             ignoring={ignoring === row.name}
-            canChooseLayout={canChooseLayout}
             onChangeMatch={() => changeMatch(row)}
             onIgnore={() => void toggleIgnore(row)}
           />

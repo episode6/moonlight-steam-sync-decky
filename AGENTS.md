@@ -736,8 +736,7 @@ src/lib/                    pure modules (vitest)
                             pages of 50, applyPin; the Change match rows (candidateRows,
                             noMatchRow, matchSummary); the `host-app` kind (badge
                             `host app`, under *All* only, never unmatched, every
-                            candidate `art only`) and layoutTargetOf(), whose
-                            `realAppid` is `null` for a hidden host-app row;
+                            candidate `art only`);
                             layoutEntryOf() (any non-parked entry: what the row's
                             layout text is for);
                             the order (spec 3.21): a row's
@@ -859,9 +858,9 @@ src/components/             adoptDefault (inspectLayout -> refusal toasts -> Con
                             through sortRows() after the filter, each with
                             addedText() while it is on, the headline's sortText(),
                             during a sync only for `recent`;
-                            layout text; *Layout*, which opens Steam's configurator
-                            directly (chooseLayout; no menu since Decision 74)),
-                            ChangeMatchModal,
+                            layout text, and no layout action (Decision 75: the
+                            panel's *Layout* and *Make default* are the only
+                            ones)), ChangeMatchModal,
                             Pill, StreamButton (renders only when streamMap has the
                             appid; the layout line only while a default is set), ArtworkPage
                             (the key field over the store's `sgdbKey`; in the `none` /
@@ -984,9 +983,9 @@ controller. Should a later client break the set, flip the constant to
 `"picker"` and rewrite the README's "Controller layouts" section; nothing
 else moves. Under `picker` no Steam Input call is made anywhere
 (`defaultLayoutOf()` is `null`, so the whole §3.16 feature is off and its
-UI hidden, and the walk clears its flag at once); *Layout* (the Titles
-rows' and the panel's, `SteamClient.Apps.ShowControllerConfigurator`,
-hidden when absent) is the only layout affordance.
+UI hidden, and the walk clears its flag at once); the panel's *Layout*
+(`SteamClient.Apps.ShowControllerConfigurator`, hidden when absent) is
+the only layout affordance.
 
 ## Backend contract in one paragraph
 
@@ -1382,7 +1381,7 @@ There is no Steam Deck during development; everything else is tested.
   (`layouts.test.ts`, `controller.test.ts`, whose fake `record_layout`
   computes `applied` by the backend's table) and `steam.test.ts` drives
   the real seam over stubbed globals; the route patch, the button, the
-  *Layout* menu and `ClearSelectedConfigForApp` itself are device checks,
+  panel's *Layout* and `ClearSelectedConfigForApp` itself are device checks,
   not unit tests. The key fetch's frontend (spec 3.20.4) runs over the
   same fake backend in `controller.test.ts` (an `order` log interleaves
   backend calls, the fake Steam seam's `open:` / `back` navigations and

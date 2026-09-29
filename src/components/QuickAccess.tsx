@@ -128,8 +128,8 @@ function LaunchRow({ state }: { state: AppState }) {
  * for the Moonlight shortcut (hidden when the client cannot), *Make
  * default* adopts that shortcut's layout as the default for every
  * streaming entry, the one place a default is adopted (Decision 74; hidden
- * under the `picker` strategy, which has no default). Desktop and Steam Big Picture keep their
- * *Choose layout* on the Titles page. Not held back while a game runs.
+ * under the `picker` strategy, which has no default). The Titles page has
+ * no layout action since Decision 75. Not held back while a game runs.
  */
 function ClientLayoutRow({ state, canChooseLayout }: { state: AppState; canChooseLayout: boolean }) {
   const canAdopt = layoutStrategy(state.settings) === "copy";

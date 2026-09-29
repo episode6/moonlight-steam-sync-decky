@@ -11,9 +11,11 @@ project uses [semantic versioning](https://semver.org/).
 - **Use as the default layout** on the Titles page and **Use as Moonlight
   Sync default layout** in a library page's gear menu. The Quick Access
   panel's **Make default**, after **Layout** on the Moonlight entry, is
-  now the one way to adopt a default controller layout. A Titles row's
-  **Layout** button opens Steam's controller configurator directly
-  instead of a one-item menu.
+  now the one way to adopt a default controller layout.
+- **The Titles page's Layout button**, on every row, so the rows are
+  uniform. A title's own layout can still be picked from Steam's
+  controller settings while it streams; the panel's **Layout** covers the
+  Moonlight entry.
 
 ## [0.12.0] - 2026-09-28
 

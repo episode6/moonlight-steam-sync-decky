@@ -35,8 +35,8 @@ export const WALK_RUNNING_TOAST = "A layout walk is still running. Try again whe
  * The panel's *Make default* (spec 3.16.5, Decisions 43, 67 and 74): read
  * the selection `appid` (the client entry) has for the controller in use,
  * refuse what cannot be shared, and confirm before every entry gets it.
- * The one way to adopt a default: the Titles row and the library gear menu
- * no longer offer it (Decision 74).
+ * The one way to adopt a default: the Titles rows and the library gear menu
+ * no longer offer it (Decisions 74 and 75).
  */
 export async function adoptAsDefault(appid: number, name: string): Promise<void> {
   if (controller.state.walking) {

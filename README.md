@@ -289,8 +289,8 @@ was packaged without the CLI)" and you can install the CLI on its own (see
   without one, the other icons widen to fill the row.
   Like the Stream button, they work while a game is already running too:
   Moonlight's own UI handles a stream that is already going. Their
-  controller layouts are set from the Titles page (**Layout** on the
-  `Desktop` / `Steam Big Picture` row opens the configurator), and they take the
+  controller layouts can be changed from Steam's own controller settings
+  while one of them streams, and they take the
   default layout like every other entry.
   - **Getting the tiles back.** There is no plugin setting for this. From a
     terminal (Desktop Mode or SSH), run the plugin's own sync without
@@ -482,8 +482,7 @@ match line (`Balatro · Steam 2379780`, `Sea of Stars · SGDB 5322710`, or
   panel's button launches (see "The Quick Access panel"). It is listed
   under *All* only. **Change match** still works and only changes its
   artwork (every result reads **art only**: no match makes a host app a
-  Stream button); **Layout** opens its controller configurator;
-  **Ignore** removes the entry, and its panel button, on the next sync.
+  Stream button); **Ignore** removes the entry, and its panel button, on the next sync.
 - **ignored**: nothing is created for it.
 - **duplicate**: matched to the same owned game as another title (the line
   reads "same game as …"); the first title gets the hidden entry and this
@@ -662,8 +661,8 @@ untested. The fallback stays built in:
   device without a rebuild. Under `picker` the plugin makes no Steam Input
   calls at all: a Stream press just launches, there is no walk after a
   sync's restart, the default layout is off (the Advanced field says so and
-  **Make default** is not offered), and **Layout** (recorded as *picker
-  opened*) is the only layout affordance.
+  **Make default** is not offered), and the panel's **Layout** (recorded
+  as *picker opened*) is the plugin's only layout affordance.
 - The default lives in one place, `DEFAULT_LAYOUT_STRATEGY` in
   `src/lib/layouts.ts`. If a later client breaks the set, flipping that
   constant to `"picker"` and rewriting this section is the whole change.

@@ -14,7 +14,7 @@ export function defaultLayoutDescription(
   now: Date = new Date(),
 ): string {
   if (layoutStrategy(settings) === "picker") {
-    return 'Off for this device: settings.json sets layout_strategy to "picker", so layouts are only chosen by hand (Titles → Layout)';
+    return `Off for this device: settings.json sets layout_strategy to "picker", so layouts are only chosen by hand (the panel's Layout, or Steam's own controller settings)`;
   }
   const def = defaultLayoutOf(settings);
   if (!def) return "None. Set Moonlight's Layout in the panel, then press Make default";

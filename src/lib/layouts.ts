@@ -4,7 +4,7 @@
  * - **The strategy switch.** `DEFAULT_LAYOUT_STRATEGY` is the one constant
  *   that decides between `copy` (the plugin sets layouts through Steam
  *   Input) and `picker` (no Steam Input calls anywhere; *Choose layout*
- *   (the Titles row's and the panel's *Layout*) is the only affordance, and the whole default-layout
+ *   (the panel's *Layout*) is the only affordance, and the whole default-layout
  *   feature is off and hidden). `settings.json`'s `layout_strategy`
  *   overrides it by hand on the device. The PR-0 probe V2 (2026-09-20)
  *   confirmed `copy`: a `workshop://` URL set on a shortcut reads back,
