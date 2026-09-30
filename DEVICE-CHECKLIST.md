@@ -1075,7 +1075,7 @@ SSH session for V10's `moonlight-steam-sync --version` and `sha256sum
       error then, since a failed second request never fails it): escalate
       with Decky's log.
 - [ ] **A new build of the followed branch is seen at once.** With `main`
-      followed and its build installed, push to `main` (or `gh workflow
+      followed and its build installed, merge to `main` (or `gh workflow
       run builds.yml --ref main`) and wait for the *Builds* run to finish;
       *Check now* on the Updates page must show the new commit, `main @
       <the new sha7>`, and offer *Switch to* it. Before amendment A6 the
