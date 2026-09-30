@@ -180,7 +180,9 @@ to `~/homebrew/logs/steam-input-probe/steam-input-probe.log` (the loader's
       row and no dropdown: **Check** / **Wake** directly under *Enable
       Sync* until the host is known reachable, then *Sync now* first. An
       unreachable host shows the error line alone above Check / Wake.
-      Add a second host on Settings → Host: the row and its dropdown
+      Check / Wake sit as far below the divider above them as *Sync
+      now* does when they are gone, with a divider of their own under
+      them. Add a second host on Settings → Host: the row and its dropdown
       appear; Forget it: they go again.
 - [ ] **The switcher takes the row's spare width.** With several hosts,
       expect the dropdown to start right of "N apps", never over it,

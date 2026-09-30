@@ -8,6 +8,10 @@ project uses [semantic versioning](https://semver.org/).
 
 ### Fixed
 
+- **Check and Wake touched the line above them** in the Quick Access
+  panel. They now have the same space above and below, and the same
+  divider under them, as *Sync now*, so the panel is spaced alike
+  whether they are shown or not.
 - **A followed branch's new build was not seen for hours.** The update
   check read the branch's `build.json` through the browser's HTTP cache,
   which kept the file from before the last push as long as GitHub's
