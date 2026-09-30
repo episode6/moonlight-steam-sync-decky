@@ -81,6 +81,16 @@ describe("the globals", () => {
       },
     };
     expect(steamClock24h()).toBeNull();
+    // a throwing getter, or one with no boolean, still falls back to the field
+    g.settingsStore = {
+      get friendSettings(): never {
+        throw new TypeError("not loaded");
+      },
+      m_FriendSettings: { b24HourClock: true },
+    };
+    expect(steamClock24h()).toBe(true);
+    g.settingsStore = { friendSettings: {}, m_FriendSettings: { b24HourClock: false } };
+    expect(steamClock24h()).toBe(false);
   });
 
   it("ownedApps is null until the library has loaded", () => {

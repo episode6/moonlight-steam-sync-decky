@@ -16,7 +16,8 @@
  * the caller passes in.
  *
  * Only globals are used here (`SteamClient`, `collectionStore`, `appStore`,
- * `ControllerStore`, `App`), so this module imports nothing from `@decky/*`;
+ * `ControllerStore`, `App`, `settingsStore`), so this module imports nothing
+ * from `@decky/*`;
  * the pure helpers (`buildOwnedMap`, `steamId3FromSteam64`, and
  * `layouts.ts`'s `applyDefault` / `layoutControllerIndexFrom`) are unit-tested.
  */
@@ -128,19 +129,21 @@ interface FriendSettingsLike {
  * else the `m_FriendSettings` field that getter returns (both measured on a
  * Deck 2026-09-29). The toggle replaces the whole object, so it is read
  * afresh at every formatted time (`format.ts`'s `setClockSource`) and a
- * change shows at the next render. `null` when the client has no such
- * value or reading it throws.
+ * change shows at the next render. Each of the two is read on its own, so
+ * a getter that throws or answers no boolean still falls back to the
+ * field; `null` when neither gives a boolean.
  */
 export function steamClock24h(): boolean | null {
-  try {
-    const store = globals().settingsStore as
-      | { friendSettings?: FriendSettingsLike; m_FriendSettings?: FriendSettingsLike }
-      | undefined;
-    const value = (store?.friendSettings ?? store?.m_FriendSettings)?.b24HourClock;
-    return typeof value === "boolean" ? value : null;
-  } catch {
-    return null;
-  }
+  const read = (key: "friendSettings" | "m_FriendSettings"): boolean | null => {
+    try {
+      const store = globals().settingsStore as Record<typeof key, FriendSettingsLike | undefined> | undefined;
+      const value = store?.[key]?.b24HourClock;
+      return typeof value === "boolean" ? value : null;
+    } catch {
+      return null;
+    }
+  };
+  return read("friendSettings") ?? read("m_FriendSettings");
 }
 
 /** The logged-in user's steamid3, derived from `App.m_CurrentUser.strSteamID`

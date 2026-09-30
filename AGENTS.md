@@ -759,8 +759,9 @@ src/lib/                    pure modules (vitest)
                             in the client's boot, is "not loaded yet"), steamClock24h()
                             (Settings → System → *24-hour clock*:
                             `settingsStore.friendSettings.b24HourClock`, else
-                            `m_FriendSettings`, measured on a Deck 2026-09-29; `null`
-                            when absent or throwing),
+                            `m_FriendSettings` (each read in its own try, so a
+                            throwing getter still falls back), measured on a Deck
+                            2026-09-29; `null` when neither gives a boolean),
                             currentSteamId3(), runShortcut(),
                             shutdownSteam(), watchRunningApps(), steamInput() over
                             SteamClient.Input (clearConfig only when the client has
