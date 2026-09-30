@@ -183,11 +183,14 @@ to `~/homebrew/logs/steam-input-probe/steam-input-probe.log` (the loader's
       Add a second host on Settings → Host: the row and its dropdown
       appear; Forget it: they go again.
 - [ ] **The switcher takes the row's spare width.** With several hosts,
-      expect the dropdown to start right of "N apps" and show a host
-      name of a dozen characters whole, not cut at half the row. The
-      dropdown opens, lists every host and switches as before (the row
-      is a `Field` with `childrenContainerWidth="max"` around a
-      `Dropdown` now, not a `DropdownItem`: unmeasured on a device).
+      expect the dropdown to start right of "N apps", never over it,
+      and show a host name of a dozen characters whole, not cut at half
+      the row; a longer name ends in "…" rather than pushing the count
+      under the dropdown. The dropdown opens, lists every host and
+      switches as before (the row is a `Field` with
+      `childrenContainerWidth="max"` around a `Dropdown`, not a
+      `DropdownItem`; the count running under the dropdown was seen on
+      a Deck 2026-09-29 and the fix measured there over the debugger).
 - [ ] **In-game guard.** While a game is running, expect no restart
       countdown and the text "A game is running. Restart Steam when you're
       done."

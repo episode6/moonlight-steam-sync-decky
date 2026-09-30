@@ -27,6 +27,12 @@ project uses [semantic versioning](https://semver.org/).
   **Settings → System → 24-hour clock**, and the 12-hour clock where the
   client does not say.
 
+### Fixed
+
+- **The panel's host count ran under the host dropdown.** With several
+  hosts, the "N apps" line under *Host* keeps its width and the dropdown
+  takes the rest of the row, a long host name ending in "…".
+
 ## [0.12.0] - 2026-09-28
 
 ### Added
