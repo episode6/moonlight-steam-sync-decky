@@ -9,7 +9,6 @@ import {
   applyRunDone,
   applyRunEvent,
   clientAppid,
-  clientLayoutCaption,
   countersFromStatus,
   hostAppsFromStatus,
   hostOptions,
@@ -114,7 +113,7 @@ describe("stream map and client", () => {
   });
 });
 
-describe("the panel's launch and layout rows (Decision 67)", () => {
+describe("the panel's launch row (Decision 67)", () => {
   const client = 2400000001;
   const both = { desktop: 3000000101, bigPicture: 3000000102 };
 
@@ -145,24 +144,6 @@ describe("the panel's launch and layout rows (Decision 67)", () => {
     // A focused host app that has since gone falls back to Moonlight.
     const noDesktop = launchButtons({ clientAppid: client, hostApps: { ...both, desktop: null } });
     expect(launchCaption(noDesktop, "desktop").key).toBe("moonlight");
-  });
-
-  it("names the default layout under the layout row", () => {
-    const def = { url: "workshop://2810081311", title: "Gamepad with camera controls", when: "2026-09-25T10:00:00Z" };
-    expect(clientLayoutCaption({ clientAppid: null, settings: { default_layout: def } })).toBe("Sync once to enable");
-    expect(clientLayoutCaption({ clientAppid: client, settings: { default_layout: def } })).toBe(
-      "Moonlight's layout · default for streams: Gamepad with camera controls",
-    );
-    expect(clientLayoutCaption({ clientAppid: client, settings: { default_layout: null } })).toBe(
-      "Moonlight's layout · no default for streams yet",
-    );
-    expect(clientLayoutCaption({ clientAppid: client, settings: null })).toBe(
-      "Moonlight's layout · no default for streams yet",
-    );
-    // Under `picker` there is no default to name.
-    expect(
-      clientLayoutCaption({ clientAppid: client, settings: { default_layout: def, layout_strategy: "picker" } }),
-    ).toBe("Moonlight's controller layout");
   });
 });
 

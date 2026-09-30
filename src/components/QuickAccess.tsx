@@ -10,14 +10,12 @@ import {
   Spinner,
 } from "@decky/ui";
 import { useEffect, useState, type ReactNode } from "react";
-import { FaDesktop, FaGamepad, FaMoon, FaStar, FaSteam } from "react-icons/fa";
+import { FaDesktop, FaMoon, FaSteam } from "react-icons/fa";
 
 import { SETTINGS_ROUTE, UPDATES_ROUTE, controller } from "../instance";
 import { lastSyncLine } from "../lib/format";
-import { layoutStrategy } from "../lib/layouts";
 import {
   actionsReady,
-  clientLayoutCaption,
   hostOptions,
   hostRowView,
   ignoredCounter,
@@ -31,7 +29,6 @@ import {
 } from "../lib/state";
 import { pluginEnabled } from "../lib/library";
 import { updateRowView } from "../lib/updates";
-import { adoptAsDefault } from "./adoptDefault";
 import { confirmSwitch } from "./confirmSwitch";
 import { EnabledToggle } from "./EnabledToggle";
 import { SyncProgress } from "./SyncProgress";
@@ -63,17 +60,6 @@ const ICON_BUTTON = {
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-} as const;
-
-const LAYOUT_BUTTON = {
-  flex: 1,
-  minWidth: 0,
-  padding: "0 8px",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  gap: 8,
-  whiteSpace: "nowrap",
 } as const;
 
 const LAUNCH_ICONS: Record<LaunchKey, ReactNode> = {
@@ -120,54 +106,6 @@ function LaunchRow({ state }: { state: AppState }) {
         <span style={{ fontWeight: 600 }}>{caption.label}</span> · {caption.description}
       </div>
     </div>
-  );
-}
-
-/**
- * The layout row (Decision 67): *Layout* opens the controller configurator
- * for the Moonlight shortcut (hidden when the client cannot), *Make
- * default* adopts that shortcut's layout as the default for every
- * streaming entry, the one place a default is adopted (Decision 74; hidden
- * under the `picker` strategy, which has no default). The Titles page has
- * no layout action since Decision 75. Not held back while a game runs.
- */
-function ClientLayoutRow({ state, canChooseLayout }: { state: AppState; canChooseLayout: boolean }) {
-  const canAdopt = layoutStrategy(state.settings) === "copy";
-  if (!canChooseLayout && !canAdopt) return null;
-  const appid = state.clientAppid;
-  return (
-    <PanelSectionRow>
-      <div style={{ padding: "10px 0" }}>
-        <Focusable flow-children="horizontal" style={{ display: "flex", gap: 8 }}>
-          {canChooseLayout ? (
-            <DialogButton
-              style={LAYOUT_BUTTON}
-              disabled={appid === null}
-              onClick={() => {
-                Navigation.CloseSideMenus();
-                void controller.chooseClientLayout();
-              }}
-            >
-              <FaGamepad size={18} />
-              Layout
-            </DialogButton>
-          ) : null}
-          {canAdopt ? (
-            <DialogButton
-              style={LAYOUT_BUTTON}
-              disabled={appid === null}
-              onClick={() => {
-                if (appid !== null) void adoptAsDefault(appid, "Moonlight");
-              }}
-            >
-              <FaStar size={15} />
-              Make default
-            </DialogButton>
-          ) : null}
-        </Focusable>
-        <div style={{ fontSize: 12, opacity: 0.7, marginTop: 6 }}>{clientLayoutCaption(state)}</div>
-      </div>
-    </PanelSectionRow>
   );
 }
 
@@ -418,7 +356,6 @@ export function QuickAccess() {
   }
 
   const ready = actionsReady(state);
-  const canChooseLayout = controller.canChooseLayout();
   const libraryRow =
     state.library === "loading" || state.library === "waiting" ? (
       <PanelSectionRow>
@@ -453,7 +390,6 @@ export function QuickAccess() {
       <PanelSectionRow>
         <LaunchRow state={state} />
       </PanelSectionRow>
-      <ClientLayoutRow state={state} canChooseLayout={canChooseLayout} />
       {state.message ? (
         <PanelSectionRow>
           <Field description={state.message} focusable={false} />

@@ -193,7 +193,7 @@ export interface WalkCounts {
   unavailable: number;
 }
 
-/** What the panel's *Make default* finds on the client entry (spec 3.16.5). */
+/** What Advanced's *Make default* finds on the client entry (spec 3.16.5, Decision 77). */
 export type LayoutInspection =
   | { ok: true; url: string; title: string }
   | { ok: false; reason: "no-controller" | "unselected" | "not-shareable" };
@@ -1349,8 +1349,8 @@ export class Controller {
    * *Choose layout*: Steam's own layout picker for a hidden shortcut,
    * recorded as `picker` (under either strategy; under `picker` it is the
    * only layout affordance). `false` when the client has no such method, in
-   * which case the panel hides the action. `realAppid` is `null` for the
-   * client (the panel's *Layout*, Decision 67, its one caller since the
+   * which case Advanced hides the action. `realAppid` is `null` for the
+   * client (Advanced's *Layout*, Decisions 67 and 77, its one caller since the
    * Titles rows lost theirs, Decision 75): no game behind it, only the
    * picker.
    */
@@ -1361,11 +1361,9 @@ export class Controller {
   }
 
   /**
-   * The panel's *Layout* button (Decision 67): the controller configurator
-   * for the Moonlight client shortcut, picker only (no game behind it).
-   * Like
-   * the launch row above it, it is not held back while a game runs
-   * (Decision 57).
+   * Advanced's *Layout* button (Decisions 67 and 77): the controller
+   * configurator for the Moonlight client shortcut, picker only (no game
+   * behind it). It is not held back while a game runs (Decision 57).
    */
   chooseClientLayout(): Promise<boolean> {
     const appid = this.state.clientAppid;
@@ -1377,7 +1375,7 @@ export class Controller {
   }
 
   /**
-   * The panel's *Make default* (spec 3.16.5, Decision 74): one read of
+   * Advanced's *Make default* (spec 3.16.5, Decisions 74 and 77): one read of
    * the title's selection for the controller in use. `title` is the
    * config's own `Title`, else the layout's kind. A layout Steam cannot
    * report (a throwing call) reads as not chosen.

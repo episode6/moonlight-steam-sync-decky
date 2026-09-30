@@ -155,8 +155,8 @@ function headline(data: TitlesData, rows: readonly TitleRow[], sort: TitleSort):
  * with what the next sync does with it. Rows render 50 at a time with a
  * load-more row; *Change match* opens the picker, *Ignore* / *Unignore*
  * edits `ignore.json`. Rows say nothing about layouts and offer no layout
- * action: the panel's *Layout* and *Make default* are the only ones
- * (Decisions 74 to 76). The *Recently added* chip (the
+ * action: Advanced's *Layout* and *Make default* are the only ones
+ * (Decisions 74 to 77). The *Recently added* chip (the
  * `titles_recent_first` setting, so the page reopens in the order last
  * chosen) lists the titles added last first, each with when it was added
  * on Steam's 12 / 24-hour clock, instead of by name. Nothing here restarts Steam: a pin or

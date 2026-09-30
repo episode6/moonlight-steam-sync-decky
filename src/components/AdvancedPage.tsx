@@ -1,4 +1,4 @@
-import { ButtonItem, ConfirmModal, DialogButton, Field, SliderField, ToggleField, showModal } from "@decky/ui";
+import { ButtonItem, ConfirmModal, DialogButton, Field, Focusable, SliderField, ToggleField, showModal } from "@decky/ui";
 
 import { controller } from "../instance";
 import { relativeTime } from "../lib/format";
@@ -6,21 +6,35 @@ import { defaultLayoutOf, layoutKindText, layoutStrategy } from "../lib/layouts"
 import { hideStreamEnabled, STREAMING_COLLECTION, streamingCollectionEnabled } from "../lib/library";
 import { STREAMING_TAB_TITLE } from "../lib/tabs";
 import { actionsReady } from "../lib/state";
+import { adoptAsDefault } from "./adoptDefault";
 import { useStore } from "./useStore";
 
-/** The *Default controller layout* field's text (spec 3.16.5). */
+/**
+ * The *Default controller layout* field's text (spec 3.16.5, Decision 77).
+ * Its *Layout* and *Make default* buttons are the Moonlight shortcut's, so
+ * the unset text says how to use them, and that a sync comes first while
+ * that shortcut does not exist (`clientAppid` null).
+ */
 export function defaultLayoutDescription(
   settings: Parameters<typeof defaultLayoutOf>[0],
+  clientAppid: number | null,
   now: Date = new Date(),
 ): string {
   if (layoutStrategy(settings) === "picker") {
-    return `Off for this device: settings.json sets layout_strategy to "picker", so layouts are only chosen by hand (the panel's Layout, or Steam's own controller settings)`;
+    return `Off for this device: settings.json sets layout_strategy to "picker", so layouts are only chosen by hand (Layout for Moonlight's own, Steam's controller settings for a title while it streams)`;
   }
   const def = defaultLayoutOf(settings);
-  if (!def) return "None. Set Moonlight's Layout in the panel, then press Make default";
+  if (!def) {
+    return clientAppid === null
+      ? "None. Sync once, then set up Moonlight's Layout and press Make default"
+      : "None. Set up Moonlight's Layout, then press Make default to give it to every streaming title";
+  }
   const set = def.when ? ` · set ${relativeTime(def.when, now)}` : "";
   return `${def.title} · ${layoutKindText(def.url)}${set}`;
 }
+
+/** A button beside a Field's text, as wide as its label. */
+const FIELD_BUTTON = { minWidth: 0, width: "auto", padding: "6px 14px", whiteSpace: "nowrap" } as const;
 
 /** The *Streaming tab* toggle's text: the tab, or the fallback collection while Stream shortcuts are shown. */
 export function streamingGroupDescription(hideStream: boolean, canCollect: boolean): string {
@@ -31,8 +45,9 @@ export function streamingGroupDescription(hideStream: boolean, canCollect: boole
 }
 
 /**
- * Settings → Advanced (spec 3.8): the default controller layout (spec 3.16:
- * shown, and cleared, here; adopted from a title's row on the Titles page),
+ * Settings → Advanced (spec 3.8): the default controller layout (spec 3.16,
+ * Decision 77: *Layout* opens the Moonlight shortcut's configurator, *Make
+ * default* adopts that shortcut's layout, *Clear* takes the default off),
  * *Hide Stream shortcuts* (spec 3.15) and the *Streaming* tab (spec 3.17,
  * a collection of shortcuts while Stream shortcuts are shown), the restart
  * countdown, *Reset match cache* (the CLI's `matches.json`, pins included,
@@ -45,6 +60,8 @@ export function AdvancedPage() {
   const entries = state.entries?.length ?? null;
   const picker = layoutStrategy(settings) === "picker";
   const defaultLayout = defaultLayoutOf(settings);
+  const canChooseLayout = controller.canChooseLayout();
+  const clientAppid = state.clientAppid;
   const canHide = controller.canHideShortcuts();
   const canCollect = controller.canKeepCollection();
   // the setting alone, as the reconcile and the tab read it (not `canHide`)
@@ -93,16 +110,42 @@ export function AdvancedPage() {
 
   return (
     <div>
-      <Field label="Default controller layout" description={defaultLayoutDescription(settings)} focusable={picker}>
-        {picker ? null : (
-          <DialogButton
-            style={{ minWidth: 0, width: "auto", padding: "6px 14px" }}
-            disabled={!settings || !defaultLayout || state.walking}
-            onClick={clearDefault}
-          >
-            Clear
-          </DialogButton>
-        )}
+      <Field
+        label="Default controller layout"
+        description={defaultLayoutDescription(settings, clientAppid)}
+        focusable={picker && !canChooseLayout}
+      >
+        <Focusable flow-children="horizontal" style={{ display: "flex", gap: 8 }}>
+          {canChooseLayout ? (
+            <DialogButton
+              style={FIELD_BUTTON}
+              disabled={clientAppid === null}
+              onClick={() => void controller.chooseClientLayout()}
+            >
+              Layout
+            </DialogButton>
+          ) : null}
+          {picker ? null : (
+            <DialogButton
+              style={FIELD_BUTTON}
+              disabled={!settings || clientAppid === null}
+              onClick={() => {
+                if (clientAppid !== null) void adoptAsDefault(clientAppid, "Moonlight");
+              }}
+            >
+              Make default
+            </DialogButton>
+          )}
+          {picker ? null : (
+            <DialogButton
+              style={FIELD_BUTTON}
+              disabled={!settings || !defaultLayout || state.walking}
+              onClick={clearDefault}
+            >
+              Clear
+            </DialogButton>
+          )}
+        </Focusable>
       </Field>
       <ToggleField
         label="Hide Stream shortcuts"
