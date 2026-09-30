@@ -7,7 +7,7 @@ import type { LayoutInspection } from "../lib/controller";
 /**
  * The toast for a layout *Make default* cannot adopt (spec 3.16.5), the
  * texts exactly; "no layout chosen yet" points at the *Layout* button
- * beside it (Decision 67).
+ * beside it (Decisions 67 and 77).
  */
 export function inspectionToast(name: string, reason: Exclude<LayoutInspection, { ok: true }>["reason"]): string {
   switch (reason) {
@@ -26,13 +26,13 @@ export function inspectionToast(name: string, reason: Exclude<LayoutInspection, 
 /**
  * *Make default* while a layout walk is going (spec 3.16.5):
  * the change would wait for the walk, up to its 90 s readiness poll, with
- * nothing to show for it, so it is refused with this toast, as Advanced's
- * *Clear* is disabled meanwhile.
+ * nothing to show for it, so it is refused with this toast, as *Clear*
+ * beside it is disabled meanwhile.
  */
 export const WALK_RUNNING_TOAST = "A layout walk is still running. Try again when it finishes.";
 
 /**
- * The panel's *Make default* (spec 3.16.5, Decisions 43, 67 and 74): read
+ * Advanced's *Make default* (spec 3.16.5, Decisions 43, 67, 74 and 77): read
  * the selection `appid` (the client entry) has for the controller in use,
  * refuse what cannot be shared, and confirm before every entry gets it.
  * The one way to adopt a default: the Titles rows and the library gear menu

@@ -33,7 +33,6 @@ import type {
   WakeInfo,
 } from "./cli";
 import { relativeTime } from "./format";
-import { defaultLayoutOf, layoutStrategy } from "./layouts";
 import type { UpdateInfo, UpdatePhase } from "./updates";
 import { cliStatus, type CliStatus } from "./version";
 
@@ -151,24 +150,6 @@ export function launchButtons(state: Pick<AppState, "clientAppid" | "hostApps">)
  */
 export function launchCaption(buttons: readonly LaunchButton[], focused: LaunchKey | null): LaunchButton {
   return buttons.find((button) => button.key === focused) ?? buttons[0];
-}
-
-/**
- * The line under the panel's layout row (Decision 67): its buttons are the
- * Moonlight shortcut's, and *Make default* sets the default for every
- * streaming entry, so the line says whose layout it is and which default
- * is set. Under the `picker` strategy there is no default to name.
- */
-export function clientLayoutCaption(state: {
-  clientAppid: number | null;
-  settings: Pick<Settings, "layout_strategy" | "default_layout"> | null;
-}): string {
-  if (state.clientAppid === null) return "Sync once to enable";
-  if (layoutStrategy(state.settings) !== "copy") return "Moonlight's controller layout";
-  const def = defaultLayoutOf(state.settings);
-  return def
-    ? `Moonlight's layout · default for streams: ${def.title}`
-    : "Moonlight's layout · no default for streams yet";
 }
 
 /**

@@ -1279,7 +1279,7 @@ describe("the Stream button and the default controller layout (spec 3.9, 3.10, 3
     expect(recorded()).toHaveLength(1);
   });
 
-  it("the panel's Layout button opens the Moonlight shortcut's picker, even while a game runs", async () => {
+  it("Advanced's Layout button opens the Moonlight shortcut's picker, even while a game runs", async () => {
     const controller = await loaded();
     expect(controller.state.clientAppid).toBe(2400000001);
     controller.setInGame(true); // neither the launch nor the configurator is held back
@@ -1317,7 +1317,7 @@ describe("the Stream button and the default controller layout (spec 3.9, 3.10, 3
     expect(names()).toContain("layouts");
   });
 
-  describe("inspectLayout (the panel's Make default, spec 3.16.5)", () => {
+  describe("inspectLayout (Advanced's Make default, spec 3.16.5)", () => {
     it("reads one selection: the URL and its title, else the layout's kind", async () => {
       const controller = await loaded();
       steam.steamInput.urls.set(BALATRO_SHORTCUT, DEFAULT.url);
