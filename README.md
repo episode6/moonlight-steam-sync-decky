@@ -313,15 +313,6 @@ was packaged without the CLI)" and you can install the CLI on its own (see
     this only lasts if you sync from the terminal from then on. A host whose
     two entries were renamed is not affected: only the names `Desktop` and
     `Steam Big Picture` (any case) are host apps.
-- **The layout row**, for the Moonlight entry. **Layout** opens Steam's
-  controller configurator for the hidden Moonlight shortcut (left out on a
-  Steam client that cannot open it). **Make default** makes that layout the
-  default for every streaming entry (see "Controller layouts"), and is the
-  one place a default is set: it asks you to confirm first. The
-  line under the row names the current default ("Moonlight's layout ·
-  default for streams: …", or "no default for streams yet"). Both buttons
-  are disabled until the first sync creates the shortcut, and work while a
-  game is running.
 - Four counters from the last status: **Stream buttons** (hidden entries for
   games you own), **Shortcuts**, **Unmatched**, **Ignored**; and **Last
   sync** ("Today 2:02 PM · 2 added, 1 removed"; every time the plugin
@@ -574,9 +565,12 @@ entry it manages starts on, and each title stays customisable on its own.
 
 - **Adopting a default.** There is no layout list of the plugin's own (Steam
   has no API that returns a picked layout by name). Instead, set the layout
-  up on the Moonlight entry from the Quick Access panel: **Layout** opens
-  Steam's controller configurator for it, and **Make default** adopts the
-  layout it has. The plugin reads that layout for the controller in use,
+  up on the Moonlight entry in Settings → **Advanced** → *Default
+  controller layout*: **Layout** opens Steam's controller configurator for
+  it (left out on a Steam client that cannot open it), and **Make
+  default** adopts the layout it has, the one place a default is set. Both
+  are disabled until the first sync creates the Moonlight entry, and work
+  while a game is running. The plugin reads that layout for the controller in use,
   asks you to confirm, and
   puts it on every entry that has no layout of its own: Stream buttons'
   hidden shortcuts, visible shortcuts, `Desktop` / `Steam Big Picture` and
@@ -610,8 +604,8 @@ entry it manages starts on, and each title stays customisable on its own.
   **Clear** is disabled; if the plugin has not loaded your titles yet (its
   status check failed), the change is kept and the toast says the layout is
   applied, or taken off, once they have loaded.
-- **Clearing.** Settings → **Advanced** → *Default controller layout* shows
-  the current default and has **Clear**, which takes the plugin's layout off
+- **Clearing.** The same *Default controller layout* row shows the current
+  default and has **Clear**, which takes the plugin's layout off
   every title that still has it (they go back to Steam's default; titles
   whose layout you chose yourself are left alone) and stops applying one.
   This uses a Steam client call that has not been measured on a device
@@ -662,7 +656,7 @@ untested. The fallback stays built in:
   device without a rebuild. Under `picker` the plugin makes no Steam Input
   calls at all: a Stream press just launches, there is no walk after a
   sync's restart, the default layout is off (the Advanced field says so and
-  **Make default** is not offered), and the panel's **Layout** (recorded
+  **Make default** is not offered), and Advanced's **Layout** (recorded
   as *picker opened*) is the plugin's only layout affordance.
 - The default lives in one place, `DEFAULT_LAYOUT_STRATEGY` in
   `src/lib/layouts.ts`. If a later client breaks the set, flipping that
@@ -714,9 +708,9 @@ again for images that were missing last time) and **Re-fetch all art**,
 which needs a CLI whose `art` command accepts `--commit` and says "needs a
 newer CLI" otherwise.
 
-Settings → **Advanced** has *Default controller layout* with its **Clear**
-button (see "Controller layouts"; the default itself is adopted from a
-title's row on the Titles page), *Hide Stream shortcuts*, *Streaming
+Settings → **Advanced** has *Default controller layout* with its
+**Layout**, **Make default** and **Clear** buttons (see "Controller
+layouts"), *Hide Stream shortcuts*, *Streaming
 tab*, the restart countdown (0-30 s), **Reset match cache** (the CLI's
 `matches.json`, pins included, so the next sync matches every title
 afresh; see "Titles stuck on 'no match'" above) and **Remove everything

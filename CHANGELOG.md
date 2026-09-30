@@ -31,6 +31,12 @@ project uses [semantic versioning](https://semver.org/).
 
 ### Changed
 
+- **The layout buttons moved to Settings → Advanced.** **Layout** (Steam's
+  controller configurator for the Moonlight entry) and **Make default**
+  (that layout as the default for every streaming title) now sit in the
+  *Default controller layout* row beside **Clear**, so everything about
+  the default layout is in one place. The Quick Access panel keeps its
+  launch buttons and loses the layout row.
 - **Times follow Steam's 12 / 24-hour clock.** Every time the plugin shows
   (the Titles page's "added today 2:02 PM", the panel's *Last sync*, a
   host's *last seen*, the Updates and About pages) uses Steam's

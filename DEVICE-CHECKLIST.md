@@ -364,14 +364,14 @@ and superseded by §8.*
       then the Steam button: *Controller settings* there must be the hidden
       shortcut's (its title matching the game), and a layout picked there
       must still be selected at the next stream. The Titles rows have no
-      *Layout* button (Decision 75); the panel's *Layout* is §15's.
+      *Layout* button (Decision 75); Advanced's *Layout* is §15's.
 - [ ] **Picker strategy.** Set `"layout_strategy": "picker"` in
       `settings.json` (§0.4 above) and reload. Expect a Stream press to
       launch with no layout change and no `layouts.json` write, the
       Advanced *Default controller layout* field to read "Off for this
-      device…" with no *Clear* button, no walk after a sync's restart, no
-      *Make default* on the panel, and the panel's *Layout* as the only
-      layout action; remove the key and reload to
+      device…" with *Layout* as its only button (no *Make default*, no
+      *Clear*) and the plugin's only layout action, and no walk after a
+      sync's restart; remove the key and reload to
       return to `copy`.
 - [ ] **Controller index by type.** In the CEF console (or the PR-0 kit)
       with a Bluetooth pad also paired, run
@@ -436,14 +436,16 @@ first (`moonlight-steam-sync --json status`).
       panel has no layout button per host app any more (spec Decision
       67), nor on the Titles page (Decision 75); a host app's layout is
       picked from Steam's controller settings while it streams, and the
-      panel's one *Layout* button is the Moonlight entry's (§15).
+      one *Layout* button, Advanced's since Decision 77, is the Moonlight
+      entry's (§15).
 - [ ] **A layout chosen before the upgrade is still selected** (same
       appid): it applies in the stream, and Steam's controller settings
       during the stream show it.
 - [ ] **While a game runs** the two launch buttons still work: a press
       runs the host app's shortcut as usual.
 - [ ] **On a client without `SteamClient.Apps.ShowControllerConfigurator`**
-      (if one turns up) the panel's layout row has *Make default* alone.
+      (if one turns up) Advanced's *Default controller layout* row has
+      *Make default* and *Clear* only.
 - [ ] **Counters.** Do this one *before* the first sync: `status` carries
       the flag from the upgrade on, so the two still-visible tiles already
       read `host_app: true`. Right after the upgrade *Shortcuts* is two
@@ -528,9 +530,9 @@ and the hiding items still stand.
 ## 8. The default controller layout (spec 3.16)
 
 The plugin never reads the real game's layout any more: one layout you
-adopt from the Moonlight entry with the panel's *Make default* (the one
+adopt from the Moonlight entry with Advanced's *Make default* (the one
 place since Decision 74: the Titles rows and the library gear menu no
-longer offer it) is put on every entry the plugin manages, and a
+longer offer it, and since Decision 77 the panel does not either) is put on every entry the plugin manages, and a
 selection the plugin did not make is never overwritten (`applied` in
 `layouts.json` is what the plugin last set per shortcut). Two things here
 are unmeasured on any device: whether a `template://` layout sticks on
@@ -541,8 +543,8 @@ controller connected; *Make default* answers "Connect a controller first"
 otherwise.
 
 - [ ] **Adopt a community layout.** Give the Moonlight entry a
-      `workshop://` community layout (the panel's *Layout*), then press the
-      panel's *Make default*. Expect
+      `workshop://` community layout (Advanced's *Layout*), then press
+      *Make default* beside it. Expect
       a confirm titled `Use “<layout title>” as the default layout?`; after
       OK, a toast `Default layout applied to N titles` (N = every non-parked
       entry that had no layout of its own, host apps and the Moonlight entry
@@ -553,8 +555,9 @@ otherwise.
       publishing, after its sync and restart) streams on it without any
       press first.
 - [ ] **No other place adopts.** The Titles rows have no *Layout* button
-      (Decision 75), and a streamed game's gear menu has no *Use as
-      Moonlight Sync default layout* (Decision 74).
+      (Decision 75), a streamed game's gear menu has no *Use as
+      Moonlight Sync default layout* (Decision 74), and the Quick Access
+      panel has no layout row (Decision 77).
 - [ ] **Adopt a `template://` layout [verify].** Pick one of Steam's own
       templates on the Moonlight entry, adopt it. Expect the same toast; check
       `layouts.json`: every other entry must read `"default"` with the
@@ -908,11 +911,11 @@ plugin_loader's environment), and keep an SSH session tailing
 - [ ] **Off.** With the plugin toggled off the Artwork page is not
       reachable (§12); nothing to press.
 
-## 15. The panel's launch and layout rows (spec Decision 67)
+## 15. The panel's launch row and Advanced's layout buttons (spec Decisions 67 and 77)
 
-The panel's launch buttons are icons on one line, and its one layout
-button is the Moonlight entry's. Needs a synced host that publishes
-`Desktop` and `Steam Big Picture`.
+The panel's launch buttons are icons on one line; the Moonlight entry's
+*Layout* and *Make default* are in Settings → Advanced, beside *Clear*.
+Needs a synced host that publishes `Desktop` and `Steam Big Picture`.
 
 - [ ] **The toggle.** The top row reads *Enable Sync* with no text under
       it, on or off. Settings, opened while off, shows the same toggle
@@ -927,26 +930,32 @@ button is the Moonlight entry's. Needs a synced host that publishes
       row changes to "Open Moonlight · Launch the client…", "Desktop ·
       Stream the host's desktop", "Steam Big Picture · Stream the host's
       Steam in Big Picture", and the footer's A legend names the same
-      button. D-pad down to the layout row: the line goes back to *Open
+      button. D-pad down off the row: the line goes back to *Open
       Moonlight*'s (`onGamepadBlur`). If the line never changes, report it
       (the icons are then unlabelled on the Deck).
 - [ ] **A host app the host does not publish.** Ignore `Desktop` on the
       Titles page and sync: the monitor goes and the other two icons widen.
-- [ ] **Layout.** *Layout* closes the Quick Access menu and opens Steam's
-      controller configurator for the Moonlight entry. Pick a layout there.
+- [ ] **No layout row on the panel.** Under the launch row come the
+      counters; there is no *Layout* / *Make default* row.
+- [ ] **One layout row in Advanced.** Settings → Advanced → *Default
+      controller layout* has *Layout*, *Make default* and *Clear* on one
+      line, right of its text, nothing clipped; the D-pad moves across the
+      three and down to *Hide Stream shortcuts*.
+- [ ] **Layout.** *Layout* opens Steam's controller configurator for the
+      Moonlight entry; B comes back to Advanced. Pick a layout there.
 - [ ] **Make default.** *Make default* asks "Use “<layout>” as the default
       layout?"; confirm, and the toast counts the titles that took it. The
-      line under the row now reads "Moonlight's layout · default for
-      streams: <layout>", and Settings → Advanced shows the same default.
+      row's text now reads "<layout> · <kind> · set today …" and *Clear*
+      is enabled.
       A Stream press on another game puts that layout on its shortcut.
 - [ ] **Make default with nothing chosen.** On a Moonlight entry whose
       layout was never picked, *Make default* toasts "“Moonlight” has no
       layout chosen yet. Use Layout first." and changes nothing. An
       edited-in-place layout gets the *Export* toast instead.
-- [ ] **Before the first sync** (no Moonlight shortcut yet): the moon and
-      both layout buttons are disabled; the launch line reads "Open
-      Moonlight · Sync once to enable" and the layout line "Sync once to
-      enable".
+- [ ] **Before the first sync** (no Moonlight shortcut yet): the moon,
+      *Layout* and *Make default* are disabled; the launch line reads
+      "Open Moonlight · Sync once to enable" and Advanced's text "None.
+      Sync once, then set up Moonlight's Layout and press Make default".
 - [ ] **While a game runs** every icon and both layout buttons still work.
 
 ## 16. Updating from the plugin (update spec 3.9, V1 to V7)

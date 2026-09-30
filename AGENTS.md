@@ -131,8 +131,9 @@ cli/                        the moonlight-steam-sync CLI (its own AGENTS.md, REA
                             MOONLIGHT_STEAM_SYNC_BASE_URL test seam)
 DEVICE-CHECKLIST.md         every on-device check (PR-0 probes, PR-5/6/7/8 items, §3.14,
                             §3.15 and the §3.16 default layout's [verify] items, then
-                            §3.17-§3.20; the key fetch is §14, the panel's launch and
-                            layout rows §15, updating from the plugin §16: V1-V7 of
+                            §3.17-§3.20; the key fetch is §14, the panel's launch
+                            row and Advanced's layout buttons §15, updating from
+                            the plugin §16: V1-V7 of
                             update spec §3.9, via *Install another version* ->
                             reinstall until a newer release exists; the staged
                             hand-off and the channels §17: V8-V10 of update spec
@@ -524,8 +525,7 @@ src/lib/                    pure modules (vitest)
                             icon launch row, Decision 67: Moonlight always, disabled
                             until the client shortcut exists, then each published host
                             app; the line under it names the focused one, else
-                            Moonlight), clientLayoutCaption() (the line under the
-                            layout row: whose layout, and the default's title);
+                            Moonlight);
                             an `entry.host_app` entry counts toward none of
                             stream / shortcuts / unmatched and is never in the stream
                             map (spec §3.14.1); the layout walk reads `entries`, not
@@ -626,7 +626,8 @@ src/lib/                    pure modules (vitest)
                             stream already going; applyDefault when a default is set,
                             record, run; never an unset), chooseLayout() (a `null`
                             real appid = a host app or the client: picker only),
-                            chooseClientLayout() (the panel's *Layout*, Decision 67:
+                            chooseClientLayout() (Advanced's *Layout*, Decisions 67
+                            and 77:
                             the Moonlight shortcut's configurator; not held back by
                             inGame, and neither is openHostApp()),
                             inspectLayout() (one getConfig: url + title, or
@@ -817,19 +818,16 @@ src/routes/libraryApp.tsx   the /library/app/:appid patch (routerHook.addPatch, 
 src/routes/tree.ts          Overview / TreeNode / isOverview, shared by the two
                             route patches
 src/components/             adoptDefault (inspectLayout -> refusal toasts -> ConfirmModal
-                            -> setDefaultLayout for the panel's *Make default*, the one
+                            -> setDefaultLayout for Advanced's *Make default*, the one
                             place a default is adopted since Decision 74 (the Titles
-                            row's and the library gear menu's items went); the
-                            walk-running refusal),
+                            row's and the library gear menu's items went; the panel's
+                            since Decision 77); the walk-running refusal),
                             QuickAccess (Decision 67: LaunchRow, the Moonlight /
                             Desktop / Steam Big Picture icon buttons on one line, the
                             caption under it following `onGamepadFocus` and back to
                             Moonlight's on `onGamepadBlur` (a blur clears only its
-                            own key);
-                            ClientLayoutRow, *Layout* (chooseClientLayout, hidden
-                            when the client has no configurator) and *Make default*
-                            (adoptAsDefault on the client, hidden under `picker`),
-                            with clientLayoutCaption under it; *Sync now* has no
+                            own key); no layout row since Decision 77 (Advanced
+                            has its buttons); *Sync now* has no
                             description; HostRow over `hostRowView`: with several
                             hosts a `Field` with `childrenContainerWidth="max"`
                             around a `Dropdown` (a Field's control column stops at
@@ -876,7 +874,7 @@ src/components/             adoptDefault (inspectLayout -> refusal toasts -> Con
                             through sortRows() after the filter, each with
                             addedText() while it is on, the headline's sortText(),
                             during a sync only for `recent`; no layout text and no
-                            layout action (Decisions 75 and 76: the panel's *Layout*
+                            layout action (Decisions 75 to 77: Advanced's *Layout*
                             and *Make default* are the only ones)), ChangeMatchModal,
                             Pill, StreamButton (renders only when streamMap has the
                             appid; the layout line only while a default is set), ArtworkPage
@@ -897,8 +895,14 @@ src/components/             adoptDefault (inspectLayout -> refusal toasts -> Con
                             tab with it -- reported 2026-09-22, cause unmeasured;
                             libraryTabs.tsx logs the bar's shape once and every
                             `onShowTab` call for the §10 report),
-                            AdvancedPage (*Default controller layout* + *Clear*
-                            with its confirm, *Hide Stream shortcuts* and *Streaming
+                            AdvancedPage (*Default controller layout*, Decision 77:
+                            defaultLayoutDescription() over the settings and
+                            `clientAppid` ("Sync once" while the Moonlight shortcut
+                            does not exist), then one row of buttons: *Layout*
+                            (chooseClientLayout, hidden when the client has no
+                            configurator), *Make default* (adoptAsDefault on the
+                            client) and *Clear* with its confirm, the last two hidden
+                            under `picker`; *Hide Stream shortcuts* and *Streaming
                             tab* (the `streaming_collection` key; its text adds the
                             shortcut collection when Stream shortcuts are shown; never
                             disabled, the tab needs no client call), *Reset match
@@ -950,8 +954,9 @@ no `unpin` yet (the spec's modal has no unpin action); the callable exists
 for the contract.
 
 **The default controller layout (spec §3.16).** One layout the user adopts
-from the Moonlight entry they set up with Steam's own configurator (the
-panel's *Layout*, then *Make default*, the one place since Decision 74:
+from the Moonlight entry they set up with Steam's own configurator
+(Advanced's *Layout*, then *Make default* beside it, the one place since
+Decision 74, on Advanced since Decision 77:
 `inspectLayout` reads that entry's selection, refuses `autosave://` / `default://` / unselected with the
 §3.16.5 texts, a `ConfirmModal`, then `setDefaultLayout`), stored by the
 backend as `settings.default_layout` and put on every non-parked entry by
@@ -1000,7 +1005,7 @@ controller. Should a later client break the set, flip the constant to
 `"picker"` and rewrite the README's "Controller layouts" section; nothing
 else moves. Under `picker` no Steam Input call is made anywhere
 (`defaultLayoutOf()` is `null`, so the whole §3.16 feature is off and its
-UI hidden, and the walk clears its flag at once); the panel's *Layout*
+UI hidden, and the walk clears its flag at once); Advanced's *Layout*
 (`SteamClient.Apps.ShowControllerConfigurator`, hidden when absent) is
 the only layout affordance.
 
@@ -1397,8 +1402,8 @@ There is no Steam Deck during development; everything else is tested.
   Stream press / walk / `setDefaultLayout` run over a scripted `SteamInput`
   (`layouts.test.ts`, `controller.test.ts`, whose fake `record_layout`
   computes `applied` by the backend's table) and `steam.test.ts` drives
-  the real seam over stubbed globals; the route patch, the button, the
-  panel's *Layout* and `ClearSelectedConfigForApp` itself are device checks,
+  the real seam over stubbed globals; the route patch, the button,
+  Advanced's *Layout* and `ClearSelectedConfigForApp` itself are device checks,
   not unit tests. The key fetch's frontend (spec 3.20.4) runs over the
   same fake backend in `controller.test.ts` (an `order` log interleaves
   backend calls, the fake Steam seam's `open:` / `back` navigations and
