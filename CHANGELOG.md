@@ -19,12 +19,12 @@ project uses [semantic versioning](https://semver.org/).
 ### Removed
 
 - **Use as the default layout** on the Titles page and **Use as Moonlight
-  Sync default layout** in a library page's gear menu. The Quick Access
-  panel's **Make default**, after **Layout** on the Moonlight entry, is
-  now the one way to adopt a default controller layout.
+  Sync default layout** in a library page's gear menu. **Make default**
+  in Settings → Advanced, after **Layout** on the Moonlight entry, is now
+  the one way to adopt a default controller layout.
 - **The Titles page's Layout button**, on every row, so the rows are
   uniform. A title's own layout can still be picked from Steam's
-  controller settings while it streams; the panel's **Layout** covers the
+  controller settings while it streams; Advanced's **Layout** covers the
   Moonlight entry.
 - **The layout line on the Titles page's rows.** The note beside a game's
   Stream button still says which layout it streams with.
