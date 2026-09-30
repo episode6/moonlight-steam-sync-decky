@@ -834,7 +834,12 @@ src/components/             adoptDefault (inspectLayout -> refusal toasts -> Con
                             hosts a `Field` with `childrenContainerWidth="max"`
                             around a `Dropdown` (a Field's control column stops at
                             half the row otherwise, and DropdownItem has no such
-                            prop), the circle and the count as its description,
+                            prop), the Dropdown in a `width: 0; min-width: 100%`
+                            div (the "max" column never shrinks, so without it
+                            the description ran under the dropdown; with it
+                            the description keeps its width and the host's
+                            name ellipsizes, measured 2026-09-29), the circle
+                            and the count as its description,
                             `disabled` on the Field as on the Dropdown so the
                             whole row dims while busy, as the DropdownItem did;
                             with one host no row at all; an error's text in a row

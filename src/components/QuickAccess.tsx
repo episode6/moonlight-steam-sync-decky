@@ -244,16 +244,26 @@ function HostRow({ state }: { state: AppState }) {
             bottomSeparator={view.error ? "none" : "standard"}
             disabled={busy}
           >
-            <Dropdown
-              menuLabel="Host"
-              rgOptions={hostOptions(hosts).map((name) => ({ data: name, label: name }))}
-              selectedOption={active}
-              disabled={busy}
-              onChange={(option) => {
-                const name = option.data as string;
-                if (name !== active) confirmSwitch(controller, name);
-              }}
-            />
+            {/* The "max" column grows but never shrinks (`flex: 1 0 auto`),
+                so its basis is the dropdown's full text and the label column,
+                which does shrink, gave way: "281 apps" ran under the
+                dropdown (measured on a Deck 2026-09-29). A wrapper whose
+                intrinsic width is nothing (`width: 0`) and whose laid-out
+                width is the column's (`minWidth: "100%"`) makes the column's
+                basis zero, so the label column keeps its text and the
+                dropdown takes the rest, its own text ellipsized. */}
+            <div style={{ width: 0, minWidth: "100%" }}>
+              <Dropdown
+                menuLabel="Host"
+                rgOptions={hostOptions(hosts).map((name) => ({ data: name, label: name }))}
+                selectedOption={active}
+                disabled={busy}
+                onChange={(option) => {
+                  const name = option.data as string;
+                  if (name !== active) confirmSwitch(controller, name);
+                }}
+              />
+            </div>
           </Field>
         </PanelSectionRow>
       ) : null}
