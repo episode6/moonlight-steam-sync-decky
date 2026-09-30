@@ -222,25 +222,31 @@ function HostRow({ state }: { state: AppState }) {
       ) : null}
       {!state.reach?.reachable ? (
         <PanelSectionRow>
-          <Focusable style={{ display: "flex", gap: 8 }}>
-            {/* *Check* is the one way the panel asks the host (Decision 66);
-                the `moonlight list` behind it wakes the PC by itself, which
-                is why it is never pressed for the user. */}
-            <DialogButton
-              style={{ minWidth: 0, flex: 1 }}
-              disabled={state.reachLoading || busy}
-              onClick={() => void controller.checkHost(true)}
-            >
-              Check
-            </DialogButton>
-            {/* Wake-on-LAN (spec 3.18): only when Moonlight's own host list
-                knows the host's MAC; a dead button would not say why. */}
-            {wakeInfoOf(hosts, active) ? (
-              <DialogButton style={{ minWidth: 0, flex: 1 }} onClick={() => void controller.wakeHost()}>
-                Wake
+          {/* A bare row sat flush against the divider above it. The Field
+              is what a ButtonItem draws around *Sync now*: its padding
+              above and below and its divider, so the rows under it keep
+              their spacing whether or not these buttons are shown. */}
+          <Field childrenLayout="below" childrenContainerWidth="max">
+            <Focusable style={{ display: "flex", gap: 8 }}>
+              {/* *Check* is the one way the panel asks the host (Decision 66);
+                  the `moonlight list` behind it wakes the PC by itself, which
+                  is why it is never pressed for the user. */}
+              <DialogButton
+                style={{ minWidth: 0, flex: 1 }}
+                disabled={state.reachLoading || busy}
+                onClick={() => void controller.checkHost(true)}
+              >
+                Check
               </DialogButton>
-            ) : null}
-          </Focusable>
+              {/* Wake-on-LAN (spec 3.18): only when Moonlight's own host list
+                  knows the host's MAC; a dead button would not say why. */}
+              {wakeInfoOf(hosts, active) ? (
+                <DialogButton style={{ minWidth: 0, flex: 1 }} onClick={() => void controller.wakeHost()}>
+                  Wake
+                </DialogButton>
+              ) : null}
+            </Focusable>
+          </Field>
         </PanelSectionRow>
       ) : null}
     </>

@@ -844,7 +844,10 @@ src/components/             adoptDefault (inspectLayout -> refusal toasts -> Con
                             of its own under the switcher, which draws the divider
                             the Field then leaves out; then *Check* + *Wake*
                             whenever the host is not known reachable, the latter
-                            only when `wakeInfoOf` finds a MAC; UpdateRow, the
+                            only when `wakeInfoOf` finds a MAC, in a `Field` with
+                            `childrenLayout="below"` (a ButtonItem's own: *Sync
+                            now*'s padding and divider, so the panel is spaced
+                            alike with or without them); UpdateRow, the
                             panel's very last row in the main panel and the
                             CLI-missing / too-old one (not the Retry panel, where
                             `cliVersion` is null and nothing can be offered, nor
