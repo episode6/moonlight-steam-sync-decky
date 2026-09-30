@@ -89,6 +89,15 @@ def test_the_no_cors_fetch_is_only_wired_in_instance_tsx() -> None:
     assert files_naming("fetchNoCors") == {"src/instance.tsx"}
 
 
+def test_the_no_cors_fetch_bypasses_the_browser_cache() -> None:
+    """Update spec amendment A6: the loader's fetch goes through CEF's HTTP
+    cache, which kept a branch's `build.json` (served with `Last-Modified`
+    and no `Cache-Control`) fresh for hours, so every call is `no-store`."""
+    calls = re.findall(r"fetchNoCors\(([^)]*)\)", (ROOT / "src/instance.tsx").read_text())
+    assert len(calls) == 1
+    assert re.search(r"\bcache:\s*\"no-store\"", calls[0]), calls[0]
+
+
 def test_the_repository_is_spelled_only_in_the_updater() -> None:
     """Update spec 3.4 / 3.12.5: `REPO` in `updates.ts` (plus its test), so a
     request's URL cannot be built anywhere else. `decky.ts` no longer spells

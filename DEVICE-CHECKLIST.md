@@ -1074,6 +1074,19 @@ SSH session for V10's `moonlight-steam-sync --version` and `sha256sum
       loader's fetch did not follow the redirect (the check reports no
       error then, since a failed second request never fails it): escalate
       with Decky's log.
+- [ ] **A new build of the followed branch is seen at once.** With `main`
+      followed and its build installed, merge to `main` (or `gh workflow
+      run builds.yml --ref main`) and wait for the *Builds* run to finish;
+      *Check now* on the Updates page must show the new commit, `main @
+      <the new sha7>`, and offer *Switch to* it. Before amendment A6 the
+      loader's fetch went through CEF's HTTP cache, which kept the old
+      `build.json` (served with `Last-Modified` and no `Cache-Control`)
+      for hours: the page said *Up to date* although `main` had moved,
+      and, once the new build was installed through *Releases* and back,
+      offered the previous commit for as long. Found on the Deck
+      2026-09-29; `journalctl -u plugin_loader` shows a `Preparing GET
+      request to …/build-main/build.json` line for a check that reached
+      the loader, and none for one the cache answered.
 - [ ] **V8. [verify] A `file://` artifact installs.** On `main`, press
       *Switch to main @ <sha7>*: *Downloading…*, then the page closes and
       Decky's dialog asks to overwrite Moonlight Sync with version

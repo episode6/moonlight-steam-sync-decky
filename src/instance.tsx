@@ -42,10 +42,15 @@ const ui: UiPort = {
   installer: () => deckyInstaller(),
   // The list of releases, and a followed branch's build.json, through the
   // loader (the zip itself is the backend's download; update spec 2.5: the status,
-  // the body and the rate-limit headers all come through).
+  // the body and the rate-limit headers all come through). Never from the
+  // browser's HTTP cache (update spec amendment A6): the loader proxies the
+  // request under a URL of its own and passes GitHub's response headers
+  // through, so CEF cached them as any page's -- the list for its `max-age=60`,
+  // a release asset heuristically for hours off its `Last-Modified` -- and a
+  // branch's `build.json` kept reading as the build before the last push.
   net: () => ({
     async get(url, headers) {
-      const response = await fetchNoCors(url, { method: "GET", headers });
+      const response = await fetchNoCors(url, { method: "GET", headers, cache: "no-store" });
       const header = (name: string) => response.headers.get(name);
       return {
         status: response.status,

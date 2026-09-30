@@ -341,9 +341,15 @@ src/instance.tsx            the Controller wired to callable / Steam / showModal
                             @decky/ui's Navigation to steam.ts's openExternalWeb() /
                             leaveExternalWeb(); the UiPort's updater seams (update spec
                             §3.5): installer() = decky.ts's deckyInstaller(), net() =
-                            one `fetchNoCors(url, {method: "GET", headers})` read into
-                            an HttpAnswer (status, the four headers through
-                            `headers.get`, text()), leaveSettings() =
+                            one `fetchNoCors(url, {method: "GET", headers, cache:
+                            "no-store"})` read into an HttpAnswer (status, the four
+                            headers through `headers.get`, text()); `no-store` since
+                            the loader proxies the request through CEF's HTTP cache
+                            with GitHub's headers passed through, so a branch's
+                            `build.json` (`Last-Modified`, no `Cache-Control`) read
+                            as the build before the last push for hours (update
+                            spec amendment A6; test_hard_rules.py holds it),
+                            leaveSettings() =
                             Navigation.NavigateBack() (guarded); SETTINGS_ROUTE,
                             TITLES_ROUTE, UPDATES_ROUTE (`/moonlight-sync/updates`)
 src/lib/                    pure modules (vitest)
@@ -1467,7 +1473,8 @@ There is no Steam Deck during development; everything else is tested.
   under `src/` (`files_naming`, comments and tests included):
   `confirm_plugin_install` nowhere, `DeckyBackend` and `utilities/` only in
   `lib/decky.ts` and its test, `api.github.com` only in `lib/updates.ts`
-  and its test, `fetchNoCors` only in `instance.tsx`, the repository's
+  and its test, `fetchNoCors` only in `instance.tsx` (and its one call
+  `cache: "no-store"`, amendment A6), the repository's
   slug and `releases/download` only in `updates.ts` and its test (no
   download URL is built anywhere else). Each is an equality, so a rename
   that loses the name fails too. It also holds `updates.ts`'s `REF_RE`

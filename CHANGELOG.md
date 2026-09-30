@@ -6,6 +6,16 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A followed branch's new build was not seen for hours.** The update
+  check read the branch's `build.json` through the browser's HTTP cache,
+  which kept the file from before the last push as long as GitHub's
+  headers let it: *Check now* said *Up to date* while the branch had
+  moved, and after a switch through *Releases* and back it offered the
+  previous commit again although the newer one was installed. Every
+  request of the check now bypasses the cache.
+
 ### Removed
 
 - **Use as the default layout** on the Titles page and **Use as Moonlight
