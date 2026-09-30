@@ -13,8 +13,6 @@ import {
   filterCounts,
   filterRows,
   joinTitles,
-  layoutSourceOf,
-  layoutTargetOf,
   loadMoreLabel,
   matchSummary,
   noMatchRow,
@@ -176,7 +174,6 @@ describe("joinTitles: list joined with status by name", () => {
     expect(row.kind).toBe("ignored");
     expect(row.badge.id).toBe("ignored");
     expect(row.ignoredBy).toBe("plugin");
-    expect(row.layoutTarget).toBeNull();
   });
 
   it("a name in ignore.json is ignored before the next list says so", () => {
@@ -345,7 +342,6 @@ describe("the Recently added order", () => {
       listed.map((name) => app(name)),
       listed.map(entryOf),
       [],
-      {},
       added,
     );
 
@@ -359,7 +355,7 @@ describe("the Recently added order", () => {
   });
 
   it("rows carry status's time by their entry's name, null without one", () => {
-    const rows = joinTitles(apps, entries, [], {}, { Balatro: "2026-09-27T10:00:00Z", "Hades II": null });
+    const rows = joinTitles(apps, entries, [], { Balatro: "2026-09-27T10:00:00Z", "Hades II": null });
     expect(byName(rows, "Balatro").added).toBe("2026-09-27T10:00:00Z");
     expect(byName(rows, "Hades II").added).toBeNull(); // there before the plugin kept track
     expect(byName(rows, "Sea of Stars").added).toBeNull(); // a backend that did not say
@@ -367,7 +363,7 @@ describe("the Recently added order", () => {
   });
 
   it("a row without an entry has no time, whatever the map says", () => {
-    const rows = joinTitles([app("Ghost")], [], [], {}, { Ghost: "2026-09-27T10:00:00Z" });
+    const rows = joinTitles([app("Ghost")], [], [], { Ghost: "2026-09-27T10:00:00Z" });
     expect(rows[0].added).toBeNull();
   });
 
@@ -424,8 +420,8 @@ describe("the Recently added order", () => {
   it("says when a row was added", () => {
     const now = new Date(2026, 8, 28, 12, 0);
     const at = (date: Date) => joined({ Apple: date.toISOString() })[0];
-    expect(addedText(at(new Date(2026, 8, 28, 9, 5)), now)).toBe("added today 09:05");
-    expect(addedText(at(new Date(2026, 8, 27, 21, 30)), now)).toBe("added yesterday 21:30");
+    expect(addedText(at(new Date(2026, 8, 28, 9, 5)), now)).toBe("added today 9:05 AM");
+    expect(addedText(at(new Date(2026, 8, 27, 21, 30)), now)).toBe("added yesterday 9:30 PM");
     expect(addedText(at(new Date(2026, 8, 25, 12, 0)), now)).toBe("added 3 days ago");
     expect(addedText(joined({ Apple: null })[0], now)).toBeNull();
   });
@@ -607,90 +603,5 @@ describe("EntryEvent typing sanity", () => {
   it("the status fixture has the client entry the join skips", () => {
     const client: EntryEvent | undefined = entries.find((e) => e.client);
     expect(client?.name).toBe("Moonlight");
-  });
-});
-
-describe("the layout text per row (spec 3.10)", () => {
-  const when = "2026-09-18T14:02:00Z";
-  const layouts = {
-    "2718281828": { real_appid: 2379780, result: "copied" as const, url: "workshop://1", when },
-    "2987654321": { real_appid: 1244090, result: "kept" as const, url: "template://sea.vdf", when },
-  };
-
-  it("rows carry default layout / copied / own layout / Steam default / unavailable from layouts.json", () => {
-    const rows = joinTitles(apps, entries, [], layouts);
-    expect(byName(rows, "Balatro").layout).toBe("copied");
-    const applied = joinTitles(apps, entries, [], {
-      "2718281828": { real_appid: 2379780, result: "default", url: "workshop://1", when, applied: "workshop://1" },
-    });
-    expect(byName(applied, "Balatro").layout).toBe("default layout");
-    expect(byName(rows, "Sea of Stars").layout).toBe("own layout");
-    const kept = joinTitles(apps, entries, [], {
-      "2718281828": { real_appid: 2379780, result: "kept", url: "default://balatro", when },
-    });
-    expect(byName(kept, "Balatro").layout).toBe("Steam default");
-    const unavailable = joinTitles(apps, entries, [], {
-      "2718281828": { real_appid: 2379780, result: "unavailable", url: null, when },
-    });
-    expect(byName(unavailable, "Balatro").layout).toBe("unavailable");
-    const picker = joinTitles(apps, entries, [], {
-      "2718281828": { real_appid: 2379780, result: "picker", url: null, when },
-    });
-    expect(byName(picker, "Balatro").layout).toBe("picker opened");
-  });
-
-  it("is null before any copy and for rows that have no hidden shortcut", () => {
-    const rows = joinTitles(apps, entries, [], layouts);
-    expect(byName(rowsOf(), "Balatro").layout).toBeNull(); // no layouts.json yet
-    for (const name of ["Hades II", "Tunic", "Demo Launcher", "Sea of Stars (GOG)", "Spiritfarer"]) {
-      expect(byName(rows, name).layout).toBeNull();
-      expect(byName(rows, name).layoutTarget).toBeNull();
-    }
-  });
-
-  it("names the pair Choose layout works on", () => {
-    const rows = joinTitles(apps, entries, [], layouts);
-    expect(byName(rows, "Balatro").layoutTarget).toEqual({ shortcutAppid: 2718281828, realAppid: 2379780 });
-    expect(byName(rows, "Sea of Stars").layoutTarget).toEqual({ shortcutAppid: 2987654321, realAppid: 1244090 });
-    expect(layoutTargetOf("stream", null)).toBeNull();
-    expect(layoutTargetOf("shortcut", entries[0])).toBeNull();
-    expect(layoutTargetOf("stream", { ...entries[0], parked: true })).toBeNull();
-  });
-
-  it("layoutSource: the entry Use as the default layout adopts from, on every non-parked row (spec 3.16.5)", () => {
-    const rows = rowsOf();
-    expect(byName(rows, "Balatro").layoutSource).toBe(2718281828); // a Stream entry
-    expect(byName(rows, "Hades II").layoutSource).toBe(3000000011); // a visible shortcut
-    expect(byName(rows, "Tunic").layoutSource).toBe(3000000007); // unmatched, still an entry
-    expect(byName(rows, "Desktop").layoutSource).toBe(3000000101); // a host app
-    expect(byName(rows, "Spiritfarer").layoutSource).toBeNull(); // parked
-    expect(byName(rows, "Demo Launcher").layoutSource).toBeNull(); // ignored: no entry
-    expect(byName(rows, "Sea of Stars (GOG)").layoutSource).toBeNull(); // duplicate: no entry
-    expect(layoutSourceOf(null)).toBeNull();
-    expect(layoutSourceOf({ ...entries[0], parked: true })).toBeNull();
-    // the row's layout text follows the same entry, so a visible shortcut shows its walk result too
-    const walked = joinTitles(apps, entries, [], {
-      "3000000011": { real_appid: 1145360, result: "default", url: "workshop://1", when, applied: "workshop://1" },
-    });
-    expect(byName(walked, "Hades II").layout).toBe("default layout");
-    expect(byName(walked, "Hades II").layoutTarget).toBeNull();
-  });
-
-  it("a host-app row is picker only: a target with no real appid (spec 3.14.1)", () => {
-    const desktopEntry = entries.find((e) => e.name === "Desktop")!;
-    const rows = joinTitles(apps, entries, [], {
-      ...layouts,
-      "3000000101": { real_appid: null, result: "picker", url: null, when },
-    });
-    // Desktop's match has a Steam appid; it is still never the copy's source.
-    expect(desktopEntry.match?.steam_appid).toBe(226620);
-    expect(byName(rows, "Desktop").layoutTarget).toEqual({ shortcutAppid: 3000000101, realAppid: null });
-    expect(byName(rows, "Desktop").layout).toBe("picker opened");
-    expect(byName(rows, "Steam Big Picture").layoutTarget).toEqual({ shortcutAppid: 3000000102, realAppid: null });
-    expect(byName(rows, "Steam Big Picture").layout).toBeNull();
-    // Still a visible tile (not synced under the flag yet): its library page has the configurator.
-    expect(layoutTargetOf("host-app", { ...desktopEntry, hidden: false })).toBeNull();
-    expect(layoutTargetOf("host-app", { ...desktopEntry, parked: true })).toBeNull();
-    expect(layoutTargetOf("host-app", null)).toBeNull();
   });
 });

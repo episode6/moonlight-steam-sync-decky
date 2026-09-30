@@ -6,6 +6,27 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Removed
+
+- **Use as the default layout** on the Titles page and **Use as Moonlight
+  Sync default layout** in a library page's gear menu. The Quick Access
+  panel's **Make default**, after **Layout** on the Moonlight entry, is
+  now the one way to adopt a default controller layout.
+- **The Titles page's Layout button**, on every row, so the rows are
+  uniform. A title's own layout can still be picked from Steam's
+  controller settings while it streams; the panel's **Layout** covers the
+  Moonlight entry.
+- **The layout line on the Titles page's rows.** The note beside a game's
+  Stream button still says which layout it streams with.
+
+### Changed
+
+- **Times follow Steam's 12 / 24-hour clock.** Every time the plugin shows
+  (the Titles page's "added today 2:02 PM", the panel's *Last sync*, a
+  host's *last seen*, the Updates and About pages) uses Steam's
+  **Settings → System → 24-hour clock**, and the 12-hour clock where the
+  client does not say.
+
 ## [0.12.0] - 2026-09-28
 
 ### Added

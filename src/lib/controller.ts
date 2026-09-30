@@ -193,7 +193,7 @@ export interface WalkCounts {
   unavailable: number;
 }
 
-/** What *Use as the default layout* finds on a title (spec 3.16.5). */
+/** What the panel's *Make default* finds on the client entry (spec 3.16.5). */
 export type LayoutInspection =
   | { ok: true; url: string; title: string }
   | { ok: false; reason: "no-controller" | "unselected" | "not-shareable" };
@@ -1346,12 +1346,12 @@ export class Controller {
   }
 
   /**
-   * *Choose layout* on a Titles row: Steam's own layout picker for the
-   * hidden shortcut, recorded as `picker` (under either strategy; under
-   * `picker` it is the only layout affordance). `false` when the client has
-   * no such method, in which case the pages hide the action. `realAppid`
-   * is `null` for a default host app (its Titles row, spec 3.14.1) and the
-   * client (the panel's *Layout*, Decision 67): no game behind it, only the
+   * *Choose layout*: Steam's own layout picker for a hidden shortcut,
+   * recorded as `picker` (under either strategy; under `picker` it is the
+   * only layout affordance). `false` when the client has no such method, in
+   * which case the panel hides the action. `realAppid` is `null` for the
+   * client (the panel's *Layout*, Decision 67, its one caller since the
+   * Titles rows lost theirs, Decision 75): no game behind it, only the
    * picker.
    */
   async chooseLayout(shortcutAppid: number, realAppid: number | null): Promise<boolean> {
@@ -1363,7 +1363,7 @@ export class Controller {
   /**
    * The panel's *Layout* button (Decision 67): the controller configurator
    * for the Moonlight client shortcut, picker only (no game behind it).
-   * Desktop and Steam Big Picture reach theirs from the Titles page. Like
+   * Like
    * the launch row above it, it is not held back while a game runs
    * (Decision 57).
    */
@@ -1377,7 +1377,7 @@ export class Controller {
   }
 
   /**
-   * *Use as the default layout* on a Titles row (spec 3.16.5): one read of
+   * The panel's *Make default* (spec 3.16.5, Decision 74): one read of
    * the title's selection for the controller in use. `title` is the
    * config's own `Title`, else the layout's kind. A layout Steam cannot
    * report (a throwing call) reads as not chosen.

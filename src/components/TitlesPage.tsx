@@ -1,4 +1,4 @@
-import { DialogButton, Field, Focusable, Menu, MenuItem, Spinner, showContextMenu, showModal } from "@decky/ui";
+import { DialogButton, Field, Focusable, Spinner, showModal } from "@decky/ui";
 import { toaster } from "@decky/api";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
 
@@ -6,7 +6,6 @@ import { controller } from "../instance";
 import { errorText, isFailure, type PinnedEvent } from "../lib/cli";
 import type { TitlesData, TitlesLoad } from "../lib/controller";
 import { relativeTime } from "../lib/format";
-import { layoutStrategy } from "../lib/layouts";
 import {
   addedText,
   applyPin,
@@ -26,7 +25,6 @@ import {
   type TitleSort,
 } from "../lib/join";
 import { actionsReady } from "../lib/state";
-import { adoptAsDefault } from "./adoptDefault";
 import { ChangeMatchModal } from "./ChangeMatchModal";
 import { Pill } from "./Pill";
 import { useStore } from "./useStore";
@@ -68,8 +66,6 @@ function Row({
   showAdded,
   locked,
   ignoring,
-  canChooseLayout,
-  canSetDefault,
   onChangeMatch,
   onIgnore,
   rowRef,
@@ -80,35 +76,12 @@ function Row({
   /** A run is going: both edits are held until it finishes. */
   locked: boolean;
   ignoring: boolean;
-  /** `SteamClient.Apps.ShowControllerConfigurator` exists (else *Choose layout…* is hidden, spec 3.10). */
-  canChooseLayout: boolean;
-  /** The strategy is `copy` (under `picker` the default layout is off and hidden, spec 3.16). */
-  canSetDefault: boolean;
   onChangeMatch(): void;
   onIgnore(): void;
   /** Set on the last row shown, which *Show more* focuses before it grows the page. */
   rowRef?: RefObject<HTMLDivElement | null>;
 }) {
-  const chooseLayout = row.layoutTarget && canChooseLayout ? row.layoutTarget : null;
-  const useAsDefaultSource = canSetDefault ? row.layoutSource : null;
   const added = showAdded ? addedText(row) : null;
-  // The *Layout* menu (Decision 50): both layout actions in one button.
-  const layoutMenu = (event: MouseEvent) =>
-    showContextMenu(
-      <Menu label={row.name}>
-        {chooseLayout ? (
-          <MenuItem onSelected={() => void controller.chooseLayout(chooseLayout.shortcutAppid, chooseLayout.realAppid)}>
-            Choose layout…
-          </MenuItem>
-        ) : null}
-        {useAsDefaultSource !== null ? (
-          <MenuItem onSelected={() => void adoptAsDefault(useAsDefaultSource, row.name, "titles")}>
-            Use as the default layout
-          </MenuItem>
-        ) : null}
-      </Menu>,
-      event.currentTarget ?? undefined,
-    );
   return (
     <Focusable
       ref={rowRef}
@@ -138,7 +111,6 @@ function Row({
               {chip.text}
             </Pill>
           ))}
-          {row.layout ? <span style={{ marginLeft: 2 }}>· layout: {row.layout}</span> : null}
           {added ? <span style={{ marginLeft: 2 }}>· {added}</span> : null}
         </div>
       </div>
@@ -146,11 +118,6 @@ function Row({
       {!row.ignored ? (
         <DialogButton style={SMALL} disabled={locked} onClick={onChangeMatch}>
           Change match
-        </DialogButton>
-      ) : null}
-      {chooseLayout || useAsDefaultSource !== null ? (
-        <DialogButton style={SMALL} onClick={layoutMenu}>
-          Layout
         </DialogButton>
       ) : null}
       {row.ignoredBy === "config" ? (
@@ -187,15 +154,12 @@ function headline(data: TitlesData, rows: readonly TitleRow[], sort: TitleSort):
  * every title the active host publishes, joined from `list` and `status`,
  * with what the next sync does with it. Rows render 50 at a time with a
  * load-more row; *Change match* opens the picker, *Ignore* / *Unignore*
- * edits `ignore.json`. A row with a non-parked entry also shows its last
- * layout result ("default layout" / "own layout" / "Steam default" /
- * "unavailable", spec 3.10, 3.16) and has a *Layout* menu: *Choose
- * layout…*, Steam's own picker for the hidden shortcut (hidden when the
- * client lacks it), and *Use as the default layout*, which adopts this
- * title's layout for every entry (spec 3.16.5). The *Recently added* chip
- * (the `titles_recent_first` setting, so the page reopens in the order last
- * chosen) lists the titles added last first, each with when it was added,
- * instead of by name. Nothing here restarts Steam: a pin or
+ * edits `ignore.json`. Rows say nothing about layouts and offer no layout
+ * action: the panel's *Layout* and *Make default* are the only ones
+ * (Decisions 74 to 76). The *Recently added* chip (the
+ * `titles_recent_first` setting, so the page reopens in the order last
+ * chosen) lists the titles added last first, each with when it was added
+ * on Steam's 12 / 24-hour clock, instead of by name. Nothing here restarts Steam: a pin or
  * an ignore takes effect on the next sync. While a run is going the list
  * comes from the CLI's per-host cache (no live `list` racing the run), both
  * row edits are locked, and the page refreshes when the run starts (its
@@ -243,14 +207,11 @@ export function TitlesPage() {
   }, [running, ready, active, refresh]);
 
   const data = load?.ok && load.data.host === active ? load.data : null;
-  const layouts = state.layouts;
   const rows = useMemo(
-    () => (data ? joinTitles(data.apps, data.entries, data.ignored, layouts, data.added) : []),
-    [data, layouts],
+    () => (data ? joinTitles(data.apps, data.entries, data.ignored, data.added) : []),
+    [data],
   );
   const sort = titleSortOf(state.settings);
-  const canChooseLayout = controller.canChooseLayout();
-  const canSetDefault = layoutStrategy(state.settings) === "copy";
   const shown = useMemo(
     () => sortRows(filterRows(rows, filter, showParked), sort),
     [rows, filter, showParked, sort],
@@ -418,8 +379,6 @@ export function TitlesPage() {
             showAdded={sort === "recent"}
             locked={running}
             ignoring={ignoring === row.name}
-            canChooseLayout={canChooseLayout}
-            canSetDefault={canSetDefault}
             onChangeMatch={() => changeMatch(row)}
             onIgnore={() => void toggleIgnore(row)}
           />

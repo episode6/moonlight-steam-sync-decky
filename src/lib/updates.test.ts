@@ -847,20 +847,20 @@ describe("the texts (update spec 3.7)", () => {
 
   it("installedText for a branch build: its ref, the first 7 of its commit, when it was built", () => {
     const main = buildInfo("main", MAIN_SHA, "branch", local(9, 21, 13, 3));
-    expect(installedText(at("0.11.0", main), now)).toBe("0.11.0 · main @ abc1234 · built today 13:03");
+    expect(installedText(at("0.11.0", main), now)).toBe("0.11.0 · main @ abc1234 · built today 1:03 PM");
     expect(installedText(at("0.11.0", { ...main, built_at: null }), now)).toBe("0.11.0 · main @ abc1234");
-    expect(installedText(at(null, main), now)).toBe("unknown · main @ abc1234 · built today 13:03");
+    expect(installedText(at(null, main), now)).toBe("unknown · main @ abc1234 · built today 1:03 PM");
   });
 
   it("builtFromText: About's row, for a branch's build, a release's and a zip that says nothing", () => {
     const main = buildInfo("main", MAIN_SHA, "branch", local(9, 21, 13, 3));
-    expect(builtFromText(main, now)).toBe("main @ abc1234 · built today 13:03");
+    expect(builtFromText(main, now)).toBe("main @ abc1234 · built today 1:03 PM");
     // a build made outside CI: no run, the same text
-    expect(builtFromText({ ...main, run: null }, now)).toBe("main @ abc1234 · built today 13:03");
+    expect(builtFromText({ ...main, run: null }, now)).toBe("main @ abc1234 · built today 1:03 PM");
     expect(builtFromText({ ...main, built_at: null }, now)).toBe("main @ abc1234");
-    expect(builtFromText({ ...main, sha: MAIN_SHA.toUpperCase() }, now)).toBe("main @ abc1234 · built today 13:03");
+    expect(builtFromText({ ...main, sha: MAIN_SHA.toUpperCase() }, now)).toBe("main @ abc1234 · built today 1:03 PM");
     expect(builtFromText(buildInfo("v0.11.0", MAIN_SHA, "release", local(9, 21, 13, 3)), now)).toBe(
-      "v0.11.0 @ abc1234 · built today 13:03",
+      "v0.11.0 @ abc1234 · built today 1:03 PM",
     );
     expect(builtFromText(null, now)).toBe(BUILD_UNKNOWN_TEXT);
     expect(builtFromText(undefined, now)).toBe(BUILD_UNKNOWN_TEXT);
@@ -871,11 +871,11 @@ describe("the texts (update spec 3.7)", () => {
     expect(latestText({ releases: null, checkedAt: null, error: null }, "idle", null, "stable", now)).toBe(
       "Not checked yet",
     );
-    expect(latestText(checked, "idle", offer, "stable", now)).toBe("0.13.0 · released yesterday 12:00 · checked today 15:02");
-    expect(latestText(checked, "idle", null, "stable", now)).toBe("Up to date · checked today 15:02");
+    expect(latestText(checked, "idle", offer, "stable", now)).toBe("0.13.0 · released yesterday 12:00 PM · checked today 3:02 PM");
+    expect(latestText(checked, "idle", null, "stable", now)).toBe("Up to date · checked today 3:02 PM");
     const network = { ok: false as const, error: "network" as const, message: "GitHub answered 502", retryAt: null };
     expect(latestText({ ...checked, error: network }, "idle", offer, "stable", now)).toBe(
-      "Could not reach GitHub: GitHub answered 502 · last checked today 15:02",
+      "Could not reach GitHub: GitHub answered 502 · last checked today 3:02 PM",
     );
     expect(latestText({ releases: null, checkedAt: null, error: network }, "idle", null, "stable", now)).toBe(
       "Could not reach GitHub: GitHub answered 502",
@@ -891,15 +891,15 @@ describe("the texts (update spec 3.7)", () => {
     const update: UpdateInfo = { releases: [release("0.13.0"), main], checkedAt: local(9, 21, 15, 2), error: null };
     const switchTo: Offer = { ...main, action: "switch", label: "main @ abc1234" };
     expect(latestText(update, "idle", switchTo, "branch:main", now)).toBe(
-      "main @ abc1234 · built today 13:03 · checked today 15:02",
+      "main @ abc1234 · built today 1:03 PM · checked today 3:02 PM",
     );
     // without built_at, the zip's upload time
     const undated: Offer = { ...switchTo, build: { ...main.build!, built_at: null } };
     expect(latestText(update, "idle", undated, "branch:main", now)).toBe(
-      "main @ abc1234 · built today 13:05 · checked today 15:02",
+      "main @ abc1234 · built today 1:05 PM · checked today 3:02 PM",
     );
     // the installed build is the branch's
-    expect(latestText(update, "idle", null, "branch:main", now)).toBe("Up to date · checked today 15:02");
+    expect(latestText(update, "idle", null, "branch:main", now)).toBe("Up to date · checked today 3:02 PM");
     // no entry for the ref, or its build.json unread (as while it is republished)
     expect(latestText(update, "idle", null, "branch:gone", now)).toBe("No build of gone is published");
     const unread = { ...update, releases: [release("0.13.0"), { ...main, build: null }] };
@@ -911,10 +911,10 @@ describe("the texts (update spec 3.7)", () => {
     );
     const network = { ok: false as const, error: "network" as const, message: "no answer from GitHub", retryAt: null };
     expect(latestText({ ...unread, error: network }, "idle", null, "branch:main", now)).toBe(
-      "Could not reach GitHub: no answer from GitHub · last checked today 15:02",
+      "Could not reach GitHub: no answer from GitHub · last checked today 3:02 PM",
     );
     // a channel that does not parse is stable
-    expect(latestText(unread, "idle", null, "branch:", now)).toBe("Up to date · checked today 15:02");
+    expect(latestText(unread, "idle", null, "branch:", now)).toBe("Up to date · checked today 3:02 PM");
   });
 
   it("versionLabel: the date, or reinstall", () => {

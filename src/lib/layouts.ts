@@ -3,8 +3,8 @@
  *
  * - **The strategy switch.** `DEFAULT_LAYOUT_STRATEGY` is the one constant
  *   that decides between `copy` (the plugin sets layouts through Steam
- *   Input) and `picker` (no Steam Input calls anywhere; the Titles row's
- *   *Choose layout* is the only affordance, and the whole default-layout
+ *   Input) and `picker` (no Steam Input calls anywhere; *Choose layout*
+ *   (the panel's *Layout*) is the only affordance, and the whole default-layout
  *   feature is off and hidden). `settings.json`'s `layout_strategy`
  *   overrides it by hand on the device. The PR-0 probe V2 (2026-09-20)
  *   confirmed `copy`: a `workshop://` URL set on a shortcut reads back,
@@ -375,32 +375,4 @@ export function walkTargets(entries: readonly EntryEvent[]): WalkTarget[] {
     targets.push({ shortcutAppid: entry.appid, realAppid: typeof steam === "number" ? steam : null });
   }
   return targets;
-}
-
-// ---------------------------------------------------------------------------
-// the library gear menu (spec 3.16.5, Decision 56)
-
-export interface MenuLayoutSource {
-  /** The appid whose selection *Use as Moonlight Sync default layout* reads. */
-  appid: number;
-  /** `game`: a real game with a Stream entry, read as itself; `entry`: one of the plugin's own non-parked entries. */
-  kind: "game" | "entry";
-}
-
-/**
- * What the gear menu on a library page adopts a default from (spec 3.16.5,
- * Decision 56): a real game the stream map covers reads *its own*
- * selection, the one the same menu's *Controller settings* edits (not the
- * hidden shortcut's, which the game's page never shows); one of the
- * plugin's own non-parked entries, on the page it has when visible, reads
- * itself as its Titles row does. Any other page gets no item.
- */
-export function menuLayoutSourceOf(
-  entries: readonly EntryEvent[] | null,
-  streamMap: ReadonlyMap<number, number>,
-  appid: number,
-): MenuLayoutSource | null {
-  if (streamMap.has(appid)) return { appid, kind: "game" };
-  const entry = entries?.find((e) => e.appid === appid && e.parked === false);
-  return entry ? { appid, kind: "entry" } : null;
 }

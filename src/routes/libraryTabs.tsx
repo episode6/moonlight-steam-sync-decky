@@ -49,7 +49,6 @@ import {
   templateOf,
   type TabLike,
 } from "../lib/tabs";
-import { ensureLibraryContextMenuPatched } from "./libraryContextMenu";
 import type { TreeNode } from "./tree";
 
 export const LIBRARY_ROUTE = "/library";
@@ -252,8 +251,6 @@ interface RenderableChild {
 export function patchLibraryTabs(): () => void {
   const patch = routerHook.addPatch(LIBRARY_ROUTE, (route) => {
     try {
-      // The gear menu's patch installs on the first library render, not at load.
-      ensureLibraryContextMenuPatched();
       const child = route.children as RenderableChild | undefined;
       if (!child || typeof child !== "object") return route;
       if (child.props && typeof child.props.renderFunc === "function") {

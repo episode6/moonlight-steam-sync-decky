@@ -12,6 +12,7 @@ import {
   overviewLoaded,
   ownedApps,
   showControllerConfigurator,
+  steamClock24h,
   steamId3FromSteam64,
   steamInput,
   watchControllers,
@@ -60,6 +61,36 @@ describe("the globals", () => {
   afterEach(() => {
     delete g.collectionStore;
     delete g.App;
+    delete g.settingsStore;
+  });
+
+  it("steamClock24h reads Steam's 24-hour clock setting, null when the client has none", () => {
+    expect(steamClock24h()).toBeNull();
+    // the getter the client's own code reads, over the field it returns
+    g.settingsStore = { friendSettings: { b24HourClock: true }, m_FriendSettings: { b24HourClock: false } };
+    expect(steamClock24h()).toBe(true);
+    g.settingsStore = { m_FriendSettings: { b24HourClock: true } };
+    expect(steamClock24h()).toBe(true);
+    g.settingsStore = { m_FriendSettings: { b24HourClock: false } };
+    expect(steamClock24h()).toBe(false);
+    g.settingsStore = { m_FriendSettings: { b24HourClock: "yes" } };
+    expect(steamClock24h()).toBeNull();
+    g.settingsStore = {
+      get m_FriendSettings(): never {
+        throw new TypeError("not loaded");
+      },
+    };
+    expect(steamClock24h()).toBeNull();
+    // a throwing getter, or one with no boolean, still falls back to the field
+    g.settingsStore = {
+      get friendSettings(): never {
+        throw new TypeError("not loaded");
+      },
+      m_FriendSettings: { b24HourClock: true },
+    };
+    expect(steamClock24h()).toBe(true);
+    g.settingsStore = { friendSettings: {}, m_FriendSettings: { b24HourClock: false } };
+    expect(steamClock24h()).toBe(false);
   });
 
   it("ownedApps is null until the library has loaded", () => {
