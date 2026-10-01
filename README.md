@@ -22,7 +22,8 @@ and needs CLI 0.4.0 or newer.
 
 ## Requirements
 
-- SteamOS (Steam Deck or a Deck-like) with Decky Loader.
+- SteamOS (Steam Deck or a Deck-like) with Decky Loader. The installer
+  below offers to install Decky Loader when it is missing.
 - A Moonlight client on the Deck (native `moonlight` or the Flathub
   flatpak), already paired with your host.
 - moonlight-steam-sync **0.4.0 or newer**. The plugin bundles the version it
@@ -45,12 +46,25 @@ the latest release, build from source (see "Developing") or use the
 curl -fsSL https://raw.githubusercontent.com/episode6/moonlight-steam-sync-decky/main/install.sh | sh
 ```
 
-`install.sh` downloads the latest (or a `MOONLIGHT_SYNC_VERSION`-pinned)
+`install.sh` first looks for Decky Loader
+(`~/homebrew/services/PluginLoader`). If it is not installed, the script
+says so and offers to install it: on a yes it downloads Decky Loader's
+[official installer](https://github.com/SteamDeckHomebrew/decky-installer)
+(the `install_release.sh` its README has you run) and runs it before
+installing the plugin; on anything else it stops with nothing downloaded
+or installed, so you can install Decky Loader your own way
+(<https://decky.xyz>) and start again. A Decky Loader that is already
+there is left exactly as it is. After a first install of Decky Loader its
+tab only appears once Steam has restarted: return to Gaming Mode, or
+restart the device if you ran the script there.
+
+It then downloads the latest (or a `MOONLIGHT_SYNC_VERSION`-pinned)
 release's `Moonlight-Sync.zip` and its `.sha256`, verifies the checksum,
 removes any previous `Moonlight Sync/` install so files an older release
 shipped and the new one no longer does cannot linger, unzips the new one
 into `~/homebrew/plugins/` and restarts `plugin_loader` so the new plugin
-loads. Both the install and the restart run through `sudo` (Decky's plugin
+loads. The install and the restart (and Decky Loader's installer, when
+it runs) go through `sudo` (Decky's plugin
 directory belongs to root on a stock install), so you will be asked for
 your password on the terminal. A stock Steam Deck ships with no password
 for the `deck` user, and `sudo` refuses an account without one. If you

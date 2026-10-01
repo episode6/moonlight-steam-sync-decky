@@ -23,10 +23,22 @@
 # tests/test_install_sh.py can point this script at a file:// fixture tree
 # instead of GitHub. There is normally no reason to set it by hand.
 #
+# Moonlight Sync is a Decky Loader plugin, so the script first looks for
+# Decky Loader itself (~/homebrew/services/PluginLoader, where its own
+# installer puts it). When it is not there the script offers to install it:
+# it asks on the terminal, and on a yes it downloads Decky Loader's
+# official installer (install_release.sh from the latest release of
+# SteamDeckHomebrew/decky-installer, the script Decky's README has you pipe
+# to sh) and runs it under sudo before installing the plugin. Anything but
+# a yes (no terminal to ask on included) stops before anything is
+# downloaded or installed. Decky Loader that is already there is never
+# touched, reinstalled or updated.
+#
 # ~/homebrew/plugins/ belongs to root on a stock Decky Loader install, so
-# both unzipping into it and restarting plugin_loader need sudo. This
-# script runs `sudo` exactly where those two steps need it, and with a
-# password set it does so interactively: you are prompted on the terminal.
+# both unzipping into it and restarting plugin_loader need sudo, and so
+# does Decky Loader's installer. This script runs `sudo` exactly where
+# those steps need it, and with a password set it does so interactively:
+# you are prompted on the terminal.
 #
 # A stock Steam Deck ships with no password for the `deck` user, and sudo
 # refuses an account without one. So, as Decky Loader's own installer
@@ -39,9 +51,13 @@
 # Nothing here ever touches a password you set: the offer is only made to
 # an account that has none.
 #
-# MOONLIGHT_SYNC_TTY names the terminal that question is read from
-# (default /dev/tty: under `curl | sh` the script itself is on stdin). Like
-# MOONLIGHT_SYNC_BASE_URL it is a seam for tests/test_install_sh.py.
+# MOONLIGHT_SYNC_TTY names the terminal the questions are read from
+# (default /dev/tty: under `curl | sh` the script itself is on stdin).
+# MOONLIGHT_SYNC_DECKY_DIR is where Decky Loader is looked for (default
+# ~/homebrew; Decky's installer always installs there, so another value
+# only moves the check) and MOONLIGHT_SYNC_DECKY_INSTALLER_URL the URL its
+# installer is downloaded from. Like MOONLIGHT_SYNC_BASE_URL, all three
+# are seams for tests/test_install_sh.py.
 #
 # This installs the plugin only. moonlight-steam-sync, the CLI it drives
 # (cli/ in this repo), has its own installer, cli/install.sh, for using it
@@ -65,6 +81,15 @@ fi
 RELEASES_URL="${MOONLIGHT_SYNC_BASE_URL:-https://github.com/${REPO}/releases}"
 BASE_URL="${RELEASES_URL}/${RELEASE_PATH}"
 
+# Decky Loader: where its installer puts it, and that installer (the one
+# its README documents, from the decky-installer repository's releases).
+DECKY_DIR="${MOONLIGHT_SYNC_DECKY_DIR:-"$HOME/homebrew"}"
+DECKY_LOADER="${DECKY_DIR}/services/PluginLoader"
+DECKY_INSTALLER_URL="${MOONLIGHT_SYNC_DECKY_INSTALLER_URL:-https://github.com/SteamDeckHomebrew/decky-installer/releases/latest/download/install_release.sh}"
+DECKY_INSTALLER="decky-install_release.sh"
+# 1 once the user said yes to installing Decky Loader.
+INSTALL_DECKY=0
+
 require() {
     command -v "$1" >/dev/null 2>&1 || {
         echo "install.sh: '$1' is required but was not found on PATH." >&2
@@ -83,6 +108,8 @@ require sudo
 # could remove it, a random one would lock you out of sudo.
 TEMP_PASSWORD='Decky!'
 TTY="${MOONLIGHT_SYNC_TTY:-/dev/tty}"
+# 0 not tried yet, 1 open on fd 3, -1 there is none to read.
+TTY_STATE=0
 USER_NAME=$(id -un)
 # The account the temporary password is on right now, else empty.
 TEMP_PASSWORD_USER=""
@@ -93,6 +120,26 @@ TMP_DIR=""
 password_status() {
     command -v passwd >/dev/null 2>&1 || return 0
     passwd -S "$1" 2>/dev/null | awk 'NR == 1 {print $2}'
+}
+
+# One line from the terminal into $answer; empty when there is no terminal
+# to read. The terminal is opened once and kept on fd 3, so that a second
+# question reads the line after the first one's (what a terminal does
+# anyway, and what a file standing in for one in the tests needs).
+ask() {
+    answer=""
+    if [ "$TTY_STATE" = 0 ]; then
+        # Tried in a subshell first: a failed redirection on `exec` ends a
+        # non-interactive sh outright.
+        if (: <"$TTY") 2>/dev/null; then
+            exec 3<"$TTY"
+            TTY_STATE=1
+        else
+            TTY_STATE=-1
+        fi
+    fi
+    [ "$TTY_STATE" = 1 ] || return 0
+    IFS= read -r answer <&3 || answer=""
 }
 
 # sudo for the install steps: interactive, except with the temporary
@@ -162,8 +209,7 @@ offer_temp_password() {
     echo "This script can set a temporary password ('${TEMP_PASSWORD}'), install with it,"
     echo "and remove it again when it finishes (Decky Loader's installer does the same)."
     printf 'Set a temporary password for the install? [y/N] '
-    answer=""
-    { IFS= read -r answer <"$TTY"; } 2>/dev/null || answer=""
+    ask
     case "$answer" in
         [Yy] | [Yy][Ee][Ss]) ;;
         *)
@@ -204,7 +250,65 @@ offer_temp_password() {
     echo "Temporary password set. It is removed when this script exits."
 }
 
+# Asked before anything is downloaded: without Decky Loader there is
+# nothing to install a plugin into.
+offer_decky() {
+    [ ! -f "$DECKY_LOADER" ] || return 0
+    echo "Decky Loader is not installed (there is no ${DECKY_LOADER})."
+    echo "Moonlight Sync is a Decky Loader plugin and cannot run without it. This script"
+    echo "can install Decky Loader first, with Decky Loader's own installer:"
+    echo "  ${DECKY_INSTALLER_URL}"
+    printf 'Install Decky Loader now? [y/N] '
+    ask
+    case "$answer" in
+        [Yy] | [Yy][Ee][Ss]) INSTALL_DECKY=1 ;;
+        *)
+            echo
+            echo "install.sh: nothing was installed. Install Decky Loader (https://decky.xyz), then run this again." >&2
+            exit 1
+            ;;
+    esac
+    echo
+}
+
+# Decky Loader's installer, downloaded with everything else (before any
+# sudo) and run as root, which is how it runs itself: it re-executes under
+# sudo when it is not. It finds the home directory through SUDO_USER.
+install_decky() {
+    echo
+    echo "Installing Decky Loader with its own installer (this needs sudo)."
+    [ -n "$TEMP_PASSWORD_USER" ] || echo "You may be asked for your password now."
+    # Its shebang says sh but it is written in bash (as SteamOS's sh is).
+    shell=sh
+    ! command -v bash >/dev/null 2>&1 || shell=bash
+    # Never the script's own stdin: under `curl | sh` that is this script,
+    # and anything the installer read from it would be lost to this shell.
+    decky_status=0
+    as_root "$shell" "${TMP_DIR}/${DECKY_INSTALLER}" </dev/null || decky_status=$?
+    if [ "$decky_status" != 0 ]; then
+        echo "install.sh: Decky Loader's installer failed (exit ${decky_status}). Moonlight Sync was not installed." >&2
+        exit 1
+    fi
+    if [ ! -f "$DECKY_LOADER" ]; then
+        echo "install.sh: Decky Loader's installer finished, but there is still no ${DECKY_LOADER}." >&2
+        echo "  Moonlight Sync was not installed." >&2
+        exit 1
+    fi
+    echo "Decky Loader is installed."
+}
+
+offer_decky
+
 TMP_DIR=$(mktemp -d)
+
+if [ "$INSTALL_DECKY" = 1 ]; then
+    echo "Downloading Decky Loader's installer..."
+    if ! curl -fsSL "$DECKY_INSTALLER_URL" -o "${TMP_DIR}/${DECKY_INSTALLER}"; then
+        echo "install.sh: could not download ${DECKY_INSTALLER_URL}" >&2
+        echo "  Nothing was installed." >&2
+        exit 1
+    fi
+fi
 
 echo "Downloading ${ASSET} (${VERSION}) from ${REPO}..."
 # curl exits 22 on a 404, which with -f prints nothing useful. Say which
@@ -231,6 +335,8 @@ fi
 echo "sha256: ${ACTUAL}"
 
 offer_temp_password
+
+[ "$INSTALL_DECKY" != 1 ] || install_decky
 
 echo
 echo "Installing into ${PLUGIN_DIR}/ (this needs sudo: that directory"
@@ -265,3 +371,9 @@ INSTALLED=$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' \
 echo
 echo "Installed Moonlight Sync ${INSTALLED} to ${PLUGIN_DIR}/Moonlight Sync."
 echo "Look for it in the Quick Access menu's Decky tab."
+if [ "$INSTALL_DECKY" = 1 ]; then
+    # Decky Loader reaches Steam through its CEF debugger, which a Steam
+    # that was already running when Decky was installed has not opened.
+    echo "Decky Loader is new here: its tab (the plug icon) appears once Steam has"
+    echo "restarted. Return to Gaming Mode, or restart the device if you are in it."
+fi

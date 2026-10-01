@@ -8,6 +8,11 @@ project uses [semantic versioning](https://semver.org/).
 
 ### Added
 
+- **`install.sh` offers to install Decky Loader.** When Decky Loader is
+  not on the device, the one-line installer says so and asks whether to
+  install it first, with Decky Loader's own official installer. On a no
+  it stops before downloading or installing anything; a Decky Loader that
+  is already there is never touched.
 - **`install.sh` no longer needs a password set first.** On an account
   without one (a stock Steam Deck's `deck` user) it offers what Decky
   Loader's own installer does: set a temporary password (`Decky!`),

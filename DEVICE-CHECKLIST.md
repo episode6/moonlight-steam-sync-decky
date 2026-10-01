@@ -420,6 +420,25 @@ and superseded by §8.*
       what Decky's installer relies on). Should the pipe not be read, the
       script says *sudo did not accept the temporary one* and installs
       nothing.
+- [ ] **`install.sh` on a device without Decky Loader.** On a device
+      that has none (no `~/homebrew/services/PluginLoader`), run the
+      one-liner. Expect *Decky Loader is not installed* and the question
+      *Install Decky Loader now?* before anything is downloaded. Answer
+      `n`: expect exit 1, "nothing was installed", no `sudo` prompt and
+      no `~/homebrew`. Run it again and answer `y`: expect Decky's own
+      installer's output (*Installing Steam Deck Plugin Loader
+      release...*), *Decky Loader is installed.*, then the plugin's
+      install as in the items above (on a Deck with no password, the
+      temporary-password question comes between the two downloads and
+      Decky's installer), and at the end the two lines saying the Decky
+      tab appears once Steam has restarted. Return to Gaming Mode:
+      expect the Decky tab with Moonlight Sync in it. Run the one-liner
+      once more: expect no question about Decky Loader. **Unmeasured
+      until this is walked:** that Decky's `install_release.sh` runs to
+      the end as `sudo bash <file>` with stdin from `/dev/null` (it is
+      documented as `curl … | sh`, where it re-executes itself under
+      sudo), and that a return to Gaming Mode is enough for the tab to
+      appear.
 - [ ] **A missing release is explained.** Run with
       `MOONLIGHT_SYNC_VERSION=v9.9.9`; expect
       `install.sh: could not download …/Moonlight-Sync.zip (is v9.9.9

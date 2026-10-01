@@ -129,7 +129,16 @@ install.sh                  the end-user installer: curl the latest (or pinned) 
                             `Decky!` set with `setsid -w passwd` off a pipe, proven
                             with `sudo -S -k true`, fed to `sudo -S` by as_root(),
                             removed with `passwd -d` after the restart and by the
-                            EXIT trap, which INT / TERM / HUP are turned into)
+                            EXIT trap, which INT / TERM / HUP are turned into);
+                            before any of it, offer_decky(): no
+                            ~/homebrew/services/PluginLoader (MOONLIGHT_SYNC_DECKY_DIR)
+                            means Decky Loader is missing, and the user is asked
+                            whether to install it; a yes downloads Decky's own
+                            install_release.sh (MOONLIGHT_SYNC_DECKY_INSTALLER_URL)
+                            with the zip and install_decky() runs it through
+                            as_root(), stdin /dev/null, before the plugin's steps;
+                            anything else installs nothing; ask() reads both
+                            questions off one fd 3
 cli/                        the moonlight-steam-sync CLI (its own AGENTS.md, README.md,
                             CHANGELOG.md up to 0.4.0, pyproject.toml, src/, tests/,
                             scripts/record_fixtures.py); install.sh: the CLI-only
@@ -934,7 +943,8 @@ tests/                      pytest: fake_cli.py, fixtures/, conftest.py, test_*.
                             test_install_sh.py (install.sh end to end via
                             MOONLIGHT_SYNC_BASE_URL against a file:// fixture,
                             sudo/systemctl/passwd shimmed on PATH, their state in
-                            tmp_path/fakestate; the temporary password's every path),
+                            tmp_path/fakestate; the temporary password's every path;
+                            a missing Decky Loader's, over a fixture installer),
                             test_cli_install_sh.py
                             (cli/install.sh the same way, HOME in tmp_path);
                             updatezip.py (build_zip(), good and hostile plugin zips,
@@ -1795,6 +1805,39 @@ On-device checks are not merge criteria; they are collected in
   no, NOPASSWD sudo, an account with a password never asked, a failed
   step, each signal mid-restart, a removal or a set that fails, a set
   that lands another password.
+  Decky Loader itself (the user's request of 2026-10-01) is looked for
+  first, as `~/homebrew/services/PluginLoader`, the file Decky's
+  installer puts there (`MOONLIGHT_SYNC_DECKY_DIR` moves the check, for
+  the tests). When it is missing the script asks *Install Decky Loader
+  now?* on the same terminal, before anything is downloaded; anything
+  but a yes exits 1 with nothing downloaded and nothing under sudo. On a
+  yes it downloads Decky's official `install_release.sh` (the latest
+  release of `SteamDeckHomebrew/decky-installer`, the script Decky's
+  README pipes to `sh`; `MOONLIGHT_SYNC_DECKY_INSTALLER_URL` in the
+  tests, which never fetch or run the real one) along with the plugin
+  zip, so every download and the checksum are done before any sudo, asks
+  the temporary-password question if the account needs it, and then runs
+  the installer through `as_root` (as root is how that script runs
+  itself, and `SUDO_USER` is how it finds the home directory) before the
+  plugin's own steps: with `bash` when there is one, since the script is
+  written in bash under an `sh` shebang, and with stdin from `/dev/null`,
+  since under `curl | sh` stdin is `install.sh` itself. An installer
+  that fails, or exits 0 and leaves no `PluginLoader`, stops the script
+  before the plugin is touched. There is no checksum to verify it
+  against: Decky publishes none, and it is the same file its README has
+  the user run. A Decky Loader that is already there is never
+  reinstalled or updated. The final lines then say the Decky tab appears
+  once Steam has restarted (the CEF debugger Decky needs is only opened
+  by a Steam started after the install; unmeasured, DEVICE-CHECKLIST
+  §5). Both questions go through `ask()`, which opens the terminal once
+  on fd 3, so a second question reads the second line (a test's terminal
+  is a file). The tests hold: Decky present (no question, the installer
+  never requested), yes (the installer under sudo before the four
+  plugin steps), every no, a stock Deck (both questions, the installer
+  with the temporary password on sudo's stdin; yes then no installing
+  nothing), an installer or a plugin zip that cannot be downloaded
+  (nothing under sudo), an installer that fails or installs nothing, and
+  the script piped to `sh` with an installer that eats its stdin.
   `cli/install.sh` is the CLI-only
   installer (the release's `moonlight-steam-sync.pyz` into `~/.local/bin`,
   adding it to `PATH` in the rc file once), with the same kind of seam,

@@ -15,6 +15,12 @@ install, as Decky Loader's installer does) runs over the same shims plus a
 fake `passwd`, all three keeping their state in `tmp_path/fakestate` (see
 `fake_bin`); the question is answered through MOONLIGHT_SYNC_TTY, which
 `run_install` always points away from the real /dev/tty.
+
+Decky Loader (looked for first, and offered when it is missing) is a
+`PluginLoader` file under MOONLIGHT_SYNC_DECKY_DIR, which `install_env`
+creates unless `without_decky` said the device has none; its installer is a
+fixture script behind MOONLIGHT_SYNC_DECKY_INSTALLER_URL (a file:// URL), so
+the real one is never downloaded, let alone run.
 """
 
 from __future__ import annotations
@@ -99,7 +105,13 @@ def state_dir(tmp_path: Path) -> Path:
     - `passwd-set-fails`, `passwd-d-fails`, `systemctl-fails`,
       `systemctl-slow`: when present, that step fails (or, for the last,
       touches `systemctl-started` and takes two seconds);
-    - `sudo.log`, `passwd.log`: one line per call.
+    - `sudo.log`, `passwd.log`: one line per call;
+    - `decky-missing`: when present, Decky Loader is not installed (see
+      `without_decky`);
+    - `decky-installer-fails`, `decky-installer-installs-nothing`: when
+      present, the fixture Decky installer exits 1, or exits 0 without
+      leaving a loader behind;
+    - `decky-installer.log`: one line per run of that installer.
     """
     directory = tmp_path / "fakestate"
     directory.mkdir(exist_ok=True)
@@ -190,6 +202,21 @@ def fake_bin(tmp_path: Path) -> Path:
     return directory
 
 
+def decky_dir(tmp_path: Path) -> Path:
+    return tmp_path / "homebrew"
+
+
+def decky_loader(tmp_path: Path) -> Path:
+    """What install.sh takes for "Decky Loader is installed"."""
+    return decky_dir(tmp_path) / "services" / "PluginLoader"
+
+
+def decky_installer(tmp_path: Path) -> Path:
+    """Where the fixture Decky installer is served from (`without_decky`
+    writes it; with Decky installed nothing may ask for it)."""
+    return tmp_path / "decky-release" / "install_release.sh"
+
+
 def install_env(
     tmp_path: Path,
     base: Path,
@@ -206,6 +233,14 @@ def install_env(
     # Never the real /dev/tty: a suite run from a terminal would sit at the
     # question. A test that answers it writes the answer file (`answer`).
     env["MOONLIGHT_SYNC_TTY"] = str(tmp_path / "tty")
+    # Decky Loader is there unless `without_decky` said otherwise, and its
+    # installer is never the real one.
+    env["MOONLIGHT_SYNC_DECKY_DIR"] = str(decky_dir(tmp_path))
+    env["MOONLIGHT_SYNC_DECKY_INSTALLER_URL"] = decky_installer(tmp_path).as_uri()
+    if not (state_dir(tmp_path) / "decky-missing").exists():
+        loader = decky_loader(tmp_path)
+        loader.parent.mkdir(parents=True, exist_ok=True)
+        loader.touch()
     if extra_env:
         env.update(extra_env)
     return env
@@ -620,6 +655,240 @@ def test_a_password_that_is_not_the_temporary_one_is_left_alone(tmp_path: Path) 
     assert not plugin_dir.exists()
     assert (state / "password").read_text() == "typed by hand"
     assert log_lines(state, "sudo.log") == ["-n true", "-S -k -p  true"]
+
+
+DECKY_QUESTION = "Install Decky Loader now?"
+DECKY_SCRIPT = "decky-install_release.sh"
+
+
+def without_decky(tmp_path: Path, *answers: str) -> Path:
+    """A device without Decky Loader, whose installer (the fixture one)
+    would install it; `answers` are the lines waiting on the terminal, one
+    per question in the order asked (none: no terminal to read). Returns
+    the shims' state directory."""
+    state = state_dir(tmp_path)
+    (state / "decky-missing").touch()
+    loader = decky_loader(tmp_path)
+    script = decky_installer(tmp_path)
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.write_text(
+        "#!/bin/sh\n"
+        f'state="{state}"\n'
+        'echo run >> "$state/decky-installer.log"\n'
+        # Whatever is on stdin is eaten, as a careless installer might: it
+        # must never be the script install.sh itself is being read from.
+        'cat > "$state/decky-installer.stdin"\n'
+        '[ ! -e "$state/decky-installer-fails" ] || exit 1\n'
+        'if [ ! -e "$state/decky-installer-installs-nothing" ]; then\n'
+        f'    mkdir -p "{loader.parent}"\n'
+        f'    : > "{loader}"\n'
+        "fi\n"
+        "echo fake-decky-installer\n"
+    )
+    if answers:
+        (tmp_path / "tty").write_text("".join(answer + "\n" for answer in answers))
+    return state
+
+
+def decky_installer_runs(state: Path) -> int:
+    return len(log_lines(state, "decky-installer.log"))
+
+
+def test_decky_installed_asks_nothing_and_fetches_no_installer(tmp_path: Path) -> None:
+    """Decky Loader that is there is never touched: no question, and its
+    installer is not even downloaded (the fixture URL holds no file)."""
+    base = release(tmp_path)
+    plugin_dir = tmp_path / "plugins"
+    curl_dir, log = logging_curl_bin(tmp_path)
+    (tmp_path / "tty").write_text("y\n")
+    result = run_install(tmp_path, base, plugin_dir, extra_path_dirs=(curl_dir,))
+    assert result.returncode == 0, result.stderr
+    assert DECKY_QUESTION not in result.stdout
+    assert "Decky Loader is new here" not in result.stdout
+    assert "install_release.sh" not in log.read_text()
+    sudo = log_lines(state_dir(tmp_path), "sudo.log")
+    assert [line.split()[0] for line in sudo] == ["mkdir", "rm", "unzip", "systemctl"]
+
+
+def test_no_decky_and_yes_installs_decky_then_the_plugin(tmp_path: Path) -> None:
+    base = release(tmp_path)
+    plugin_dir = tmp_path / "plugins"
+    state = without_decky(tmp_path, "y")
+    result = run_install(tmp_path, base, plugin_dir)
+    assert result.returncode == 0, result.stderr
+    assert DECKY_QUESTION in result.stdout
+    assert str(decky_loader(tmp_path)) in result.stdout
+    assert decky_installer(tmp_path).as_uri() in result.stdout
+    assert "fake-decky-installer" in result.stdout
+    assert decky_installer_runs(state) == 1
+    assert decky_loader(tmp_path).exists()
+    assert (plugin_dir / "Moonlight Sync" / "plugin.json").exists()
+    # Decky's installer first, under sudo, then the plugin's four steps.
+    sudo = log_lines(state, "sudo.log")
+    assert sudo[0].split()[0] in ("bash", "sh")
+    assert sudo[0].endswith("/" + DECKY_SCRIPT)
+    assert [line.split()[0] for line in sudo[1:]] == ["mkdir", "rm", "unzip", "systemctl"]
+    installed = result.stdout.index("Decky Loader is installed.")
+    assert installed < result.stdout.index("Installed Moonlight Sync")
+    # A Steam that was running before Decky arrived has to restart.
+    assert "Decky Loader is new here" in result.stdout
+    assert "Steam has" in result.stdout
+
+
+@pytest.mark.parametrize("answer", ["n", "", "maybe", None])
+def test_no_decky_and_no_installs_nothing(tmp_path: Path, answer: str | None) -> None:
+    """Anything but a yes, no terminal included: nothing is downloaded,
+    nothing runs under sudo, and the script says what to do instead."""
+    base = release(tmp_path)
+    plugin_dir = tmp_path / "plugins"
+    state = without_decky(tmp_path, *([] if answer is None else [answer]))
+    curl_dir, log = logging_curl_bin(tmp_path)
+    result = run_install(tmp_path, base, plugin_dir, extra_path_dirs=(curl_dir,))
+    assert result.returncode == 1
+    assert DECKY_QUESTION in result.stdout
+    assert "nothing was installed" in result.stderr
+    assert "Install Decky Loader (https://decky.xyz)" in result.stderr
+    assert not log.exists()
+    assert log_lines(state, "sudo.log") == []
+    assert decky_installer_runs(state) == 0
+    assert not decky_loader(tmp_path).exists()
+    assert not plugin_dir.exists()
+
+
+def test_no_decky_on_a_stock_deck_uses_the_temporary_password(tmp_path: Path) -> None:
+    """Two questions, two answers: Decky's installer runs with the
+    temporary password on sudo's stdin, like the plugin's own steps, and
+    the password is gone at the end."""
+    base = release(tmp_path)
+    plugin_dir = tmp_path / "plugins"
+    stock_deck(tmp_path)
+    state = without_decky(tmp_path, "y", "yes")
+    result = run_install(tmp_path, base, plugin_dir)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.index(DECKY_QUESTION) < result.stdout.index(QUESTION)
+    assert decky_installer_runs(state) == 1
+    assert (plugin_dir / "Moonlight Sync" / "plugin.json").exists()
+    assert (state / "status").read_text().strip() == "NP"
+    assert not (state / "password").exists()
+    assert "You may be asked" not in result.stdout
+    sudo = log_lines(state, "sudo.log")
+    assert sudo[:2] == ["-n true", "-S -k -p  true"]
+    assert sudo[2].startswith("-S -p ")
+    assert sudo[2].endswith("/" + DECKY_SCRIPT)
+    assert [line.split()[2] for line in sudo[3:7]] == ["mkdir", "rm", "unzip", "systemctl"]
+
+
+def test_yes_to_decky_but_no_to_the_password_installs_nothing(tmp_path: Path) -> None:
+    """The second question reads the second line, not the first again."""
+    base = release(tmp_path)
+    plugin_dir = tmp_path / "plugins"
+    stock_deck(tmp_path)
+    state = without_decky(tmp_path, "y", "n")
+    result = run_install(tmp_path, base, plugin_dir)
+    assert result.returncode == 1
+    assert DECKY_QUESTION in result.stdout
+    assert QUESTION in result.stdout
+    assert "nothing was installed" in result.stderr
+    assert decky_installer_runs(state) == 0
+    assert not decky_loader(tmp_path).exists()
+    assert not plugin_dir.exists()
+    assert not password_was_set(state)
+    assert log_lines(state, "sudo.log") == ["-n true"]
+
+
+def test_a_decky_installer_that_cannot_be_downloaded_installs_nothing(tmp_path: Path) -> None:
+    base = release(tmp_path)
+    plugin_dir = tmp_path / "plugins"
+    stock_deck(tmp_path)
+    state = without_decky(tmp_path, "y", "y")
+    decky_installer(tmp_path).unlink()
+    result = run_install(tmp_path, base, plugin_dir)
+    assert result.returncode == 1
+    assert f"install.sh: could not download {decky_installer(tmp_path).as_uri()}" in result.stderr
+    assert "Nothing was installed" in result.stderr
+    # Before the password question, so no password was ever set.
+    assert QUESTION not in result.stdout
+    assert not password_was_set(state)
+    assert log_lines(state, "sudo.log") == []
+    assert not plugin_dir.exists()
+
+
+def test_a_plugin_that_cannot_be_downloaded_leaves_decky_uninstalled(tmp_path: Path) -> None:
+    """Everything is downloaded and verified before anything is installed,
+    Decky Loader included."""
+    base = release(tmp_path)
+    (asset_dir(base) / ASSET).unlink()
+    plugin_dir = tmp_path / "plugins"
+    state = without_decky(tmp_path, "y")
+    result = run_install(tmp_path, base, plugin_dir)
+    assert result.returncode == 1
+    assert "(is latest released?)" in result.stderr
+    assert decky_installer_runs(state) == 0
+    assert log_lines(state, "sudo.log") == []
+    assert not decky_loader(tmp_path).exists()
+
+
+def test_a_failed_decky_installer_stops_before_the_plugin(tmp_path: Path) -> None:
+    base = release(tmp_path)
+    plugin_dir = tmp_path / "plugins"
+    stock_deck(tmp_path)
+    state = without_decky(tmp_path, "y", "y")
+    (state / "decky-installer-fails").touch()
+    result = run_install(tmp_path, base, plugin_dir)
+    assert result.returncode == 1
+    assert "Decky Loader's installer failed (exit 1)" in result.stderr
+    assert "Moonlight Sync was not installed" in result.stderr
+    assert decky_installer_runs(state) == 1
+    assert not plugin_dir.exists()
+    assert "Installed Moonlight Sync" not in result.stdout
+    # The temporary password still comes off.
+    assert "Removed the temporary password" in result.stdout
+    assert (state / "status").read_text().strip() == "NP"
+    assert not (state / "password").exists()
+
+
+def test_a_decky_installer_that_installs_nothing_stops_before_the_plugin(
+    tmp_path: Path,
+) -> None:
+    base = release(tmp_path)
+    plugin_dir = tmp_path / "plugins"
+    state = without_decky(tmp_path, "y")
+    (state / "decky-installer-installs-nothing").touch()
+    result = run_install(tmp_path, base, plugin_dir)
+    assert result.returncode == 1
+    assert f"there is still no {decky_loader(tmp_path)}" in result.stderr
+    assert "Moonlight Sync was not installed" in result.stderr
+    assert decky_installer_runs(state) == 1
+    assert not plugin_dir.exists()
+
+
+def test_piped_to_sh_the_decky_installer_never_reads_the_script(tmp_path: Path) -> None:
+    """`curl … | sh`: install.sh is on stdin, and the fixture installer
+    eats its own stdin whole. Were that the script's, sh would lose
+    whatever of it it had not read yet. How much that is depends on the sh
+    (dash reads a pipe 8 KiB at a time, bash a byte at a time), so the
+    script is followed by more than any sh buffers and then one last
+    command, which must still run."""
+    base = release(tmp_path)
+    plugin_dir = tmp_path / "plugins"
+    state = without_decky(tmp_path, "y")
+    trailer = ": padding\n" * 20000 + "echo the-trailer-ran\n"
+    result = subprocess.run(
+        ["sh"],
+        input=(ROOT / "install.sh").read_text() + trailer,
+        capture_output=True,
+        text=True,
+        env=install_env(tmp_path, base, plugin_dir),
+        cwd=str(tmp_path),
+        timeout=60,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert decky_installer_runs(state) == 1
+    assert (plugin_dir / "Moonlight Sync" / "plugin.json").exists()
+    assert "Installed Moonlight Sync" in result.stdout
+    assert (state / "decky-installer.stdin").read_bytes() == b""
+    assert "the-trailer-ran" in result.stdout
 
 
 def test_the_real_install_sh_is_syntactically_valid() -> None:
