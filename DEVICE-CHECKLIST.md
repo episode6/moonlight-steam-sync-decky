@@ -439,6 +439,15 @@ and superseded by §8.*
       documented as `curl … | sh`, where it re-executes itself under
       sudo), and that a return to Gaming Mode is enough for the tab to
       appear.
+- [ ] **The README's manual install.** With the plugin not installed,
+      follow README "Manual install": Decky's settings → General →
+      *Developer mode* on, then Developer → *Install Plugin from ZIP
+      File* → *Browse*, choose a release's `Moonlight-Sync.zip`, confirm
+      Decky's dialog. Expect Moonlight Sync in the Decky tab with no
+      restart, and Settings → About showing that release. Do it again
+      over the installed copy: expect Decky to ask to reinstall or
+      overwrite, and the plugin to reload. **Unmeasured until this is
+      walked:** the labels as the README spells them.
 - [ ] **A missing release is explained.** Run with
       `MOONLIGHT_SYNC_VERSION=v9.9.9`; expect
       `install.sh: could not download …/Moonlight-Sync.zip (is v9.9.9
