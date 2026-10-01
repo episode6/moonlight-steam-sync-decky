@@ -31,11 +31,12 @@ and needs CLI 0.4.0 or newer.
 
 Moonlight Sync is not in the Decky plugin store and will not be: the
 store does not accept plugins written mostly with generative AI, which
-this one was, and it does not list plugins that can update themselves
-(see Decky's wiki, *Submitting plugins* and *Plugin safety*). So the
-first install is a manual one: from the GitHub release with the one-liner
-below, or by hand ("Manual install"). From 0.12.0 on, the plugin then
-updates itself from Game Mode ("Updating"). To run something newer than
+this one was (see Decky's wiki, *Submitting plugins*). So the first
+install is a manual one: from the GitHub release with the one-liner
+below, or by hand ("Manual install"). And because the store is not there
+to deliver updates, the plugin brings its own: from 0.12.0 on it updates
+itself from Game Mode, through Decky's own installer ("Updating"). To
+run something newer than
 the latest release, build from source (see "Developing") or use the
 `Moonlight-Sync` artifact of a CI run as the manual zip.
 
