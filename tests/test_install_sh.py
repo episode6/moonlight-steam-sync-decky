@@ -94,6 +94,8 @@ def state_dir(tmp_path: Path) -> Path:
     - `sudo-needs-password`: when present, `sudo` is a stock Deck's: `-n`
       fails, and a command runs only with `-S` and the account's password
       on stdin (absent, it runs anything, like a NOPASSWD sudo);
+    - `passwd-sets-other`: when present, `passwd` sets a password that is
+      not the one it was given (a passwd that asked on the terminal);
     - `passwd-set-fails`, `passwd-d-fails`, `systemctl-fails`,
       `systemctl-slow`: when present, that step fails (or, for the last,
       touches `systemctl-started` and takes two seconds);
@@ -178,6 +180,7 @@ def fake_bin(tmp_path: Path) -> Path:
         "        IFS= read -r first || exit 1\n"
         "        IFS= read -r second || exit 1\n"
         '        [ "$first" = "$second" ] || exit 1\n'
+        '        [ ! -e "$state/passwd-sets-other" ] || first="typed by hand"\n'
         '        printf "%s" "$first" > "$state/password"\n'
         '        echo P > "$state/status" ;;\n'
         "esac\n"
@@ -443,17 +446,19 @@ def test_no_password_and_yes_installs_with_a_temporary_one(tmp_path: Path) -> No
     assert removed < result.stdout.index("Installed Moonlight Sync")
     assert "You may be asked" not in result.stdout
     assert "WARNING" not in result.stderr
-    # The probe, the four install steps with the password on stdin (the
-    # shim refuses any other way), the removal, then the cached credential
-    # dropped. Nothing ran under sudo before the password was set.
+    # The probe, the proof that sudo takes the temporary password, the
+    # four install steps with it on stdin (the shim refuses any other way),
+    # the removal, then the cached credential dropped. Nothing but `true`
+    # ran under sudo before the password was set and proven.
     user = subprocess.run(
         ["id", "-un"], capture_output=True, text=True, check=True
     ).stdout.strip()
     sudo = log_lines(state, "sudo.log")
     assert sudo[0] == "-n true"
-    assert [line.split()[2] for line in sudo[1:5]] == ["mkdir", "rm", "unzip", "systemctl"]
-    assert all(line.startswith("-S -p ") for line in sudo[1:5])
-    assert sudo[5:] == [f"-S -k -p  passwd -d {user}", "-k"]
+    assert sudo[1] == "-S -k -p  true"
+    assert [line.split()[2] for line in sudo[2:6]] == ["mkdir", "rm", "unzip", "systemctl"]
+    assert all(line.startswith("-S -p ") for line in sudo[2:6])
+    assert sudo[6:] == [f"-S -k -p  passwd -d {user}", "-k"]
     assert log_lines(state, "passwd.log")[:2] == [f"-S {user}", user]
 
 
@@ -592,8 +597,29 @@ def test_a_temporary_password_that_cannot_be_set_installs_nothing(tmp_path: Path
     assert result.returncode == 1
     assert "could not set the temporary password" in result.stderr
     assert "WARNING" not in result.stderr
+    assert "Removed the temporary password" not in result.stdout
     assert not plugin_dir.exists()
     assert log_lines(state, "sudo.log") == ["-n true"]
+
+
+def test_a_password_that_is_not_the_temporary_one_is_left_alone(tmp_path: Path) -> None:
+    """A passwd that did not take the piped password (it asked on the
+    terminal and the user typed their own): sudo refuses the temporary
+    one, so nothing is installed, nothing claims the password is the
+    temporary one for certain, and no removal is attempted with it."""
+    base = release(tmp_path)
+    plugin_dir = tmp_path / "plugins"
+    state = stock_deck(tmp_path)
+    (state / "passwd-sets-other").touch()
+    result = run_install(tmp_path, base, plugin_dir)
+    assert result.returncode == 1
+    assert "sudo did not accept the temporary one" in result.stderr
+    assert "if you did not" in result.stderr
+    assert "WARNING" not in result.stderr
+    assert "Removed the temporary password" not in result.stdout
+    assert not plugin_dir.exists()
+    assert (state / "password").read_text() == "typed by hand"
+    assert log_lines(state, "sudo.log") == ["-n true", "-S -k -p  true"]
 
 
 def test_the_real_install_sh_is_syntactically_valid() -> None:

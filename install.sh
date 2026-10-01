@@ -107,6 +107,12 @@ as_root() {
 }
 
 remove_temp_password() {
+    # An interrupt between the mark and the set: there is nothing to
+    # remove, and nothing to say.
+    if [ "$(password_status "$TEMP_PASSWORD_USER")" = "NP" ]; then
+        TEMP_PASSWORD_USER=""
+        return 0
+    fi
     # -k: never lean on a cached credential here, so this either removes
     # the password or visibly fails.
     printf '%s\n' "$TEMP_PASSWORD" |
@@ -129,6 +135,9 @@ remove_temp_password() {
 cleanup() {
     status=$?
     trap - EXIT INT TERM HUP
+    # Nothing below may end the cleanup early: after a hangup even an echo
+    # fails (the terminal is gone), and set -e would stop there.
+    set +e
     [ -z "$TEMP_PASSWORD_USER" ] || remove_temp_password
     [ -z "$TMP_DIR" ] || rm -rf "$TMP_DIR"
     exit "$status"
@@ -166,11 +175,30 @@ offer_temp_password() {
     # Marked before it is set, so an interrupt in between still cleans up
     # (removing a password that never landed fails quietly and checks out).
     TEMP_PASSWORD_USER="$USER_NAME"
-    if ! yes "$TEMP_PASSWORD" | passwd "$USER_NAME" >/dev/null 2>&1; then
-        if [ "$(password_status "$USER_NAME")" = "NP" ]; then
-            TEMP_PASSWORD_USER=""
-        fi
-        echo "install.sh: could not set the temporary password. Set one with \`passwd\`, then run this again." >&2
+    # Without a controlling terminal (setsid), so that passwd takes the
+    # password from the pipe whichever way it was built: through PAM it
+    # reads stdin anyway, without PAM it asks on /dev/tty when there is one.
+    set_status=0
+    if command -v setsid >/dev/null 2>&1; then
+        yes "$TEMP_PASSWORD" | setsid -w passwd "$USER_NAME" >/dev/null 2>&1 || set_status=$?
+    else
+        yes "$TEMP_PASSWORD" | passwd "$USER_NAME" >/dev/null 2>&1 || set_status=$?
+    fi
+    if [ "$(password_status "$USER_NAME")" = "NP" ]; then
+        TEMP_PASSWORD_USER=""
+        echo "install.sh: could not set the temporary password (passwd exited ${set_status})." >&2
+        echo "  Nothing was installed. Set a password with \`passwd\`, then run this again." >&2
+        exit 1
+    fi
+    # Proof before anything relies on it: sudo takes the temporary
+    # password. If not, the account has a password that is not known to be
+    # this one, so it is not this script's to feed to sudo or to remove.
+    if ! printf '%s\n' "$TEMP_PASSWORD" | sudo -S -k -p '' true 2>/dev/null; then
+        TEMP_PASSWORD_USER=""
+        echo "install.sh: ${USER_NAME} now has a password, but sudo did not accept the temporary one." >&2
+        echo "  Nothing was installed, and the password was left as it is: if you did not" >&2
+        echo "  type one yourself just now, it is '${TEMP_PASSWORD}'. Choose your own with \`passwd\`," >&2
+        echo "  then run this again." >&2
         exit 1
     fi
     echo "Temporary password set. It is removed when this script exits."

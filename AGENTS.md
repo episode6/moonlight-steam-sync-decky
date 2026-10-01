@@ -126,7 +126,8 @@ install.sh                  the end-user installer: curl the latest (or pinned) 
                             NP, whose `sudo -n true` fails is offered a temporary one
                             as Decky's installer does: asked on MOONLIGHT_SYNC_TTY,
                             default /dev/tty, anything but a yes installs nothing;
-                            `Decky!` set with passwd, fed to `sudo -S` by as_root(),
+                            `Decky!` set with `setsid -w passwd` off a pipe, proven
+                            with `sudo -S -k true`, fed to `sudo -S` by as_root(),
                             removed with `passwd -d` after the restart and by the
                             EXIT trap, which INT / TERM / HUP are turned into)
 cli/                        the moonlight-steam-sync CLI (its own AGENTS.md, README.md,
@@ -1771,7 +1772,16 @@ On-device checks are not merge criteria; they are collected in
   included, exits 1 with nothing installed. The password is Decky's own
   `Decky!`, fixed and printed on purpose: a script killed outright leaves
   a password the user knows, where a random one would lock them out of
-  sudo. It goes to `sudo -S` on stdin only in that mode (a user's own
+  sudo. It is set with `yes | setsid -w passwd` (plain `passwd` without
+  `setsid`): with no controlling terminal `passwd` reads the pipe
+  whichever way it was built, where a non-PAM one would ask on
+  `/dev/tty` (PR 75's review; SteamOS's goes through PAM, which reads
+  stdin, and is what Decky's installer relies on). Nothing relies on the
+  set until `sudo -S -k true` has taken the password: when it does not,
+  the account has a password that is not known to be the script's (a
+  `passwd` that asked the user), so the script says so, installs
+  nothing and neither feeds nor removes it. It goes to `sudo -S` on
+  stdin only in that mode (a user's own
   password is always typed at sudo's prompt), and is removed with `sudo
   -S -k passwd -d` right after the restart, or by the `EXIT` trap on any
   earlier exit; `INT`, `TERM` and `HUP` are trapped into an `exit`
@@ -1780,7 +1790,8 @@ On-device checks are not merge criteria; they are collected in
   command that removes it. The tests hold each path: yes (the argv of
   every sudo call, nothing under sudo before the password is set), every
   no, NOPASSWD sudo, an account with a password never asked, a failed
-  step, each signal mid-restart, a removal or a set that fails.
+  step, each signal mid-restart, a removal or a set that fails, a set
+  that lands another password.
   `cli/install.sh` is the CLI-only
   installer (the release's `moonlight-steam-sync.pyz` into `~/.local/bin`,
   adding it to `PATH` in the rc file once), with the same kind of seam,

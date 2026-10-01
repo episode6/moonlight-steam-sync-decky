@@ -406,14 +406,18 @@ and superseded by §8.*
       Expect the question *Set a temporary password for the install?*
       naming `Decky!`. Answer `n`: expect exit 1, "nothing was installed",
       `passwd -S deck` still `NP` and no plugin directory. Run it again
-      and answer `y`: expect no `sudo` prompt at all, the install and the
+      and answer `y`: expect no `sudo` prompt at all, no *New password:*
+      prompt and no pause after the answer, the install and the
       restart, *Removed the temporary password* before the final line,
       and `passwd -S deck` back at `NP` afterwards. Run it once more,
       answer `y` and press Ctrl+C as soon as it says *Temporary password
       set*: expect `passwd -S deck` at `NP` again. **Unmeasured until this is
       walked:** that SteamOS's `passwd` takes the new password from a
-      pipe and that `passwd -S` answers for one's own account without
-      root (both are what Decky's installer relies on).
+      pipe (run under `setsid`, so with no terminal to ask on) and that
+      `passwd -S` answers for one's own account without root (both are
+      what Decky's installer relies on). Should the pipe not be read, the
+      script says *sudo did not accept the temporary one* and installs
+      nothing.
 - [ ] **A missing release is explained.** Run with
       `MOONLIGHT_SYNC_VERSION=v9.9.9`; expect
       `install.sh: could not download …/Moonlight-Sync.zip (is v9.9.9
