@@ -279,8 +279,8 @@ install_decky() {
     echo "Installing Decky Loader with its own installer (this needs sudo)."
     [ -n "$TEMP_PASSWORD_USER" ] || echo "You may be asked for your password now."
     # Its shebang says sh but it is written in bash (as SteamOS's sh is).
-    shell=sh
-    ! command -v bash >/dev/null 2>&1 || shell=bash
+    shell="sh"
+    ! command -v bash >/dev/null 2>&1 || shell="bash"
     # Never the script's own stdin: under `curl | sh` that is this script,
     # and anything the installer read from it would be lost to this shell.
     decky_status=0
