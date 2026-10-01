@@ -121,7 +121,15 @@ package.json                scripts, deps, "version" (the plugin's and the CLI's
 project-icon.svg            the repo's icon (moved over with the CLI)
 install.sh                  the end-user installer: curl the latest (or pinned) release
                             zip + .sha256, verify, unzip into ~/homebrew/plugins/, restart
-                            plugin_loader (two explained sudo prompts, never non-interactive)
+                            plugin_loader (explained sudo prompts, interactive with the
+                            user's own password; an account with none, `passwd -S`'s
+                            NP, whose `sudo -n true` fails is offered a temporary one
+                            as Decky's installer does: asked on MOONLIGHT_SYNC_TTY,
+                            default /dev/tty, anything but a yes installs nothing;
+                            `Decky!` set with `setsid -w passwd` off a pipe, proven
+                            with `sudo -S -k true`, fed to `sudo -S` by as_root(),
+                            removed with `passwd -d` after the restart and by the
+                            EXIT trap, which INT / TERM / HUP are turned into)
 cli/                        the moonlight-steam-sync CLI (its own AGENTS.md, README.md,
                             CHANGELOG.md up to 0.4.0, pyproject.toml, src/, tests/,
                             scripts/record_fixtures.py); install.sh: the CLI-only
@@ -925,7 +933,9 @@ src/test/fixtures.ts        loads tests/fixtures for vitest
 tests/                      pytest: fake_cli.py, fixtures/, conftest.py, test_*.py,
                             test_install_sh.py (install.sh end to end via
                             MOONLIGHT_SYNC_BASE_URL against a file:// fixture,
-                            sudo/systemctl shimmed on PATH), test_cli_install_sh.py
+                            sudo/systemctl/passwd shimmed on PATH, their state in
+                            tmp_path/fakestate; the temporary password's every path),
+                            test_cli_install_sh.py
                             (cli/install.sh the same way, HOME in tmp_path);
                             updatezip.py (build_zip(), good and hostile plugin zips,
                             and patch_central() for what zipfile never writes),
@@ -1754,8 +1764,38 @@ On-device checks are not merge criteria; they are collected in
   verify, remove any previous install, unzip into `~/homebrew/plugins/`,
   restart `plugin_loader`); its `MOONLIGHT_SYNC_BASE_URL` seam lets
   `tests/test_install_sh.py` point the real `curl` at a `file://` fixture
-  tree, with only `sudo`/`systemctl` shimmed on `PATH`, so no sudo and no
-  network are ever touched by the test. `cli/install.sh` is the CLI-only
+  tree, with only `sudo`/`systemctl`/`passwd` shimmed on `PATH`, so no
+  sudo, no network and no real account are ever touched by the test. The
+  temporary password (the user's decision of 2026-10-01: do what Decky
+  Loader's installer does) is offered only to an account `passwd -S`
+  calls `NP` whose `sudo -n true` fails, i.e. where sudo could not work
+  at all; the question is read from `MOONLIGHT_SYNC_TTY` (default
+  `/dev/tty`, since under `curl | sh` stdin is the script; the tests
+  always point it at a file), and anything but `y` / `yes`, no terminal
+  included, exits 1 with nothing installed. The password is Decky's own
+  `Decky!`, fixed and printed on purpose: a script killed outright leaves
+  a password the user knows, where a random one would lock them out of
+  sudo. It is set with `yes | setsid -w passwd` (plain `passwd` without
+  `setsid`): with no controlling terminal `passwd` reads the pipe
+  whichever way it was built, where a non-PAM one would ask on
+  `/dev/tty` (PR 75's review; SteamOS's goes through PAM, which reads
+  stdin, and is what Decky's installer relies on). Nothing relies on the
+  set until `sudo -S -k true` has taken the password: when it does not,
+  the account has a password that is not known to be the script's (a
+  `passwd` that asked the user), so the script says so, installs
+  nothing and neither feeds nor removes it. It goes to `sudo -S` on
+  stdin only in that mode (a user's own
+  password is always typed at sudo's prompt), and is removed with `sudo
+  -S -k passwd -d` right after the restart, or by the `EXIT` trap on any
+  earlier exit; `INT`, `TERM` and `HUP` are trapped into an `exit`
+  because a plain `sh` runs no `EXIT` trap when a signal kills it. A
+  removal that fails is a warning on stderr naming the password and the
+  command that removes it. The tests hold each path: yes (the argv of
+  every sudo call, nothing under sudo before the password is set), every
+  no, NOPASSWD sudo, an account with a password never asked, a failed
+  step, each signal mid-restart, a removal or a set that fails, a set
+  that lands another password.
+  `cli/install.sh` is the CLI-only
   installer (the release's `moonlight-steam-sync.pyz` into `~/.local/bin`,
   adding it to `PATH` in the rc file once), with the same kind of seam,
   `MOONLIGHT_STEAM_SYNC_BASE_URL`, for `tests/test_cli_install_sh.py`. The

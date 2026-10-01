@@ -6,6 +6,15 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **`install.sh` no longer needs a password set first.** On an account
+  without one (a stock Steam Deck's `deck` user) it offers what Decky
+  Loader's own installer does: set a temporary password (`Decky!`),
+  install with it and remove it again when it finishes, fails or is
+  interrupted. It asks first; on a no it stops before installing anything.
+  An account that has a password is asked for it as before.
+
 ### Fixed
 
 - **Check and Wake touched the line above them** in the Quick Access

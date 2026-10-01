@@ -52,12 +52,16 @@ shipped and the new one no longer does cannot linger, unzips the new one
 into `~/homebrew/plugins/` and restarts `plugin_loader` so the new plugin
 loads. Both the install and the restart run through `sudo` (Decky's plugin
 directory belongs to root on a stock install), so you will be asked for
-your password twice on the terminal; the script never runs `sudo`
-non-interactively. A stock Steam Deck ships with no password for the
-`deck` user, so if you have never set one, run `passwd` in a Desktop Mode
-terminal first. It is safe to re-run: it always re-downloads and
-reinstalls, even when already current, so re-running it is also how you
-pick up a new release.
+your password on the terminal. A stock Steam Deck ships with no password
+for the `deck` user, and `sudo` refuses an account without one. If you
+have never set one, the script offers what Decky Loader's own installer
+does: it sets a temporary password (`Decky!`), installs with it, and
+removes it again when it finishes, also when it fails or is interrupted.
+It asks first and does that only on a yes; answer no and it stops before
+installing anything, so you can run `passwd` in a Desktop Mode terminal
+and start it again. A password you set yourself is never touched. It is
+safe to re-run: it always re-downloads and reinstalls, even when already
+current, so re-running it is also how you pick up a new release.
 
 ### Manual install
 

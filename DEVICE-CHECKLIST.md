@@ -11,7 +11,8 @@ section 5), not decided here.
 
 1. Get a build onto the Deck: `curl -fsSL
    https://raw.githubusercontent.com/episode6/moonlight-steam-sync-decky/main/install.sh
-   | sh` (two `sudo` prompts, explained by the script). For a build newer
+   | sh` (`sudo` prompts, explained by the script; without a password
+   set it offers a temporary one, section 5). For a build newer
    than the latest release, build off-device with `pnpm install && pnpm
    run build && backend/entrypoint.sh && python3 scripts/package.py`, or
    take the `Moonlight-Sync` artifact from a CI run, and install it by
@@ -392,15 +393,33 @@ and superseded by §8.*
 ## 5. PR-8: this checklist and `install.sh`
 
 - [ ] **`install.sh` on a Deck**: run the
-      one-liner from a clean Deck (no plugin installed yet). A stock Deck
-      has no password for the `deck` user, so run `passwd` in a Desktop
-      Mode terminal first if you never set one. Expect two `sudo` password
-      prompts (unzip into `~/homebrew/plugins/`, restart `plugin_loader`),
+      one-liner from a clean Deck (no plugin installed yet), with a
+      password set for the `deck` user (the next item is the Deck without
+      one). Expect `sudo` to ask for it (unzip into `~/homebrew/plugins/`,
+      restart `plugin_loader`),
       then Moonlight Sync appears in the Quick Access menu's Decky tab,
       and a final line naming the version that actually landed (read from
       the installed `package.json`, not the tag asked for). Re-run it;
       expect it to succeed again (reinstall/overwrite) without asking
       anything unexpected.
+- [ ] **`install.sh` on a Deck with no password.** On a Deck whose
+      `deck` user has none (`passwd -S deck` says `NP`; `sudo passwd -d
+      deck` gets a Deck that has one back there), run the one-liner.
+      Expect the question *Set a temporary password for the install?*
+      naming `Decky!`. Answer `n`: expect exit 1, "nothing was installed",
+      `passwd -S deck` still `NP` and no plugin directory. Run it again
+      and answer `y`: expect no `sudo` prompt at all, no *New password:*
+      prompt and no pause after the answer, the install and the
+      restart, *Removed the temporary password* before the final line,
+      and `passwd -S deck` back at `NP` afterwards. Run it once more,
+      answer `y` and press Ctrl+C as soon as it says *Temporary password
+      set*: expect `passwd -S deck` at `NP` again. **Unmeasured until this is
+      walked:** that SteamOS's `passwd` takes the new password from a
+      pipe (run under `setsid`, so with no terminal to ask on) and that
+      `passwd -S` answers for one's own account without root (both are
+      what Decky's installer relies on). Should the pipe not be read, the
+      script says *sudo did not accept the temporary one* and installs
+      nothing.
 - [ ] **A missing release is explained.** Run with
       `MOONLIGHT_SYNC_VERSION=v9.9.9`; expect
       `install.sh: could not download …/Moonlight-Sync.zip (is v9.9.9
