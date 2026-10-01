@@ -675,6 +675,8 @@ def without_decky(tmp_path: Path, *answers: str) -> Path:
         "#!/bin/sh\n"
         f'state="{state}"\n'
         'echo run >> "$state/decky-installer.log"\n'
+        # The terminal the questions were read from (fd 3) is closed by now.
+        '[ ! -e /dev/fd/3 ] || echo open >> "$state/decky-installer.fd3"\n'
         # Whatever is on stdin is eaten, as a careless installer might: it
         # must never be the script install.sh itself is being read from.
         'cat > "$state/decky-installer.stdin"\n'
@@ -721,6 +723,7 @@ def test_no_decky_and_yes_installs_decky_then_the_plugin(tmp_path: Path) -> None
     assert decky_installer(tmp_path).as_uri() in result.stdout
     assert "fake-decky-installer" in result.stdout
     assert decky_installer_runs(state) == 1
+    assert not (state / "decky-installer.fd3").exists()
     assert decky_loader(tmp_path).exists()
     assert (plugin_dir / "Moonlight Sync" / "plugin.json").exists()
     # Decky's installer first, under sudo, then the plugin's four steps.
@@ -776,6 +779,9 @@ def test_no_decky_on_a_stock_deck_uses_the_temporary_password(tmp_path: Path) ->
     assert sudo[2].startswith("-S -p ")
     assert sudo[2].endswith("/" + DECKY_SCRIPT)
     assert [line.split()[2] for line in sudo[3:7]] == ["mkdir", "rm", "unzip", "systemctl"]
+    # Its stdin is the pipe the password came down, which sudo has read:
+    # nothing of it (the password least of all) reaches the installer.
+    assert (state / "decky-installer.stdin").read_bytes() == b""
 
 
 def test_yes_to_decky_but_no_to_the_password_installs_nothing(tmp_path: Path) -> None:

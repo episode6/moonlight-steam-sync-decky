@@ -136,9 +136,10 @@ install.sh                  the end-user installer: curl the latest (or pinned) 
                             whether to install it; a yes downloads Decky's own
                             install_release.sh (MOONLIGHT_SYNC_DECKY_INSTALLER_URL)
                             with the zip and install_decky() runs it through
-                            as_root(), stdin /dev/null, before the plugin's steps;
+                            as_root(), stdin /dev/null (or the temporary password's
+                            pipe, read by sudo), before the plugin's steps;
                             anything else installs nothing; ask() reads both
-                            questions off one fd 3
+                            questions off one fd 3, closed after the last one
 cli/                        the moonlight-steam-sync CLI (its own AGENTS.md, README.md,
                             CHANGELOG.md up to 0.4.0, pyproject.toml, src/, tests/,
                             scripts/record_fixtures.py); install.sh: the CLI-only
@@ -1820,8 +1821,10 @@ On-device checks are not merge criteria; they are collected in
   the installer through `as_root` (as root is how that script runs
   itself, and `SUDO_USER` is how it finds the home directory) before the
   plugin's own steps: with `bash` when there is one, since the script is
-  written in bash under an `sh` shebang, and with stdin from `/dev/null`,
-  since under `curl | sh` stdin is `install.sh` itself. An installer
+  written in bash under an `sh` shebang, and with nothing on stdin
+  (`/dev/null`, or with the temporary password `as_root`'s pipe, whose
+  one line sudo has read), since under `curl | sh` stdin is `install.sh`
+  itself. An installer
   that fails, or exits 0 and leaves no `PluginLoader`, stops the script
   before the plugin is touched. There is no checksum to verify it
   against: Decky publishes none, and it is the same file its README has
@@ -1831,7 +1834,8 @@ On-device checks are not merge criteria; they are collected in
   by a Steam started after the install; unmeasured, DEVICE-CHECKLIST
   §5). Both questions go through `ask()`, which opens the terminal once
   on fd 3, so a second question reads the second line (a test's terminal
-  is a file). The tests hold: Decky present (no question, the installer
+  is a file), and which is closed after the last question, before
+  anything runs under sudo. The tests hold: Decky present (no question, the installer
   never requested), yes (the installer under sudo before the four
   plugin steps), every no, a stock Deck (both questions, the installer
   with the temporary password on sudo's stdin; yes then no installing

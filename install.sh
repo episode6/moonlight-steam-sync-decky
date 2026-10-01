@@ -283,6 +283,8 @@ install_decky() {
     ! command -v bash >/dev/null 2>&1 || shell="bash"
     # Never the script's own stdin: under `curl | sh` that is this script,
     # and anything the installer read from it would be lost to this shell.
+    # So /dev/null, or with the temporary password as_root's own pipe, of
+    # which sudo has read the one line: nothing to read either way.
     decky_status=0
     as_root "$shell" "${TMP_DIR}/${DECKY_INSTALLER}" </dev/null || decky_status=$?
     if [ "$decky_status" != 0 ]; then
@@ -335,6 +337,13 @@ fi
 echo "sha256: ${ACTUAL}"
 
 offer_temp_password
+
+# That was the last question: nothing run from here on (sudo and Decky's
+# installer least of all) inherits the terminal on fd 3.
+if [ "$TTY_STATE" = 1 ]; then
+    exec 3<&-
+    TTY_STATE=-1
+fi
 
 [ "$INSTALL_DECKY" != 1 ] || install_decky
 
