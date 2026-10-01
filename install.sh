@@ -25,11 +25,23 @@
 #
 # ~/homebrew/plugins/ belongs to root on a stock Decky Loader install, so
 # both unzipping into it and restarting plugin_loader need sudo. This
-# script runs `sudo` exactly where those two steps need it, interactively:
-# it is never run with a cached/NOPASSWD assumption or any non-interactive
-# sudo flag, so you will be prompted for your password on the terminal. A
-# stock Steam Deck ships with no password for the `deck` user, so if you
-# have never set one, run `passwd` in a Desktop Mode terminal first.
+# script runs `sudo` exactly where those two steps need it, and with a
+# password set it does so interactively: you are prompted on the terminal.
+#
+# A stock Steam Deck ships with no password for the `deck` user, and sudo
+# refuses an account without one. So, as Decky Loader's own installer
+# does, when your account has no password (and sudo needs one) this script
+# offers to set a temporary one ("Decky!", the one Decky's installer uses),
+# install with it, and remove it again when it exits, however it exits. It
+# asks first, on the terminal, and does nothing of the kind unless you
+# answer yes; answer no (or run it with no terminal to ask on) and it
+# stops before installing anything, so you can run `passwd` yourself.
+# Nothing here ever touches a password you set: the offer is only made to
+# an account that has none.
+#
+# MOONLIGHT_SYNC_TTY names the terminal that question is read from
+# (default /dev/tty: under `curl | sh` the script itself is on stdin). Like
+# MOONLIGHT_SYNC_BASE_URL it is a seam for tests/test_install_sh.py.
 #
 # This installs the plugin only. moonlight-steam-sync, the CLI it drives
 # (cli/ in this repo), has its own installer, cli/install.sh, for using it
@@ -65,8 +77,106 @@ require sha256sum
 require unzip
 require sudo
 
+# The temporary password offered to an account that has none: Decky
+# Loader's installer's own, so there is one such password to know about,
+# and a known one on purpose -- were the script killed outright before it
+# could remove it, a random one would lock you out of sudo.
+TEMP_PASSWORD='Decky!'
+TTY="${MOONLIGHT_SYNC_TTY:-/dev/tty}"
+USER_NAME=$(id -un)
+# The account the temporary password is on right now, else empty.
+TEMP_PASSWORD_USER=""
+TMP_DIR=""
+
+# The second field of `passwd -S`: P (a password), NP (none), L (locked).
+# Empty when passwd is missing or will not say, which is "do not offer".
+password_status() {
+    command -v passwd >/dev/null 2>&1 || return 0
+    passwd -S "$1" 2>/dev/null | awk 'NR == 1 {print $2}'
+}
+
+# sudo for the install steps: interactive, except with the temporary
+# password, which is fed on stdin since nobody chose it and so nobody
+# should have to type it.
+as_root() {
+    if [ -n "$TEMP_PASSWORD_USER" ]; then
+        printf '%s\n' "$TEMP_PASSWORD" | sudo -S -p '' "$@"
+    else
+        sudo "$@"
+    fi
+}
+
+remove_temp_password() {
+    # -k: never lean on a cached credential here, so this either removes
+    # the password or visibly fails.
+    printf '%s\n' "$TEMP_PASSWORD" |
+        sudo -S -k -p '' passwd -d "$TEMP_PASSWORD_USER" >/dev/null 2>&1 || true
+    if [ "$(password_status "$TEMP_PASSWORD_USER")" = "NP" ]; then
+        # Drop sudo's cached credential too: the account is back to having
+        # no password, and should not keep a few minutes of sudo with it.
+        sudo -k 2>/dev/null || true
+        echo "Removed the temporary password: ${TEMP_PASSWORD_USER} has no password again."
+    else
+        echo >&2
+        echo "install.sh: WARNING: could not remove the temporary password." >&2
+        echo "  ${TEMP_PASSWORD_USER}'s password is still '${TEMP_PASSWORD}'. Remove it with" >&2
+        echo "    sudo passwd -d ${TEMP_PASSWORD_USER}" >&2
+        echo "  or choose your own with \`passwd\`." >&2
+    fi
+    TEMP_PASSWORD_USER=""
+}
+
+cleanup() {
+    status=$?
+    trap - EXIT INT TERM HUP
+    [ -z "$TEMP_PASSWORD_USER" ] || remove_temp_password
+    [ -z "$TMP_DIR" ] || rm -rf "$TMP_DIR"
+    exit "$status"
+}
+# A plain sh does not run its EXIT trap when a signal kills it, and the
+# temporary password must not outlive the script: turn each signal into an
+# exit.
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
+
+# Only for an account with no password, and only when sudo would ask for
+# one (`sudo -n true` succeeds where sudo needs none, e.g. NOPASSWD).
+offer_temp_password() {
+    [ "$(password_status "$USER_NAME")" = "NP" ] || return 0
+    if sudo -n true 2>/dev/null; then
+        return 0
+    fi
+    echo
+    echo "Your account (${USER_NAME}) has no password, and sudo needs one."
+    echo "This script can set a temporary password ('${TEMP_PASSWORD}'), install with it,"
+    echo "and remove it again when it finishes (Decky Loader's installer does the same)."
+    printf 'Set a temporary password for the install? [y/N] '
+    answer=""
+    { IFS= read -r answer <"$TTY"; } 2>/dev/null || answer=""
+    case "$answer" in
+        [Yy] | [Yy][Ee][Ss]) ;;
+        *)
+            echo
+            echo "install.sh: nothing was installed. Set a password with \`passwd\`, then run this again." >&2
+            exit 1
+            ;;
+    esac
+    # Marked before it is set, so an interrupt in between still cleans up
+    # (removing a password that never landed fails quietly and checks out).
+    TEMP_PASSWORD_USER="$USER_NAME"
+    if ! yes "$TEMP_PASSWORD" | passwd "$USER_NAME" >/dev/null 2>&1; then
+        if [ "$(password_status "$USER_NAME")" = "NP" ]; then
+            TEMP_PASSWORD_USER=""
+        fi
+        echo "install.sh: could not set the temporary password. Set one with \`passwd\`, then run this again." >&2
+        exit 1
+    fi
+    echo "Temporary password set. It is removed when this script exits."
+}
+
 TMP_DIR=$(mktemp -d)
-trap 'rm -rf "$TMP_DIR"' EXIT
 
 echo "Downloading ${ASSET} (${VERSION}) from ${REPO}..."
 # curl exits 22 on a 404, which with -f prints nothing useful. Say which
@@ -92,20 +202,30 @@ if [ "$EXPECTED" != "$ACTUAL" ]; then
 fi
 echo "sha256: ${ACTUAL}"
 
+offer_temp_password
+
 echo
 echo "Installing into ${PLUGIN_DIR}/ (this needs sudo: that directory"
-echo "belongs to root on a stock Decky Loader install). You may be asked"
-echo "for your password now."
-sudo mkdir -p "$PLUGIN_DIR"
+if [ -n "$TEMP_PASSWORD_USER" ]; then
+    echo "belongs to root on a stock Decky Loader install)."
+else
+    echo "belongs to root on a stock Decky Loader install). You may be asked"
+    echo "for your password now."
+fi
+as_root mkdir -p "$PLUGIN_DIR"
 # Remove any previous install first: unzip -o only overwrites files the
 # new zip still ships, so a module or asset a previous release shipped
 # and this one no longer does would otherwise be left behind forever.
-sudo rm -rf "${PLUGIN_DIR}/Moonlight Sync"
-sudo unzip -o "${TMP_DIR}/${ASSET}" -d "$PLUGIN_DIR"
+as_root rm -rf "${PLUGIN_DIR}/Moonlight Sync"
+as_root unzip -o "${TMP_DIR}/${ASSET}" -d "$PLUGIN_DIR"
 
 echo
 echo "Restarting plugin_loader so Moonlight Sync loads (needs sudo again)."
-sudo systemctl restart plugin_loader
+as_root systemctl restart plugin_loader
+
+# Done with sudo: take the temporary password off now rather than at exit
+# (cleanup still does it for every exit before this line).
+[ -z "$TEMP_PASSWORD_USER" ] || remove_temp_password
 
 # What landed, not what was asked for: with the default "latest" the tag
 # is not otherwise known here. package.json is in the zip and its
