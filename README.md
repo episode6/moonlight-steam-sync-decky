@@ -22,22 +22,21 @@ and needs CLI 0.4.0 or newer.
 
 ## Requirements
 
-- SteamOS (Steam Deck or a Deck-like) with Decky Loader.
+- SteamOS (Steam Deck or a Deck-like) with Decky Loader. The installer
+  below offers to install Decky Loader when it is missing.
 - A Moonlight client on the Deck (native `moonlight` or the Flathub
   flatpak), already paired with your host.
-- moonlight-steam-sync **0.4.0 or newer**. The plugin bundles the version it
-  was built for and installs it for you (below), so there is nothing to
-  install separately.
 
 ## Install
 
 Moonlight Sync is not in the Decky plugin store and will not be: the
 store does not accept plugins written mostly with generative AI, which
-this one was, and it does not list plugins that can update themselves
-(see Decky's wiki, *Submitting plugins* and *Plugin safety*). So the
-first install is a manual one: from the GitHub release with the one-liner
-below, or by hand ("Manual install"). From 0.12.0 on, the plugin then
-updates itself from Game Mode ("Updating"). To run something newer than
+this one was (see Decky's wiki, *Submitting plugins*). So the first
+install is a manual one: from the GitHub release with the one-liner
+below, or by hand ("Manual install"). And because the store is not there
+to deliver updates, the plugin brings its own: from 0.12.0 on it updates
+itself from Game Mode, through Decky's own installer ("Updating"). To
+run something newer than
 the latest release, build from source (see "Developing") or use the
 `Moonlight-Sync` artifact of a CI run as the manual zip.
 
@@ -45,12 +44,25 @@ the latest release, build from source (see "Developing") or use the
 curl -fsSL https://raw.githubusercontent.com/episode6/moonlight-steam-sync-decky/main/install.sh | sh
 ```
 
-`install.sh` downloads the latest (or a `MOONLIGHT_SYNC_VERSION`-pinned)
+`install.sh` first looks for Decky Loader
+(`~/homebrew/services/PluginLoader`). If it is not installed, the script
+says so and offers to install it: on a yes it downloads Decky Loader's
+[official installer](https://github.com/SteamDeckHomebrew/decky-installer)
+(the `install_release.sh` its README has you run) and runs it before
+installing the plugin; on anything else it stops with nothing downloaded
+or installed, so you can install Decky Loader your own way
+(<https://decky.xyz>) and start again. A Decky Loader that is already
+there is left exactly as it is. After a first install of Decky Loader its
+tab only appears once Steam has restarted: return to Gaming Mode, or
+restart the device if you ran the script there.
+
+It then downloads the latest (or a `MOONLIGHT_SYNC_VERSION`-pinned)
 release's `Moonlight-Sync.zip` and its `.sha256`, verifies the checksum,
 removes any previous `Moonlight Sync/` install so files an older release
 shipped and the new one no longer does cannot linger, unzips the new one
 into `~/homebrew/plugins/` and restarts `plugin_loader` so the new plugin
-loads. Both the install and the restart run through `sudo` (Decky's plugin
+loads. The install and the restart (and Decky Loader's installer, when
+it runs) go through `sudo` (Decky's plugin
 directory belongs to root on a stock install), so you will be asked for
 your password on the terminal. A stock Steam Deck ships with no password
 for the `deck` user, and `sudo` refuses an account without one. If you
@@ -65,18 +77,23 @@ current, so re-running it is also how you pick up a new release.
 
 ### Manual install
 
-Download `Moonlight-Sync.zip` from a release, copy it to the Deck, and in a
-Desktop Mode terminal or over SSH:
+Decky Loader can install a plugin from a zip itself, once its developer
+mode is on. No terminal and no password are needed.
 
-```sh
-sudo rm -rf ~/homebrew/plugins/"Moonlight Sync"
-sudo unzip -o Moonlight-Sync.zip -d ~/homebrew/plugins/
-sudo systemctl restart plugin_loader
-```
+1. Download `Moonlight-Sync.zip` from a
+   [release](https://github.com/episode6/moonlight-steam-sync-decky/releases)
+   onto the Deck (the Downloads folder is fine), or copy it there.
+2. In Game Mode, open the Quick Access menu's Decky tab and its settings
+   (the gear icon). Under **General**, turn on **Developer mode**.
+3. Open the **Developer** page that now appears in Decky's settings and,
+   beside **Install Plugin from ZIP File**, press **Browse** and choose
+   `Moonlight-Sync.zip`.
+4. Confirm Decky's install dialog.
 
-The zip holds a single `Moonlight Sync/` directory, which is the plugin's
-directory under `~/homebrew/plugins/`. Restarting `plugin_loader` loads it;
-Moonlight Sync then appears in the Quick Access menu's Decky tab.
+Moonlight Sync then appears in the Quick Access menu's Decky tab; nothing
+has to be restarted. The same steps install a newer zip over an older
+one (Decky asks to reinstall or overwrite it). Developer mode can be
+turned off again afterwards.
 
 ### Uninstall
 
