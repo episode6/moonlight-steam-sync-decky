@@ -6,6 +6,8 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-02
+
 ### Added
 
 - **`install.sh` offers to install Decky Loader.** When Decky Loader is
@@ -33,6 +35,9 @@ project uses [semantic versioning](https://semver.org/).
   moved, and after a switch through *Releases* and back it offered the
   previous commit again although the newer one was installed. Every
   request of the check now bypasses the cache.
+- **The panel's host count ran under the host dropdown.** With several
+  hosts, the "N apps" line under *Host* keeps its width and the dropdown
+  takes the rest of the row, a long host name ending in "…".
 
 ### Removed
 
@@ -60,12 +65,6 @@ project uses [semantic versioning](https://semver.org/).
   host's *last seen*, the Updates and About pages) uses Steam's
   **Settings → System → 24-hour clock**, and the 12-hour clock where the
   client does not say.
-
-### Fixed
-
-- **The panel's host count ran under the host dropdown.** With several
-  hosts, the "N apps" line under *Host* keeps its width and the dropdown
-  takes the rest of the row, a long host name ending in "…".
 
 ## [0.12.0] - 2026-09-28
 
