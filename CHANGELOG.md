@@ -6,6 +6,8 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-02
+
 ### Added
 
 - **`install.sh` offers to install Decky Loader.** When Decky Loader is
@@ -19,20 +21,6 @@ project uses [semantic versioning](https://semver.org/).
   install with it and remove it again when it finishes, fails or is
   interrupted. It asks first; on a no it stops before installing anything.
   An account that has a password is asked for it as before.
-
-### Fixed
-
-- **Check and Wake touched the line above them** in the Quick Access
-  panel. They now have the same space above and below, and the same
-  divider under them, as *Sync now*, so the panel is spaced alike
-  whether they are shown or not.
-- **A followed branch's new build was not seen for hours.** The update
-  check read the branch's `build.json` through the browser's HTTP cache,
-  which kept the file from before the last push as long as GitHub's
-  headers let it: *Check now* said *Up to date* while the branch had
-  moved, and after a switch through *Releases* and back it offered the
-  previous commit again although the newer one was installed. Every
-  request of the check now bypasses the cache.
 
 ### Removed
 
@@ -63,6 +51,17 @@ project uses [semantic versioning](https://semver.org/).
 
 ### Fixed
 
+- **Check and Wake touched the line above them** in the Quick Access
+  panel. They now have the same space above and below, and the same
+  divider under them, as *Sync now*, so the panel is spaced alike
+  whether they are shown or not.
+- **A followed branch's new build was not seen for hours.** The update
+  check read the branch's `build.json` through the browser's HTTP cache,
+  which kept the file from before the last push as long as GitHub's
+  headers let it: *Check now* said *Up to date* while the branch had
+  moved, and after a switch through *Releases* and back it offered the
+  previous commit again although the newer one was installed. Every
+  request of the check now bypasses the cache.
 - **The panel's host count ran under the host dropdown.** With several
   hosts, the "N apps" line under *Host* keeps its width and the dropdown
   takes the rest of the row, a long host name ending in "…".

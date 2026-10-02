@@ -1937,6 +1937,13 @@ after the release because nothing older than `0.12.0` has an updater and
 nothing newer exists yet: V1-V5 reinstall it through *Install another
 version*); anything found there ships as `0.12.1`, the first update the
 updater itself delivers.
+Plugin `v0.13.0` (the user asked for it on 2026-10-02) is a minor release,
+and the first update the updater delivers (there was no `0.12.1`): the
+layout buttons gathered in Advanced (Decisions 74 to 77, the Titles
+page's and the gear menu's layout items removed), times on Steam's
+12 / 24-hour clock, `install.sh` offering Decky Loader and a temporary
+password, and fixes to the update check's HTTP cache (amendment A6) and
+the panel's spacing; the CLI takes `0.13.0`, the minimum stays `0.4.0`.
 
 Once everything intended for the release has merged to `main`
 (substitute the version being cut for `X.Y.Z`):
