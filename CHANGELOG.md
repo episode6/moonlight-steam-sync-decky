@@ -22,23 +22,6 @@ project uses [semantic versioning](https://semver.org/).
   interrupted. It asks first; on a no it stops before installing anything.
   An account that has a password is asked for it as before.
 
-### Fixed
-
-- **Check and Wake touched the line above them** in the Quick Access
-  panel. They now have the same space above and below, and the same
-  divider under them, as *Sync now*, so the panel is spaced alike
-  whether they are shown or not.
-- **A followed branch's new build was not seen for hours.** The update
-  check read the branch's `build.json` through the browser's HTTP cache,
-  which kept the file from before the last push as long as GitHub's
-  headers let it: *Check now* said *Up to date* while the branch had
-  moved, and after a switch through *Releases* and back it offered the
-  previous commit again although the newer one was installed. Every
-  request of the check now bypasses the cache.
-- **The panel's host count ran under the host dropdown.** With several
-  hosts, the "N apps" line under *Host* keeps its width and the dropdown
-  takes the rest of the row, a long host name ending in "…".
-
 ### Removed
 
 - **Use as the default layout** on the Titles page and **Use as Moonlight
@@ -65,6 +48,23 @@ project uses [semantic versioning](https://semver.org/).
   host's *last seen*, the Updates and About pages) uses Steam's
   **Settings → System → 24-hour clock**, and the 12-hour clock where the
   client does not say.
+
+### Fixed
+
+- **Check and Wake touched the line above them** in the Quick Access
+  panel. They now have the same space above and below, and the same
+  divider under them, as *Sync now*, so the panel is spaced alike
+  whether they are shown or not.
+- **A followed branch's new build was not seen for hours.** The update
+  check read the branch's `build.json` through the browser's HTTP cache,
+  which kept the file from before the last push as long as GitHub's
+  headers let it: *Check now* said *Up to date* while the branch had
+  moved, and after a switch through *Releases* and back it offered the
+  previous commit again although the newer one was installed. Every
+  request of the check now bypasses the cache.
+- **The panel's host count ran under the host dropdown.** With several
+  hosts, the "N apps" line under *Host* keeps its width and the dropdown
+  takes the rest of the row, a long host name ending in "…".
 
 ## [0.12.0] - 2026-09-28
 
