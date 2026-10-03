@@ -56,25 +56,6 @@ there is left exactly as it is. After a first install of Decky Loader its
 tab only appears once Steam has restarted: return to Gaming Mode, or
 restart the device if you ran the script there.
 
-It then downloads the latest (or a `MOONLIGHT_SYNC_VERSION`-pinned)
-release's `Moonlight-Sync.zip` and its `.sha256`, verifies the checksum,
-removes any previous `Moonlight Sync/` install so files an older release
-shipped and the new one no longer does cannot linger, unzips the new one
-into `~/homebrew/plugins/` and restarts `plugin_loader` so the new plugin
-loads. The install and the restart (and Decky Loader's installer, when
-it runs) go through `sudo` (Decky's plugin
-directory belongs to root on a stock install), so you will be asked for
-your password on the terminal. A stock Steam Deck ships with no password
-for the `deck` user, and `sudo` refuses an account without one. If you
-have never set one, the script offers what Decky Loader's own installer
-does: it sets a temporary password (`Decky!`), installs with it, and
-removes it again when it finishes, also when it fails or is interrupted.
-It asks first and does that only on a yes; answer no and it stops before
-installing anything, so you can run `passwd` in a Desktop Mode terminal
-and start it again. A password you set yourself is never touched. It is
-safe to re-run: it always re-downloads and reinstalls, even when already
-current, so re-running it is also how you pick up a new release.
-
 ### Manual install
 
 Decky Loader can install a plugin from a zip itself, once its developer
