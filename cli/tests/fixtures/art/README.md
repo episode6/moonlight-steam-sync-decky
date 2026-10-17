@@ -29,7 +29,7 @@
 | `images/tiny.{png,jpg,webp}` | 1x1 stand-in bodies. Only the magic bytes are load-bearing: the selector sniffs PNG/JPEG and rejects everything else, and `tiny.webp` exists to prove WebP never reaches `grid/`. Real captures do **not** need to replace these, and `record_fixtures.py` deliberately keeps pointing at them. |
 | `make_synthetic.py` | regenerates the synthetic set, and documents what each title is for. |
 
-## The seven titles and what each one is for
+## The eight titles and what each one is for
 
 | title | case |
 |---|---|
@@ -40,6 +40,7 @@
 | `Totally Unknown Title` | **zero results** anywhere: no match, a negative cache entry, every slot missing. |
 | `Rate Limited Game` | SteamGridDB and the store both answer **429** forever, so the run hits the five-consecutive-429 hard stop and exits 4 with everything so far kept. |
 | `Hollow Knight` | the adoptable SteamTinkerLaunch-era entry in `../shortcuts_synthetic.vdf`, so the `sync` end-to-end tests can adopt an existing shortcut and dress it (every slot official, like Elden Ring). |
+| `Custom Logo Quest` | a Steam game with **no `logo.png` on the CDN and no `official` or `white` logo** on SteamGridDB, only `custom` and `black` ones, so the any-style logo query fills the slot (the higher score wins). Only its logo chain is recorded. |
 
 When a real device run turns up a match the heuristics get wrong, add it here
-as a seventh case rather than special-casing it in the code.
+as a ninth case rather than special-casing it in the code.

@@ -8,8 +8,9 @@ Sources per slot, in order (1. official, 2. community):
   460x215.
 * hero ``<id>_hero`` -- CDN ``library_hero.jpg``; SGDB ``heroes`` 1920x620
   then 3840x1240.
-* logo ``<id>_logo`` -- CDN ``logo.png``; SGDB ``logos`` ``official`` then
-  ``white``.
+* logo ``<id>_logo`` -- CDN ``logo.png``; SGDB ``logos`` ``official``, then
+  ``white``, then any style (``black`` and ``custom`` included), so a game
+  SteamGridDB has any static logo for never goes without one.
 * icon ``<id>_icon`` -- the ``GetApps`` hash then the community CDN; SGDB
   ``icons`` ``official`` then ``custom``.
 
@@ -80,7 +81,15 @@ COMMUNITY_QUERIES: dict[str, tuple[tuple[str, dict[str, str]], ...]] = {
         ("heroes", {"dimensions": "1920x620", "styles": "alternate"}),
         ("heroes", {"dimensions": "3840x1240", "styles": "alternate"}),
     ),
-    "logo": (("logos", {"styles": "official"}), ("logos", {"styles": "white"})),
+    # Logos are PNG only: SteamGridDB answers 400 to a logos query whose
+    # ``mimes`` names ``image/jpeg`` (measured 2026-10-17).
+    "logo": (
+        ("logos", {"styles": "official", "mimes": PNG_ONLY_MIMES}),
+        ("logos", {"styles": "white", "mimes": PNG_ONLY_MIMES}),
+        # No ``styles``: every style, highest score first. Only reached when
+        # the two above found nothing usable.
+        ("logos", {"mimes": PNG_ONLY_MIMES}),
+    ),
     "icon": (
         ("icons", {"styles": "official", "mimes": PNG_ONLY_MIMES}),
         ("icons", {"styles": "custom", "mimes": PNG_ONLY_MIMES}),
@@ -330,4 +339,5 @@ def _first_usable_url(assets: Sequence[dict]) -> tuple[str, str] | None:
 
 
 def _params_label(params: dict[str, str]) -> str:
-    return " ".join(f"{k}={v}" for k, v in params.items())
+    label = " ".join(f"{k}={v}" for k, v in params.items())
+    return label if "styles" in params else f"styles=any {label}"

@@ -53,7 +53,8 @@ from moonlight_steam_sync.art.steamstore import SteamStoreClient  # noqa: E402
 FIXTURE_DIR = REPO_ROOT / "tests" / "fixtures" / "art"
 
 #: The six cases spec PR-4 asks the fixture set to cover, plus the PR-2
-#: fixture's adoptable entry (Hollow Knight) for the PR-5 sync tests. Swap in
+#: fixture's adoptable entry (Hollow Knight) for the PR-5 sync tests, plus a
+#: game whose SteamGridDB logos are all ``custom`` / ``black``. Swap in
 #: the real titles that exercise them on your library; "Totally Unknown
 #: Title" is expected to match nothing.
 DEFAULT_TITLES = [
@@ -63,6 +64,7 @@ DEFAULT_TITLES = [
     "Old Console Classic",
     "Totally Unknown Title",
     "Hollow Knight",
+    "Custom Logo Quest",
 ]
 
 

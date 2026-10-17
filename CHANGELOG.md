@@ -6,6 +6,21 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Logos from SteamGridDB.** A title whose game has no logo on Steam's
+  own CDN now gets one from SteamGridDB. Every SteamGridDB logo request
+  was being refused (it asked for JPEG logos, which SteamGridDB does not
+  serve), so those titles synced without a logo every time. The next
+  **Sync now** fills them in; a logo already on a title, including one
+  picked by hand, is kept.
+
+### Changed
+
+- **A logo can come from any SteamGridDB style.** When a game has no
+  `official` or `white` logo on SteamGridDB, the highest-rated logo of any
+  style (`black`, `custom`) is used instead of none.
+
 ## [0.13.0] - 2026-10-02
 
 ### Added

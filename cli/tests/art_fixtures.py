@@ -6,7 +6,7 @@ seam with :class:`FakeTransport`, which serves the recorded responses in
 ``tests/fixtures/art/manifest.json``.
 
 TODO(real-data): those recordings are SYNTHETIC -- see
-``tests/fixtures/art/make_synthetic.py`` for what each of the seven titles is
+``tests/fixtures/art/make_synthetic.py`` for what each of the eight titles is
 meant to exercise and how it was built from spec section 2.2. Replace them
 with real captures by running ``SGDB_API_KEY=... python3
 scripts/record_fixtures.py``. **Nothing in this module or in the tests reads

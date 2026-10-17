@@ -10,13 +10,14 @@ with real captures by running::
     SGDB_API_KEY=... python3 scripts/record_fixtures.py
 
 which hits the real SteamGridDB, Steam store and Steam CDN endpoints for the
-same seven titles and rewrites ``manifest.json`` plus ``responses/``. The tests
+same eight titles and rewrites ``manifest.json`` plus ``responses/``. The tests
 read the manifest, not these literals, so a real capture is a file
 replacement and not a test rewrite. Keep this script around afterwards: it
 documents what each title is *for*, and it is how the fixture set gets
 extended when a new match case shows up on a device.
 
-The seven titles exercise the cases spec PR-4 asks for (the seventh serves PR-5):
+The eight titles exercise the cases spec PR-4 asks for (the seventh serves PR-5,
+the eighth the any-style logo fallback):
 
 1. ``Elden Ring``          -- exact verified SteamGridDB match, every slot official.
 2. ``Hades II(tm)``        -- a title with a trademark glyph; also the 2x portrait
@@ -34,6 +35,11 @@ The seven titles exercise the cases spec PR-4 asks for (the seventh serves PR-5)
                               ``tests/fixtures/shortcuts_synthetic.vdf`` (PR-2), so the
                               ``sync`` end-to-end tests can adopt it and dress it
                               (every slot official, like Elden Ring).
+8. ``Custom Logo Quest``   -- a Steam game with no ``logo.png`` on the CDN and no
+                              ``official`` or ``white`` logo on SteamGridDB, only
+                              ``custom`` and ``black`` ones, so the any-style query
+                              fills the slot (the higher score wins). Only its
+                              logo chain is recorded.
 
 Run from the repo root::
 
@@ -303,7 +309,7 @@ def main() -> int:
     )
     image_response(f"{community}/fan-hero.jpg", "tiny.jpg")
     json_response(
-        asset_url("logos", 7001, styles="official"),
+        asset_url("logos", 7001, styles="official", mimes=PNG_ONLY_MIMES),
         "sgdb-logos-7001-official",
         envelope(
             # A .png URL whose bytes are actually WebP: the magic-byte sniff
@@ -318,7 +324,7 @@ def main() -> int:
         "content_type": "image/png",
     }
     json_response(
-        asset_url("logos", 7001, styles="white"),
+        asset_url("logos", 7001, styles="white", mimes=PNG_ONLY_MIMES),
         "sgdb-logos-7001-white",
         envelope(
             [asset(106, f"{community}/fan-logo-white.png", style="white", score=60,
@@ -350,7 +356,7 @@ def main() -> int:
     image_response(steamstore.hero_urls(400910)[0], "tiny.jpg")
     # steamstore.logo_urls(400910)[0] is absent -> 404 -> community logo wins.
     json_response(
-        asset_url("logos", 8100, styles="official"),
+        asset_url("logos", 8100, styles="official", mimes=PNG_ONLY_MIMES),
         "sgdb-logos-8100-official",
         envelope(
             [asset(108, f"{community}/occ-logo.png", style="official", score=75,
@@ -404,6 +410,43 @@ def main() -> int:
         },
     )
     image_response(steamstore.icon_url(367520, "4f4f4f4f"), "tiny.jpg")
+
+    # -- 8. Custom Logo Quest: only custom / black logos on SteamGridDB -------
+    json_response(
+        search_url("Custom Logo Quest"),
+        "sgdb-search-custom-logo-quest",
+        envelope([game(8200, "Custom Logo Quest", 512300)]),
+    )
+    json_response(
+        game_url(8200), "sgdb-game-8200", envelope(game(8200, "Custom Logo Quest", 512300))
+    )
+    # steamstore.logo_urls(512300)[0] is absent -> 404, and SteamGridDB has no
+    # `official` or `white` logo -> the any-style query wins.
+    json_response(
+        asset_url("logos", 8200, styles="official", mimes=PNG_ONLY_MIMES),
+        "sgdb-logos-8200-official",
+        envelope([]),
+    )
+    json_response(
+        asset_url("logos", 8200, styles="white", mimes=PNG_ONLY_MIMES),
+        "sgdb-logos-8200-white",
+        envelope([]),
+    )
+    json_response(
+        asset_url("logos", 8200, mimes=PNG_ONLY_MIMES),
+        "sgdb-logos-8200-any",
+        envelope(
+            [
+                # Deliberately NOT in score order: the client sorts.
+                asset(109, f"{community}/clq-logo-custom.png", style="custom", score=30,
+                      mime="image/png"),
+                asset(110, f"{community}/clq-logo-black.png", style="black", score=80,
+                      mime="image/png"),
+            ]
+        ),
+    )
+    image_response(f"{community}/clq-logo-custom.png", "tiny.png")
+    image_response(f"{community}/clq-logo-black.png", "tiny.png")
 
     manifest = {
         "_TODO": TODO,

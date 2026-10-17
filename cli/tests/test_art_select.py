@@ -121,6 +121,47 @@ def test_bytes_that_are_not_png_or_jpeg_are_rejected_and_the_next_source_wins(
     assert sorted(p.name for p in tmp_path.iterdir()) == [f"{APPID}_logo.png"]
 
 
+def test_logo_falls_back_to_any_sgdb_style_when_official_and_white_are_empty(
+    tmp_path,
+) -> None:
+    selector, transport = make_selector()
+    match = Match(name="Custom Logo Quest", steam_appid=512300, sgdb_id=8200)
+    fill = selector.fill(LOGO, match, appid=APPID, grid_dir=tmp_path)
+    assert fill.source == "community"
+    # Only `custom` and `black` logos exist; the score-80 one wins over the
+    # score-30 one the fixture lists first.
+    assert fill.url.endswith("clq-logo-black.png")
+    logo_queries = [call for call in transport.calls if "/logos/game/8200" in call]
+    assert len(logo_queries) == 3
+    assert "styles=official" in logo_queries[0]
+    assert "styles=white" in logo_queries[1]
+    assert "styles" not in logo_queries[2]
+    assert "types=static" in logo_queries[2]
+
+
+def test_logo_queries_ask_for_png_only(tmp_path) -> None:
+    # SteamGridDB answers 400 to a logos query whose `mimes` names
+    # image/jpeg, which used to fail every community logo.
+    selector, transport = make_selector()
+    match = Match(name="Custom Logo Quest", steam_appid=512300, sgdb_id=8200)
+    selector.fill(LOGO, match, appid=APPID, grid_dir=tmp_path)
+    logo_queries = [call for call in transport.calls if "/logos/game/" in call]
+    assert logo_queries
+    assert all(call.endswith("mimes=image/png") for call in logo_queries)
+
+
+def test_the_any_style_logo_query_is_skipped_once_a_styled_one_fills_the_slot(
+    tmp_path,
+) -> None:
+    selector, transport = make_selector()
+    match = Match(name="Old Console Classic", steam_appid=400910, sgdb_id=8100)
+    fill = selector.fill(LOGO, match, appid=APPID, grid_dir=tmp_path)
+    assert fill.url.endswith("occ-logo.png")
+    logo_queries = [call for call in transport.calls if "/logos/game/8100" in call]
+    assert len(logo_queries) == 1
+    assert "styles=official" in logo_queries[0]
+
+
 def test_webp_is_never_requested(tmp_path) -> None:
     selector, transport = make_selector()
     match = Match(name="Fan Made Adventure", sgdb_id=7001)

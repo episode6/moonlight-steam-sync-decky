@@ -434,6 +434,14 @@ every title (`tests/test_art_apply.py`).
   queries pin `types=static` and `mimes=image/png,image/jpeg`, and the
   downloader sniffs magic bytes, so a mislabelled `.png` that is really WebP
   is dropped and the next source is tried.
+- **Logos and icons ask for `mimes=image/png` alone.** SteamGridDB's logos
+  endpoint answers **400** to a `mimes` naming `image/jpeg` (measured
+  2026-10-17), and a 400 is a failed lookup, never a cached miss, so through
+  `0.13.0` every community logo query failed on every run without a word.
+  Each kind accepts its own mime list; check it before adding a query.
+- **The logo slot ends with an any-style query** (the user's request of
+  2026-10-17): `official`, then `white`, then no `styles` at all, highest
+  score first, so a game SteamGridDB has any static logo for gets one.
 - **Grid filenames use the *shortcut's* appid, never the Steam store appid**
   the art came from (`<appid>p`, `<appid>`, `<appid>_hero`, `<appid>_logo`,
   `<appid>_icon`).
@@ -535,7 +543,9 @@ Starting with the PR that needs each one:
   an asset a game does not have. Six titles cover exact-verified match, a
   title with a trademark glyph, a non-Steam game with community art only, a
   Steam game with no logo on the CDN, a title with zero results, and a 429
-  storm; `tests/fixtures/art/README.md` says which is which.
+  storm, plus a Steam game whose SteamGridDB logos are all `custom` /
+  `black` (the any-style logo query); `tests/fixtures/art/README.md` says
+  which is which.
   **TODO: replace with real captures** by running
   `SGDB_API_KEY=xxxxxxxx python3 scripts/record_fixtures.py` from `cli/`
   once a key is available. The tests resolve responses by URL through

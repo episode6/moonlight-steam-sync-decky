@@ -426,7 +426,8 @@ wins:
    official store art, byte-for-byte what Steam shows for the real game.
 2. **SteamGridDB**, for anything the CDN has no image for (and for non-Steam
    titles), preferring the styles that look like official box art and taking
-   the highest-scored result.
+   the highest-scored result. A logo falls back to any style SteamGridDB has
+   (`black` and `custom` included) when it has no `official` or `white` one.
 
 Rules worth knowing:
 
