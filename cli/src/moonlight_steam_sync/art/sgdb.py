@@ -11,7 +11,10 @@ decisions the rest of the tool depends on (spec 6.5):
 * ``types=static`` -- animated assets are WebP-only, and we have no way to
   convert them without Pillow;
 * ``mimes`` never includes ``image/webp`` -- Steam does not read WebP out of
-  ``grid/``.
+  ``grid/``;
+* ``logos`` and ``icons`` ask for PNG alone (:data:`MIMES_BY_KIND`): the
+  logos endpoint answers 400 to a ``mimes`` that names ``image/jpeg``
+  (measured 2026-10-17), which failed every community logo through 0.13.0.
 
 ``nsfw``, ``humor`` and ``epilepsy`` are left unsent so the API's own
 ``false`` defaults apply (spec 3.5).
@@ -29,8 +32,32 @@ from moonlight_steam_sync.art.http import Fetcher, HttpError
 BASE_URL = "https://www.steamgriddb.com/api/v2"
 
 #: The only mime types we will accept in ``grid/``; WebP is deliberately absent.
+#: The default for grids and heroes.
 STATIC_IMAGE_MIMES = "image/png,image/jpeg"
 PNG_ONLY_MIMES = "image/png"
+#: ``mimes`` per asset kind where it is not :data:`STATIC_IMAGE_MIMES`. The
+#: logos endpoint refuses ``image/jpeg`` with a 400; icons are PNG by choice.
+MIMES_BY_KIND = {"logos": PNG_ONLY_MIMES, "icons": PNG_ONLY_MIMES}
+
+
+def asset_query(kind: str, **params: Any) -> dict[str, Any]:
+    """The query string of ``GET /{kind}/game/{id}``, filters applied.
+
+    ``types=static``, then ``params`` (``None`` values dropped), then the
+    kind's ``mimes`` unless ``params`` named one. Refuses WebP for every kind
+    and JPEG for ``logos``, which SteamGridDB would answer with a 400.
+    :mod:`moonlight_steam_sync.art.select` and the fixture recorder both
+    build their URLs here, so they cannot drift.
+    """
+    query: dict[str, Any] = {"types": "static"}
+    query.update({k: v for k, v in params.items() if v is not None})
+    query.setdefault("mimes", MIMES_BY_KIND.get(kind, STATIC_IMAGE_MIMES))
+    mimes = str(query["mimes"]).lower()
+    if "webp" in mimes:
+        raise ValueError("WebP is never requested (spec 6.5)")
+    if kind == "logos" and "jpeg" in mimes:
+        raise ValueError("SteamGridDB answers 400 to a logos query naming image/jpeg")
+    return query
 
 
 class SgdbError(HttpError):
@@ -86,16 +113,12 @@ class SgdbClient:
         return data if isinstance(data, dict) else {}
 
     def assets(self, kind: str, sgdb_id: int, **params: Any) -> list[dict[str, Any]]:
-        """``GET /{kind}/game/{id}`` with the static/no-WebP filters applied.
+        """``GET /{kind}/game/{id}`` with :func:`asset_query`'s filters applied.
 
         ``kind`` is one of ``grids``, ``heroes``, ``logos``, ``icons``.
         Results come back sorted by ``score`` descending (spec 3.5).
         """
-        query: dict[str, Any] = {"types": "static"}
-        query.update({k: v for k, v in params.items() if v is not None})
-        query.setdefault("mimes", STATIC_IMAGE_MIMES)
-        if "webp" in str(query["mimes"]).lower():
-            raise ValueError("WebP is never requested (spec 6.5)")
+        query = asset_query(kind, **params)
         data = self._get_data(f"/{kind}/game/{sgdb_id}", query)
         assets = [a for a in data if isinstance(a, dict)] if isinstance(data, list) else []
         return sorted(assets, key=lambda a: _score(a), reverse=True)

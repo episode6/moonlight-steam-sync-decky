@@ -431,9 +431,26 @@ every title (`tests/test_art_apply.py`).
 ### Artwork gotchas
 
 - **Never write `.webp` into `grid/`.** Steam cannot read it. The asset
-  queries pin `types=static` and `mimes=image/png,image/jpeg`, and the
+  queries pin `types=static` and a `mimes` without WebP (grids and heroes
+  take `image/png,image/jpeg`, logos and icons `image/png` alone), and the
   downloader sniffs magic bytes, so a mislabelled `.png` that is really WebP
   is dropped and the next source is tried.
+- **Logos and icons ask for `mimes=image/png` alone.** SteamGridDB's logos
+  endpoint answers **400** to a `mimes` naming `image/jpeg` (measured
+  2026-10-17), and a 400 is a failed lookup, never a cached miss, so through
+  `0.13.0` every community logo query failed on every run without a word.
+  `sgdb.asset_query` is the one place an asset query is built (the selector,
+  the recorder and the synthetic fixtures all go through it): it holds the
+  per-kind default (`MIMES_BY_KIND`) and refuses JPEG for logos outright.
+  Check a kind's mime list there before adding a query.
+- **The logo slot ends with an any-style query** (the user's request of
+  2026-10-17): `official`, then `white`, then `custom`, then no `styles` at
+  all, highest score first, so a game SteamGridDB has any static logo for
+  gets one. `custom` goes before the any-style query because what that
+  query adds in practice is `black`, drawn for light backgrounds, and most
+  heroes are dark. The any-style query lists the earlier styles' logos too,
+  so the selector skips a URL an earlier query of the slot already yielded
+  (a logo that failed once would fail again and hide the next one).
 - **Grid filenames use the *shortcut's* appid, never the Steam store appid**
   the art came from (`<appid>p`, `<appid>`, `<appid>_hero`, `<appid>_logo`,
   `<appid>_icon`).
@@ -535,7 +552,10 @@ Starting with the PR that needs each one:
   an asset a game does not have. Six titles cover exact-verified match, a
   title with a trademark glyph, a non-Steam game with community art only, a
   Steam game with no logo on the CDN, a title with zero results, and a 429
-  storm; `tests/fixtures/art/README.md` says which is which.
+  storm, plus a Steam game with no usable `official` or `white` logo on
+  SteamGridDB (the `custom` and any-style logo queries);
+  `tests/fixtures/art/README.md` says
+  which is which.
   **TODO: replace with real captures** by running
   `SGDB_API_KEY=xxxxxxxx python3 scripts/record_fixtures.py` from `cli/`
   once a key is available. The tests resolve responses by URL through

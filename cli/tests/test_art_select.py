@@ -18,9 +18,9 @@ from moonlight_steam_sync.art.select import (
     slot_basename,
     sniff_extension,
 )
-from moonlight_steam_sync.art.sgdb import SgdbClient
+from moonlight_steam_sync.art.sgdb import SgdbClient, asset_query
 from moonlight_steam_sync.art.steamstore import SteamStoreClient
-from tests.art_fixtures import FIXTURE_DIR, FakeTransport, make_fetcher
+from tests.art_fixtures import FIXTURE_DIR, FakeTransport, load_manifest, make_fetcher
 
 APPID = 2864321987
 
@@ -119,6 +119,77 @@ def test_bytes_that_are_not_png_or_jpeg_are_rejected_and_the_next_source_wins(
     assert fill.url.endswith("fan-logo-white.png")
     assert not (tmp_path / f"{APPID}_logo.part").exists()
     assert sorted(p.name for p in tmp_path.iterdir()) == [f"{APPID}_logo.png"]
+
+
+CLQ = Match(name="Custom Logo Quest", steam_appid=512300, sgdb_id=8200)
+
+
+def clq_logo_queries(transport: FakeTransport) -> list[str]:
+    return [call for call in transport.calls if "/logos/game/8200" in call]
+
+
+def test_a_custom_logo_beats_a_higher_scored_black_one(tmp_path) -> None:
+    selector, transport = make_selector()
+    fill = selector.fill(LOGO, CLQ, appid=APPID, grid_dir=tmp_path)
+    assert fill.source == "community"
+    # The `official` logo serves WebP bytes and there is no `white` one;
+    # `black` (score 80) is drawn for light backgrounds, so `custom` (score
+    # 30) is asked for first and the any-style query is never made.
+    assert fill.url.endswith("clq-logo-custom.png")
+    queries = clq_logo_queries(transport)
+    assert len(queries) == 3
+    assert "styles=official" in queries[0]
+    assert "styles=white" in queries[1]
+    assert "styles=custom" in queries[2]
+
+
+def test_the_any_style_logo_query_skips_a_logo_already_tried(tmp_path) -> None:
+    responses = load_manifest()
+    custom = next(url for url in responses if "/logos/game/8200" in url and "custom" in url)
+    white = next(url for url in responses if "/logos/game/8200" in url and "white" in url)
+    responses[custom] = responses[white]  # an empty envelope
+    selector, transport = make_selector(FakeTransport(responses=responses))
+    fill = selector.fill(LOGO, CLQ, appid=APPID, grid_dir=tmp_path)
+    # The any-style query lists the failed score-90 `official` logo first;
+    # downloading it again would fail again and leave the slot empty.
+    assert fill.url.endswith("clq-logo-black.png")
+    queries = clq_logo_queries(transport)
+    assert len(queries) == 4
+    assert "styles" not in queries[3]
+    assert "types=static" in queries[3]
+    official = [url for url in selector.attempted if url.endswith("clq-logo-official.png")]
+    assert len(official) == 1
+
+
+def test_logo_queries_ask_for_png_only(tmp_path) -> None:
+    # SteamGridDB answers 400 to a logos query whose `mimes` names
+    # image/jpeg, which used to fail every community logo.
+    selector, transport = make_selector()
+    selector.fill(LOGO, CLQ, appid=APPID, grid_dir=tmp_path)
+    logo_queries = [call for call in transport.calls if "/logos/game/" in call]
+    assert logo_queries
+    assert all(call.endswith("mimes=image/png") for call in logo_queries)
+
+
+def test_the_client_defaults_mimes_per_kind_and_refuses_jpeg_logos() -> None:
+    assert asset_query("logos")["mimes"] == "image/png"
+    assert asset_query("icons", styles="official")["mimes"] == "image/png"
+    assert asset_query("grids", dimensions="600x900")["mimes"] == "image/png,image/jpeg"
+    assert asset_query("heroes")["mimes"] == "image/png,image/jpeg"
+    with pytest.raises(ValueError):
+        asset_query("logos", mimes="image/png,image/jpeg")
+
+
+def test_the_any_style_logo_query_is_skipped_once_a_styled_one_fills_the_slot(
+    tmp_path,
+) -> None:
+    selector, transport = make_selector()
+    match = Match(name="Old Console Classic", steam_appid=400910, sgdb_id=8100)
+    fill = selector.fill(LOGO, match, appid=APPID, grid_dir=tmp_path)
+    assert fill.url.endswith("occ-logo.png")
+    logo_queries = [call for call in transport.calls if "/logos/game/8100" in call]
+    assert len(logo_queries) == 1
+    assert "styles=official" in logo_queries[0]
 
 
 def test_webp_is_never_requested(tmp_path) -> None:

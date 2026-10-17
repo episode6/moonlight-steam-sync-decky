@@ -10,13 +10,14 @@ with real captures by running::
     SGDB_API_KEY=... python3 scripts/record_fixtures.py
 
 which hits the real SteamGridDB, Steam store and Steam CDN endpoints for the
-same seven titles and rewrites ``manifest.json`` plus ``responses/``. The tests
+same eight titles and rewrites ``manifest.json`` plus ``responses/``. The tests
 read the manifest, not these literals, so a real capture is a file
 replacement and not a test rewrite. Keep this script around afterwards: it
 documents what each title is *for*, and it is how the fixture set gets
 extended when a new match case shows up on a device.
 
-The seven titles exercise the cases spec PR-4 asks for (the seventh serves PR-5):
+The eight titles exercise the cases spec PR-4 asks for (the seventh serves PR-5,
+the eighth the any-style logo fallback):
 
 1. ``Elden Ring``          -- exact verified SteamGridDB match, every slot official.
 2. ``Hades II(tm)``        -- a title with a trademark glyph; also the 2x portrait
@@ -34,6 +35,12 @@ The seven titles exercise the cases spec PR-4 asks for (the seventh serves PR-5)
                               ``tests/fixtures/shortcuts_synthetic.vdf`` (PR-2), so the
                               ``sync`` end-to-end tests can adopt it and dress it
                               (every slot official, like Elden Ring).
+8. ``Custom Logo Quest``   -- a Steam game with no ``logo.png`` on the CDN, an
+                              ``official`` logo whose bytes are WebP and no
+                              ``white`` one, so the ``custom`` query beats a
+                              higher-scored ``black`` logo; with ``custom`` emptied
+                              the any-style query must skip the failed ``official``
+                              logo it lists first. Only its logo chain is recorded.
 
 Run from the repo root::
 
@@ -53,7 +60,7 @@ REPO_ROOT = HERE.parents[2]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from moonlight_steam_sync.art import steamstore  # noqa: E402
-from moonlight_steam_sync.art.sgdb import PNG_ONLY_MIMES, STATIC_IMAGE_MIMES  # noqa: E402
+from moonlight_steam_sync.art.sgdb import asset_query  # noqa: E402
 
 SGDB = "https://www.steamgriddb.com/api/v2"
 
@@ -83,10 +90,7 @@ def game_url(sgdb_id: int) -> str:
 
 
 def asset_url(kind: str, sgdb_id: int, **params: str) -> str:
-    query = {"types": "static"}
-    query.update(params)
-    query.setdefault("mimes", STATIC_IMAGE_MIMES)
-    return sgdb_url(f"/{kind}/game/{sgdb_id}", query)
+    return sgdb_url(f"/{kind}/game/{sgdb_id}", asset_query(kind, **params))
 
 
 def envelope(data: object) -> dict[str, object]:
@@ -327,7 +331,7 @@ def main() -> int:
     )
     image_response(f"{community}/fan-logo-white.png", "tiny.png")
     json_response(
-        asset_url("icons", 7001, styles="official", mimes=PNG_ONLY_MIMES),
+        asset_url("icons", 7001, styles="official"),
         "sgdb-icons-7001-official",
         envelope(
             [asset(107, f"{community}/fan-icon.png", style="official", score=80,
@@ -404,6 +408,56 @@ def main() -> int:
         },
     )
     image_response(steamstore.icon_url(367520, "4f4f4f4f"), "tiny.jpg")
+
+    # -- 8. Custom Logo Quest: no usable official / white logo ---------------
+    json_response(
+        search_url("Custom Logo Quest"),
+        "sgdb-search-custom-logo-quest",
+        envelope([game(8200, "Custom Logo Quest", 512300)]),
+    )
+    json_response(
+        game_url(8200), "sgdb-game-8200", envelope(game(8200, "Custom Logo Quest", 512300))
+    )
+    # steamstore.logo_urls(512300)[0] is absent -> 404; the one `official`
+    # logo is a .png URL serving WebP bytes, there is no `white` one, so the
+    # `custom` query wins over the higher-scored `black` logo.
+    official_logo = asset(109, f"{community}/clq-logo-official.png", style="official",
+                          score=90, mime="image/png")
+    custom_logo = asset(110, f"{community}/clq-logo-custom.png", style="custom", score=30,
+                        mime="image/png")
+    black_logo = asset(111, f"{community}/clq-logo-black.png", style="black", score=80,
+                       mime="image/png")
+    json_response(
+        asset_url("logos", 8200, styles="official"),
+        "sgdb-logos-8200-official",
+        envelope([official_logo]),
+    )
+    responses[f"{community}/clq-logo-official.png"] = {
+        "status": 200,
+        "body": "images/tiny.webp",
+        "content_type": "image/png",
+    }
+    json_response(
+        asset_url("logos", 8200, styles="white"),
+        "sgdb-logos-8200-white",
+        envelope([]),
+    )
+    json_response(
+        asset_url("logos", 8200, styles="custom"),
+        "sgdb-logos-8200-custom",
+        envelope([custom_logo]),
+    )
+    # Every style, as SteamGridDB lists them with no `styles`: the failed
+    # `official` logo on top, which the selector must skip for `black`. Only
+    # reached by a test that empties the `custom` query.
+    json_response(
+        asset_url("logos", 8200),
+        "sgdb-logos-8200-any",
+        # Deliberately NOT in score order: the client sorts.
+        envelope([custom_logo, black_logo, official_logo]),
+    )
+    image_response(f"{community}/clq-logo-custom.png", "tiny.png")
+    image_response(f"{community}/clq-logo-black.png", "tiny.png")
 
     manifest = {
         "_TODO": TODO,
