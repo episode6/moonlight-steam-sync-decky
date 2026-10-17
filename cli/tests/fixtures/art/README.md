@@ -40,7 +40,7 @@
 | `Totally Unknown Title` | **zero results** anywhere: no match, a negative cache entry, every slot missing. |
 | `Rate Limited Game` | SteamGridDB and the store both answer **429** forever, so the run hits the five-consecutive-429 hard stop and exits 4 with everything so far kept. |
 | `Hollow Knight` | the adoptable SteamTinkerLaunch-era entry in `../shortcuts_synthetic.vdf`, so the `sync` end-to-end tests can adopt an existing shortcut and dress it (every slot official, like Elden Ring). |
-| `Custom Logo Quest` | a Steam game with **no `logo.png` on the CDN and no `official` or `white` logo** on SteamGridDB, only `custom` and `black` ones, so the any-style logo query fills the slot (the higher score wins). Only its logo chain is recorded. |
+| `Custom Logo Quest` | a Steam game with **no `logo.png` on the CDN**, an `official` SteamGridDB logo whose bytes are WebP and no `white` one, so the `custom` query beats a higher-scored `black` logo; a test that empties `custom` checks the any-style query skips the failed `official` logo it lists first. Only its logo chain is recorded. |
 
 When a real device run turns up a match the heuristics get wrong, add it here
 as a ninth case rather than special-casing it in the code.

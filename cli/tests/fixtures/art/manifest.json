@@ -128,6 +128,11 @@
       "body": "images/tiny.png",
       "content_type": "image/png"
     },
+    "https://cdn2.steamgriddb.com/file/sgdb-cdn/grid/full/clq-logo-official.png": {
+      "status": 200,
+      "body": "images/tiny.webp",
+      "content_type": "image/png"
+    },
     "https://cdn2.steamgriddb.com/file/sgdb-cdn/grid/full/fan-hero.jpg": {
       "status": 200,
       "body": "images/tiny.jpg",
@@ -248,6 +253,11 @@
     "https://www.steamgriddb.com/api/v2/logos/game/8200?types=static&mimes=image/png": {
       "status": 200,
       "body": "responses/sgdb-logos-8200-any.json",
+      "content_type": "application/json"
+    },
+    "https://www.steamgriddb.com/api/v2/logos/game/8200?types=static&styles=custom&mimes=image/png": {
+      "status": 200,
+      "body": "responses/sgdb-logos-8200-custom.json",
       "content_type": "application/json"
     },
     "https://www.steamgriddb.com/api/v2/logos/game/8200?types=static&styles=official&mimes=image/png": {

@@ -9,8 +9,9 @@ Sources per slot, in order (1. official, 2. community):
 * hero ``<id>_hero`` -- CDN ``library_hero.jpg``; SGDB ``heroes`` 1920x620
   then 3840x1240.
 * logo ``<id>_logo`` -- CDN ``logo.png``; SGDB ``logos`` ``official``, then
-  ``white``, then any style (``black`` and ``custom`` included), so a game
-  SteamGridDB has any static logo for never goes without one.
+  ``white``, then ``custom``, then any style (``black`` included), so a game
+  SteamGridDB has any static logo for never goes without one. ``black`` is
+  last because it is drawn for light backgrounds and most heroes are dark.
 * icon ``<id>_icon`` -- the ``GetApps`` hash then the community CDN; SGDB
   ``icons`` ``official`` then ``custom``.
 
@@ -37,14 +38,14 @@ query filters) and never written (the sniffer only accepts PNG and JPEG).
 from __future__ import annotations
 
 import os
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Sequence, Set
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from moonlight_steam_sync.art import steamstore
 from moonlight_steam_sync.art.http import Fetcher, HardStop, HttpError
 from moonlight_steam_sync.art.resolve import Match
-from moonlight_steam_sync.art.sgdb import PNG_ONLY_MIMES, SgdbClient
+from moonlight_steam_sync.art.sgdb import SgdbClient
 from moonlight_steam_sync.art.steamstore import SteamStoreClient
 
 
@@ -71,6 +72,8 @@ SLOTS_BY_KEY = {slot.key: slot for slot in SLOTS}
 ART_EXTENSIONS: tuple[str, ...] = (".png", ".jpg", ".jpeg", ".ico")
 
 #: ``kind`` + query params per community query, in the order spec 3.5 tries them.
+#: ``mimes`` is :func:`~moonlight_steam_sync.art.sgdb.asset_query`'s per-kind
+#: default (PNG alone for logos and icons).
 COMMUNITY_QUERIES: dict[str, tuple[tuple[str, dict[str, str]], ...]] = {
     "portrait": (("grids", {"dimensions": "600x900", "styles": "alternate"}),),
     "landscape": (
@@ -81,18 +84,19 @@ COMMUNITY_QUERIES: dict[str, tuple[tuple[str, dict[str, str]], ...]] = {
         ("heroes", {"dimensions": "1920x620", "styles": "alternate"}),
         ("heroes", {"dimensions": "3840x1240", "styles": "alternate"}),
     ),
-    # Logos are PNG only: SteamGridDB answers 400 to a logos query whose
-    # ``mimes`` names ``image/jpeg`` (measured 2026-10-17).
     "logo": (
-        ("logos", {"styles": "official", "mimes": PNG_ONLY_MIMES}),
-        ("logos", {"styles": "white", "mimes": PNG_ONLY_MIMES}),
-        # No ``styles``: every style, highest score first. Only reached when
-        # the two above found nothing usable.
-        ("logos", {"mimes": PNG_ONLY_MIMES}),
+        ("logos", {"styles": "official"}),
+        ("logos", {"styles": "white"}),
+        ("logos", {"styles": "custom"}),
+        # No ``styles``: every style, highest score first, which in practice
+        # means ``black``. Only reached when the three above found nothing
+        # usable; it lists their logos too, which ``_community`` skips once
+        # tried.
+        ("logos", {}),
     ),
     "icon": (
-        ("icons", {"styles": "official", "mimes": PNG_ONLY_MIMES}),
-        ("icons", {"styles": "custom", "mimes": PNG_ONLY_MIMES}),
+        ("icons", {"styles": "official"}),
+        ("icons", {"styles": "custom"}),
     ),
 }
 
@@ -217,6 +221,10 @@ class Selector:
         sgdb_id = match.sgdb_id
         if sgdb_id is None or self.sgdb is None or not self.sgdb.enabled:
             return
+        # A query can list a URL an earlier one already yielded (the any-style
+        # logo query lists every style): trying it again would fail the same
+        # way and hide the lower-scored asset behind it.
+        tried: set[str] = set()
         for kind, params in COMMUNITY_QUERIES.get(slot.key, ()):
             try:
                 assets = self.sgdb.assets(kind, sgdb_id, **params)
@@ -226,12 +234,14 @@ class Selector:
                 self.last_attempt_failed = True
                 continue
             # Spec 3.5: sort by score descending (the client does that), then
-            # take the first.
-            best = _first_usable_url(assets)
+            # take the first not yet tried.
+            best = _first_usable_url(assets, skip=tried)
             if best is None:
                 continue
             url, detail = best
-            yield Candidate("community", url=url, detail=f"{kind} {_params_label(params)} {detail}")
+            tried.add(url)
+            label = " ".join(part for part in (kind, _params_label(params), detail) if part)
+            yield Candidate("community", url=url, detail=label)
 
     # -- fetching --------------------------------------------------------
 
@@ -328,10 +338,12 @@ def _drop_other_extensions(dest_base: Path, final: Path) -> None:
             stale.unlink(missing_ok=True)
 
 
-def _first_usable_url(assets: Sequence[dict]) -> tuple[str, str] | None:
+def _first_usable_url(
+    assets: Sequence[dict], *, skip: Set[str] = frozenset()
+) -> tuple[str, str] | None:
     for asset in assets:
         url = asset.get("url")
-        if isinstance(url, str) and url and not url.lower().endswith(".webp"):
+        if isinstance(url, str) and url and url not in skip and not url.lower().endswith(".webp"):
             style = asset.get("style", "?")
             score = asset.get("score", "?")
             return url, f"style={style} score={score}"
@@ -339,5 +351,4 @@ def _first_usable_url(assets: Sequence[dict]) -> tuple[str, str] | None:
 
 
 def _params_label(params: dict[str, str]) -> str:
-    label = " ".join(f"{k}={v}" for k, v in params.items())
-    return label if "styles" in params else f"styles=any {label}"
+    return " ".join(f"{k}={v}" for k, v in params.items())

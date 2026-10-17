@@ -1,0 +1,25 @@
+{
+  "_TODO": "SYNTHETIC FIXTURE -- invented, not captured. Replace with a real capture: SGDB_API_KEY=... python3 scripts/record_fixtures.py",
+  "success": true,
+  "data": [
+    {
+      "id": 110,
+      "score": 30,
+      "style": "custom",
+      "width": 600,
+      "height": 900,
+      "mime": "image/png",
+      "nsfw": false,
+      "humor": false,
+      "epilepsy": false,
+      "language": "en",
+      "url": "https://cdn2.steamgriddb.com/file/sgdb-cdn/grid/full/clq-logo-custom.png",
+      "thumb": "https://cdn2.steamgriddb.com/file/sgdb-cdn/grid/thumb/clq-logo-custom.png",
+      "upvotes": 30,
+      "downvotes": 0,
+      "author": {
+        "name": "synthetic-uploader"
+      }
+    }
+  ]
+}

@@ -47,14 +47,14 @@ from moonlight_steam_sync.art import steamstore  # noqa: E402
 from moonlight_steam_sync.art.http import Fetcher, HttpError  # noqa: E402
 from moonlight_steam_sync.art.resolve import pick  # noqa: E402
 from moonlight_steam_sync.art.select import COMMUNITY_QUERIES, SLOTS  # noqa: E402
-from moonlight_steam_sync.art.sgdb import SgdbClient  # noqa: E402
+from moonlight_steam_sync.art.sgdb import SgdbClient, asset_query  # noqa: E402
 from moonlight_steam_sync.art.steamstore import SteamStoreClient  # noqa: E402
 
 FIXTURE_DIR = REPO_ROOT / "tests" / "fixtures" / "art"
 
 #: The six cases spec PR-4 asks the fixture set to cover, plus the PR-2
 #: fixture's adoptable entry (Hollow Knight) for the PR-5 sync tests, plus a
-#: game whose SteamGridDB logos are all ``custom`` / ``black``. Swap in
+#: game with no usable ``official`` or ``white`` SteamGridDB logo. Swap in
 #: the real titles that exercise them on your library; "Totally Unknown
 #: Title" is expected to match nothing.
 DEFAULT_TITLES = [
@@ -169,15 +169,19 @@ def record_title(title: str, recorder: Recorder, sgdb: SgdbClient, store: SteamS
     if sgdb_id is None:
         return
     for slot in SLOTS:
+        # The selector skips a URL an earlier query of the slot yielded, so
+        # each query's image is its best one not recorded already.
+        tried: set[str] = set()
         for kind, params in COMMUNITY_QUERIES[slot.key]:
-            query: dict[str, Any] = {"types": "static"}
-            query.update(params)
-            query.setdefault("mimes", "image/png,image/jpeg")
+            query = asset_query(kind, **params)
             payload = recorder.json(sgdb.url(f"/{kind}/game/{sgdb_id}", query), auth)
             assets = (payload or {}).get("data") or []
             assets = sorted(assets, key=lambda a: a.get("score", 0), reverse=True)
-            if assets and isinstance(assets[0].get("url"), str):
-                recorder.image(assets[0]["url"])
+            urls = [a["url"] for a in assets if isinstance(a.get("url"), str)]
+            url = next((u for u in urls if u not in tried), None)
+            if url is not None:
+                tried.add(url)
+                recorder.image(url)
 
 
 def _quote(term: str) -> str:
