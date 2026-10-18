@@ -971,6 +971,22 @@ describe("the Titles page (spec 3.8)", () => {
     expect(load.data.added).toEqual({}); // a backend from before `added`
   });
 
+  it("stamps each load, so the thumbnails show the art on disk now", async () => {
+    let now = 1000;
+    const controller = new Controller(
+      fakeBackend(calls, { list_apps: listed, list_cached: cached }),
+      steam,
+      ui,
+      { sleep: async () => {}, now: () => now },
+    );
+    await controller.load();
+    const first = await controller.loadTitles();
+    now = 2000;
+    const second = await controller.loadTitles();
+    expect(first.ok && first.data.loadedAt).toBe(1000);
+    expect(second.ok && second.data.loadedAt).toBe(2000);
+  });
+
   it("hands the page status's added times (the Recently added order)", async () => {
     const added = { Balatro: "2026-09-27T10:00:00Z", "Hades II": null };
     const controller = await loaded({

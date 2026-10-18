@@ -176,6 +176,8 @@ export interface TitlesData {
   /** The cache's timestamp ("listed <when>"). */
   cachedWhen: string | null;
   statusError: string | null;
+  /** When this load was made (`timing.now()`): the thumbnails' `artVersion`, so each load shows the art on disk now. */
+  loadedAt: number;
 }
 
 export type TitlesLoad =
@@ -887,6 +889,7 @@ export class Controller {
         source,
         cachedWhen,
         statusError: isFailure(status) ? errorText(status) : null,
+        loadedAt: this.timing.now(),
       },
     };
   }

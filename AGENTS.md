@@ -757,8 +757,18 @@ src/lib/                    pure modules (vitest)
   appPage.test.ts           the index with and without another plugin's child, before
                             and after; the fallback; hasClass
   join.ts                   the Titles page: list + status joined by name into rows
-                            (badge, chips, match line, capsule), filters, Show parked,
-                            pages of 50, applyPin; the Change match rows (candidateRows,
+                            (badge, chips, match line, thumbnails), filters, Show parked,
+                            pages of 50, applyPin / markStaleArt; the thumbnails
+                            (Decision 15 as amended 2026-10-17), best first: the
+                            entry's own portrait, customPortraitUrl() =
+                            CUSTOM_IMAGES_BASE (`https://steamloopback.host/
+                            customimages/`, where the client serves `grid/`) +
+                            `<appid>p.<slots.portrait>?v=<the load's loadedAt>`
+                            (the name stays when a sync replaces the art), skipped
+                            while `stale_art` (the old match's art), then
+                            capsuleUrl() for a Steam match (the old CDN path,
+                            a 404 for some newer games); the page's Thumb tries
+                            each in turn, then the placeholder; the Change match rows (candidateRows,
                             noMatchRow, matchSummary); the `host-app` kind (badge
                             `host app`, under *All* only, never unmatched, every
                             candidate `art only`);
