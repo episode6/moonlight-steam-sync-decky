@@ -971,20 +971,23 @@ describe("the Titles page (spec 3.8)", () => {
     expect(load.data.added).toEqual({}); // a backend from before `added`
   });
 
-  it("stamps each load, so the thumbnails show the art on disk now", async () => {
-    let now = 1000;
-    const controller = new Controller(
-      fakeBackend(calls, { list_apps: listed, list_cached: cached }),
-      steam,
-      ui,
-      { sleep: async () => {}, now: () => now },
-    );
-    await controller.load();
+  it("versions the thumbnails by the last run, so loads in between keep their URLs", async () => {
+    const before = "2026-10-17T12:00:00Z";
+    const after = "2026-10-17T13:00:00Z";
+    const controller = await loaded({ pending: { ok: true, ...PENDING, since: before } });
     const first = await controller.loadTitles();
-    now = 2000;
     const second = await controller.loadTitles();
-    expect(first.ok && first.data.loadedAt).toBe(1000);
-    expect(second.ok && second.data.loadedAt).toBe(2000);
+    expect(first.ok && first.data.artVersion).toBe(Date.parse(before));
+    expect(second.ok && second.data.artVersion).toBe(Date.parse(before));
+    // a finished run may have replaced art under the same file names
+    await controller.onSyncDone(done("sync", [], 0, { since: after }));
+    const third = await controller.loadTitles();
+    expect(third.ok && third.data.artVersion).toBe(Date.parse(after));
+  });
+
+  it("versions the thumbnails 0 before any run", async () => {
+    const load = await (await loaded()).loadTitles();
+    expect(load.ok && load.data.artVersion).toBe(0);
   });
 
   it("hands the page status's added times (the Recently added order)", async () => {

@@ -626,7 +626,10 @@ src/lib/                    pure modules (vitest)
                             and the page shows its line and *Sync now*, no rows; the
                             line says it fills in only while a `sync` runs, since an
                             art or remove run never plans; the page re-loads when a
-                            run starts and again when it ends),
+                            run starts and again when it ends; `artVersion` is
+                            join.ts's artVersionOf(pending.since), the thumbnails'
+                            version, which onSyncDone moves in the same store set
+                            that ends the run),
                             checkHost() (the row's *Check* and nothing else: never on
                             load, panel open or the toggle; addHost() paints the row
                             from add_host's own count, no memo read -- PR 46's review),
@@ -763,8 +766,10 @@ src/lib/                    pure modules (vitest)
                             entry's own portrait, customPortraitUrl() =
                             CUSTOM_IMAGES_BASE (`https://steamloopback.host/
                             customimages/`, where the client serves `grid/`) +
-                            `<appid>p.<slots.portrait>?v=<the load's loadedAt>`
-                            (the name stays when a sync replaces the art), skipped
+                            `<appid>p.<slots.portrait>?v=<artVersionOf(pending.since)>`
+                            (the name stays when a run replaces the art, so the
+                            version moves when a run finished and only then:
+                            loads in between keep their URLs), skipped
                             while `stale_art` (the old match's art), then
                             capsuleUrl() for a Steam match (the old CDN path,
                             a 404 for some newer games); the page's Thumb tries
@@ -904,7 +909,9 @@ src/components/             adoptDefault (inspectLayout -> refusal toasts -> Con
                             parked*: setSettings({titles_recent_first}), the rows
                             through sortRows() after the filter, each with
                             addedText() while it is on, the headline's sortText(),
-                            during a sync only for `recent`; no layout text and no
+                            during a sync only for `recent`; Thumb tries a row's
+                            `thumbnails` in turn on `onError`, then the striped
+                            placeholder, keyed on the URLs; no layout text and no
                             layout action (Decisions 75 to 77: Advanced's *Layout*
                             and *Make default* are the only ones)), ChangeMatchModal,
                             Pill, StreamButton (renders only when streamMap has the

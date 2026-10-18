@@ -96,7 +96,7 @@ function Row({
         borderBottom: "1px solid rgba(255,255,255,0.08)",
       }}
     >
-      {/* Keyed on the URLs so a re-pointed row (or a new load) gets a fresh load-failure state. */}
+      {/* Keyed on the URLs so a re-pointed row (or new art after a run) gets a fresh load-failure state. */}
       <Thumb key={row.thumbnails.join(" ") || "none"} urls={row.thumbnails} />
       <div style={{ flexGrow: 1, minWidth: 0 }}>
         <div style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -210,7 +210,7 @@ export function TitlesPage() {
 
   const data = load?.ok && load.data.host === active ? load.data : null;
   const rows = useMemo(
-    () => (data ? joinTitles(data.apps, data.entries, data.ignored, data.added, data.loadedAt) : []),
+    () => (data ? joinTitles(data.apps, data.entries, data.ignored, data.added, data.artVersion) : []),
     [data],
   );
   const sort = titleSortOf(state.settings);

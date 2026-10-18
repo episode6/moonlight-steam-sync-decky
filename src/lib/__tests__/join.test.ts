@@ -6,6 +6,7 @@ import { eventsOf, lastOf } from "../events";
 import {
   addedText,
   applyPin,
+  artVersionOf,
   candidateRows,
   capsuleUrl,
   compareNames,
@@ -97,7 +98,14 @@ describe("joinTitles: list joined with status by name", () => {
     ]);
   });
 
-  it("thumbnails: the entry's portrait as the client serves it, versioned by the load", () => {
+  it("artVersionOf: the last run's end as a number, 0 without one", () => {
+    expect(artVersionOf("2026-10-17T12:00:00Z")).toBe(Date.parse("2026-10-17T12:00:00Z"));
+    expect(artVersionOf(null)).toBe(0);
+    expect(artVersionOf(undefined)).toBe(0);
+    expect(artVersionOf("not a time")).toBe(0);
+  });
+
+  it("thumbnails: the entry's portrait as the client serves it, with the art version", () => {
     const hades = byName(joinTitles(apps, entries, [], {}, 1760000000000), "Hades II");
     expect(hades.thumbnails).toEqual([
       customPortraitUrl(3000000011, "jpg", 1760000000000),

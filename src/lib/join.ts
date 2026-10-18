@@ -107,13 +107,24 @@ export const CUSTOM_IMAGES_BASE = "https://steamloopback.host/customimages/";
 /**
  * A shortcut's portrait as the client serves it: `<appid>p.<ext>`, the
  * extension `status` read off the file (a wrong one is a 404). `version`
- * makes each load's URL new: a sync replaces the art under the same name,
- * and the page's document would otherwise reuse the old image. `null` for
- * an extension that is not a plain word.
+ * (`artVersionOf`) moves when a run may have replaced the art under the
+ * same name, which the page's document would otherwise keep showing; the
+ * query string is ignored by the client (measured: 288 of 288 portraits
+ * load with one). `null` for an extension that is not a plain word.
  */
 export function customPortraitUrl(appid: number, ext: string, version: number): string | null {
   if (!/^[a-z0-9]{1,8}$/i.test(ext)) return null;
   return `${CUSTOM_IMAGES_BASE}${appid}p.${ext}?v=${version}`;
+}
+
+/**
+ * The thumbnails' version: when the last run finished (`pending.since`),
+ * since only a run writes art. Loads with no run between them keep their
+ * URLs, so the page neither reloads nor remounts a thumbnail; 0 before any.
+ */
+export function artVersionOf(since: string | null | undefined): number {
+  const time = since ? Date.parse(since) : NaN;
+  return Number.isNaN(time) ? 0 : time;
 }
 
 /**
@@ -123,8 +134,10 @@ export function customPortraitUrl(appid: number, ext: string, version: number): 
  */
 function thumbnailsOf(match: Match | null, entry: EntryEvent | null, version: number): string[] {
   const urls: string[] = [];
-  const portrait = entry && !entry.stale_art ? entry.slots.portrait : null;
-  const own = entry && portrait ? customPortraitUrl(entry.appid, portrait, version) : null;
+  const own =
+    entry && !entry.stale_art && entry.slots.portrait
+      ? customPortraitUrl(entry.appid, entry.slots.portrait, version)
+      : null;
   if (own) urls.push(own);
   const steam = match?.steam_appid;
   if (typeof steam === "number") urls.push(capsuleUrl(steam));
@@ -222,7 +235,7 @@ export function compareNames(a: string, b: string): number {
  * in it is ignored (and can be unignored) even before the next `list` says
  * so; a name `list` calls ignored that is not in it is ignored by the CLI's
  * `config.toml`, which the plugin never writes. `added` is `status`'s, for
- * `sortRows`; `artVersion` is the load's, for `customPortraitUrl`. The rows
+ * `sortRows`; `artVersion` is `artVersionOf`'s, for `customPortraitUrl`. The rows
  * come sorted by name.
  */
 export function joinTitles(
