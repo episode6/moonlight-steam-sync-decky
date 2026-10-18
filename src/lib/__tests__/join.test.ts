@@ -6,14 +6,18 @@ import { eventsOf, lastOf } from "../events";
 import {
   addedText,
   applyPin,
+  artVersionOf,
   candidateRows,
   capsuleUrl,
   compareNames,
   currentCandidateKey,
+  CUSTOM_IMAGES_BASE,
+  customPortraitUrl,
   filterCounts,
   filterRows,
   joinTitles,
   loadMoreLabel,
+  markStaleArt,
   matchSummary,
   noMatchRow,
   PAGE_SIZE,
@@ -83,14 +87,58 @@ describe("joinTitles: list joined with status by name", () => {
     expect(byName(rows, "Desktop").entry?.appid).toBe(3000000101);
   });
 
-  it("stream button: matched to an owned game, with the Steam capsule", () => {
+  it("stream button: matched to an owned game, its own portrait then the Steam capsule", () => {
     const row = byName(rows, "Balatro");
     expect(row.kind).toBe("stream");
     expect(row.badge).toEqual({ id: "stream", text: "stream button", tone: "stream" });
     expect(row.matchLine).toBe("Balatro · Steam 2379780");
-    expect(row.thumbnail).toBe(
+    expect(row.thumbnails).toEqual([
+      "https://steamloopback.host/customimages/2718281828p.png?v=0",
       "https://cdn.cloudflare.steamstatic.com/steam/apps/2379780/library_600x900.jpg",
+    ]);
+  });
+
+  it("artVersionOf: the last run's end as a number, 0 without one", () => {
+    expect(artVersionOf("2026-10-17T12:00:00Z")).toBe(Date.parse("2026-10-17T12:00:00Z"));
+    expect(artVersionOf(null)).toBe(0);
+    expect(artVersionOf(undefined)).toBe(0);
+    expect(artVersionOf("not a time")).toBe(0);
+  });
+
+  it("thumbnails: the entry's portrait as the client serves it, with the art version", () => {
+    const hades = byName(joinTitles(apps, entries, [], {}, 1760000000000), "Hades II");
+    expect(hades.thumbnails).toEqual([
+      customPortraitUrl(3000000011, "jpg", 1760000000000),
+      capsuleUrl(1145360),
+    ]);
+    expect(customPortraitUrl(3000000011, "jpg", 7)).toBe(
+      `${CUSTOM_IMAGES_BASE}3000000011p.jpg?v=7`,
     );
+    // an extension that is not a plain word never reaches a URL
+    expect(customPortraitUrl(1, "png?x=1", 0)).toBeNull();
+    expect(customPortraitUrl(1, "../p", 0)).toBeNull();
+    expect(customPortraitUrl(1, "", 0)).toBeNull();
+  });
+
+  it("thumbnails: stale art shows the new match's capsule only, not the old art on disk", () => {
+    const row = byName(rows, "Sea of Stars");
+    expect(row.entry?.stale_art).toBe(true);
+    expect(row.thumbnails).toEqual([capsuleUrl(1244090)]);
+  });
+
+  it("thumbnails: no portrait on disk falls back to the capsule, or to none", () => {
+    const noArt = entries.map((e) => (e.name === "Hades II" ? { ...e, slots: { ...e.slots, portrait: null } } : e));
+    expect(byName(joinTitles(apps, noArt), "Hades II").thumbnails).toEqual([capsuleUrl(1145360)]);
+    expect(byName(rows, "Steam Big Picture").thumbnails).toEqual([]);
+  });
+
+  it("thumbnails: a match known only to SteamGridDB still shows the shortcut's own portrait", () => {
+    const sgdbOnly = { steam_appid: null, sgdb_id: 5322710, matched_name: "Hades", how: "sgdb:exact" };
+    const [row] = joinTitles(
+      [app("Hades II", { match: sgdbOnly })],
+      entries.filter((e) => e.name === "Hades II"),
+    );
+    expect(row.thumbnails).toEqual([customPortraitUrl(3000000011, "jpg", 0)]);
   });
 
   it("same game as: the same_game_as chip names the other host and title", () => {
@@ -138,7 +186,7 @@ describe("joinTitles: list joined with status by name", () => {
     expect(row.unmatched).toBe(true);
     expect(row.badge).toEqual({ id: "unmatched", text: "unmatched", tone: "bad" });
     expect(row.matchLine).toBe("no match");
-    expect(row.thumbnail).toBeNull();
+    expect(row.thumbnails).toEqual([]);
     expect(row.chips).toEqual([]);
   });
 
@@ -148,7 +196,7 @@ describe("joinTitles: list joined with status by name", () => {
     expect(fromConfig.badge).toEqual({ id: "ignored", text: "ignored", tone: "neutral" });
     expect(fromConfig.ignoredBy).toBe("config");
     expect(fromConfig.matchLine).toBe("—");
-    expect(fromConfig.thumbnail).toBeNull();
+    expect(fromConfig.thumbnails).toEqual([]);
     expect(byName(rowsOf(["Demo Launcher"]), "Demo Launcher").ignoredBy).toBe("plugin");
   });
 
@@ -158,7 +206,7 @@ describe("joinTitles: list joined with status by name", () => {
     expect(desktop.badge).toEqual({ id: "host-app", text: "host app", tone: "neutral" });
     // Its match is a Steam game, which only feeds the art (spec 3.14).
     expect(desktop.matchLine).toBe("Desktop Dungeons · Steam 226620");
-    expect(desktop.thumbnail).toBe(capsuleUrl(226620));
+    expect(desktop.thumbnails).toEqual([customPortraitUrl(3000000101, "png", 0), capsuleUrl(226620)]);
     expect(desktop.chips).toEqual([]);
     expect(desktop.entry?.hidden).toBe(true);
 
@@ -230,13 +278,13 @@ describe("joinTitles: list joined with status by name", () => {
     expect(rows2.map((r) => r.badge.text)).toEqual(rowsOf().map((r) => r.badge.text));
   });
 
-  it("a match known only by its SteamGridDB id reads SGDB <id> and has no capsule", () => {
+  it("a match known only by its SteamGridDB id reads SGDB <id> and, without an entry, has no thumbnail", () => {
     const [row] = joinTitles(
       [app("Sea of Stars (GOG)", { match: { steam_appid: null, sgdb_id: 5322710, matched_name: "Sea of Stars", how: "sgdb:exact" } })],
       [],
     );
     expect(row.matchLine).toBe("Sea of Stars · SGDB 5322710");
-    expect(row.thumbnail).toBeNull();
+    expect(row.thumbnails).toEqual([]);
     expect(row.badge.text).toBe("shortcut");
   });
 
@@ -434,7 +482,17 @@ describe("applyPin: the row after Use this, before the next list", () => {
     expect(row.match).toEqual({ steam_appid: 1145350, sgdb_id: 5406129, matched_name: "Hades II", how: "pinned" });
     expect(row.matchLine).toBe("Hades II · Steam 1145350");
     expect(chipTexts(row)).toEqual(["pinned"]);
-    expect(row.thumbnail).toBe(capsuleUrl(1145350));
+    // until status marks the art stale, the old match's portrait still comes first
+    expect(row.thumbnails).toEqual([customPortraitUrl(3000000011, "jpg", 0), capsuleUrl(1145350)]);
+  });
+
+  it("markStaleArt: the pinned title shows the new match's capsule and the art refresh", () => {
+    const pinned = lastOf(loadFixture("common/match.ndjson"), "pinned")!;
+    const after = markStaleArt(entries, "Hades II");
+    const row = byName(joinTitles(applyPin(apps, pinned, "Hades II"), after), "Hades II");
+    expect(row.thumbnails).toEqual([capsuleUrl(1145350)]);
+    expect(chipTexts(row)).toEqual(["pinned", STALE_ART_TEXT]);
+    expect(after.filter((e) => e.name !== "Hades II")).toEqual(entries.filter((e) => e.name !== "Hades II"));
   });
 
   it("No match pins a shortcut with no ids", () => {

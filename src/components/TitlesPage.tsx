@@ -14,6 +14,7 @@ import {
   filterRows,
   joinTitles,
   loadMoreLabel,
+  markStaleArt,
   pageOf,
   parkedCount,
   publishedCount,
@@ -44,11 +45,12 @@ function chipStyle(on: boolean): CSSProperties {
   };
 }
 
-/** The capsule for a matched title; the striped placeholder otherwise (or when it fails to load). */
-function Thumb({ url }: { url: string | null }) {
-  const [failed, setFailed] = useState(false);
+/** The row's first thumbnail that loads; the striped placeholder when none does (or there is none). */
+function Thumb({ urls }: { urls: readonly string[] }) {
+  const [failed, setFailed] = useState(0);
   const box: CSSProperties = { width: 32, height: 48, borderRadius: 2, flexShrink: 0, objectFit: "cover" };
-  if (!url || failed) {
+  const url = urls[failed];
+  if (!url) {
     return (
       <div
         style={{
@@ -58,7 +60,7 @@ function Thumb({ url }: { url: string | null }) {
       />
     );
   }
-  return <img src={url} loading="lazy" style={box} onError={() => setFailed(true)} alt="" />;
+  return <img src={url} loading="lazy" style={box} onError={() => setFailed((n) => n + 1)} alt="" />;
 }
 
 function Row({
@@ -94,8 +96,8 @@ function Row({
         borderBottom: "1px solid rgba(255,255,255,0.08)",
       }}
     >
-      {/* Keyed on the URL so a re-pointed row gets a fresh load-failure state. */}
-      <Thumb key={row.thumbnail ?? "none"} url={row.thumbnail} />
+      {/* Keyed on the URLs so a re-pointed row (or new art after a run) gets a fresh load-failure state. */}
+      <Thumb key={row.thumbnails.join(" ") || "none"} urls={row.thumbnails} />
       <div style={{ flexGrow: 1, minWidth: 0 }}>
         <div style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {row.name}
@@ -208,7 +210,7 @@ export function TitlesPage() {
 
   const data = load?.ok && load.data.host === active ? load.data : null;
   const rows = useMemo(
-    () => (data ? joinTitles(data.apps, data.entries, data.ignored, data.added) : []),
+    () => (data ? joinTitles(data.apps, data.entries, data.ignored, data.added, data.artVersion) : []),
     [data],
   );
   const sort = titleSortOf(state.settings);
@@ -245,7 +247,14 @@ export function TitlesPage() {
 
   const onPinned = (pinned: PinnedEvent, matchedName: string | null) => {
     if (data) {
-      const next: TitlesLoad = { ok: true, data: { ...data, apps: applyPin(data.apps, pinned, matchedName) } };
+      const next: TitlesLoad = {
+        ok: true,
+        data: {
+          ...data,
+          apps: applyPin(data.apps, pinned, matchedName),
+          entries: markStaleArt(data.entries, pinned.name),
+        },
+      };
       lastLoad = next;
       setLoad(next);
     }

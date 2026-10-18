@@ -464,8 +464,9 @@ count and when it was last seen, the active one marked:
 The list button in the panel's header (or Settings → **Titles**) opens
 every title the active host publishes, sorted by name (or the newest first,
 see **Recently added** below), with what the next
-sync does with it. Each row has Steam's library capsule when the title is
-matched to a Steam game (a striped placeholder otherwise), the name, the
+sync does with it. Each row has the title's portrait, the same art its
+shortcut shows in the library (Steam's capsule when the shortcut has none
+yet, a striped placeholder when there is no art at all), the name, the
 match line (`Balatro · Steam 2379780`, `Sea of Stars · SGDB 5322710`, or
 `no match`) and one badge:
 

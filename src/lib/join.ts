@@ -3,7 +3,7 @@
  *
  * - `joinTitles` joins `list`'s `app` events with `status`'s `entry` events
  *   by Moonlight name into one row per title, with its kind badge, chips,
- *   match line and thumbnail. Parked entries only `status` knows about (the
+ *   match line and thumbnails. Parked entries only `status` knows about (the
  *   other hosts' titles, hidden in place) become parked rows too.
  * - `filterRows` / `pageOf` are the five filters, the *Show parked* chip and
  *   the pages of 50; `sortRows` is the *Recently added* chip's order.
@@ -60,8 +60,12 @@ export interface TitleRow {
   /** "Balatro · Steam 2379780", "Sea of Stars · SGDB 5322710", "no match", "same game as …". */
   matchLine: string;
   match: Match | null;
-  /** Steam's capsule for a title matched to a Steam appid; `null` = the placeholder. */
-  thumbnail: string | null;
+  /**
+   * The portraits to try, best first: the shortcut's own (what its library
+   * tile shows), then Steam's capsule for a Steam match. The page moves on
+   * when one fails to load; empty = the placeholder.
+   */
+  thumbnails: string[];
   /** The owned shortcut for this name, from `status` (none for an ignored or duplicate title). */
   entry: EntryEvent | null;
   ignored: boolean;
@@ -92,9 +96,52 @@ export const BADGES: Record<BadgeId, Badge> = {
 
 export const STALE_ART_TEXT = "art refreshes on next sync";
 
-/** Steam's library capsule for an appid (Decision 15: the frontend cannot read `grid/`). */
+/** Steam's library capsule for an appid; a 404 for some newer games, whose art moved to hashed paths. */
 export function capsuleUrl(steamAppid: number): string {
   return `https://cdn.cloudflare.steamstatic.com/steam/apps/${steamAppid}/library_600x900.jpg`;
+}
+
+/** Where the client serves `grid/` (Decision 15 as amended 2026-10-17, measured on a SteamOS device). */
+export const CUSTOM_IMAGES_BASE = "https://steamloopback.host/customimages/";
+
+/**
+ * A shortcut's portrait as the client serves it: `<appid>p.<ext>`, the
+ * extension `status` read off the file (a wrong one is a 404). `version`
+ * (`artVersionOf`) moves when a run may have replaced the art under the
+ * same name, which the page's document would otherwise keep showing; the
+ * query string is ignored by the client (measured: 288 of 288 portraits
+ * load with one). `null` for an extension that is not a plain word.
+ */
+export function customPortraitUrl(appid: number, ext: string, version: number): string | null {
+  if (!/^[a-z0-9]{1,8}$/i.test(ext)) return null;
+  return `${CUSTOM_IMAGES_BASE}${appid}p.${ext}?v=${version}`;
+}
+
+/**
+ * The thumbnails' version: when the last run finished (`pending.since`),
+ * since only a run writes art. Loads with no run between them keep their
+ * URLs, so the page neither reloads nor remounts a thumbnail; 0 before any.
+ */
+export function artVersionOf(since: string | null | undefined): number {
+  const time = since ? Date.parse(since) : NaN;
+  return Number.isNaN(time) ? 0 : time;
+}
+
+/**
+ * A row's `thumbnails`. The entry's own portrait comes first unless its art
+ * is stale: the art on disk is then the old match's, so only the new
+ * match's capsule is shown until the sync that replaces it.
+ */
+function thumbnailsOf(match: Match | null, entry: EntryEvent | null, version: number): string[] {
+  const urls: string[] = [];
+  const own =
+    entry && !entry.stale_art && entry.slots.portrait
+      ? customPortraitUrl(entry.appid, entry.slots.portrait, version)
+      : null;
+  if (own) urls.push(own);
+  const steam = match?.steam_appid;
+  if (typeof steam === "number") urls.push(capsuleUrl(steam));
+  return urls;
 }
 
 function hasIds(match: Match | null | undefined): boolean {
@@ -131,6 +178,7 @@ interface RowInput {
   entry: EntryEvent | null;
   ignoredBy: "plugin" | "config" | null;
   added: Readonly<AddedTitles>;
+  artVersion: number;
 }
 
 function buildRow(input: RowInput): TitleRow {
@@ -151,7 +199,6 @@ function buildRow(input: RowInput): TitleRow {
 
   const matchLine =
     kind === "duplicate" && duplicateOf ? `same game as ${duplicateOf}` : matchLineOf(match, ignored);
-  const steam = match?.steam_appid;
   return {
     name,
     kind,
@@ -159,7 +206,7 @@ function buildRow(input: RowInput): TitleRow {
     chips,
     matchLine,
     match,
-    thumbnail: typeof steam === "number" ? capsuleUrl(steam) : null,
+    thumbnails: thumbnailsOf(match, entry, input.artVersion),
     entry,
     ignored,
     ignoredBy,
@@ -188,13 +235,15 @@ export function compareNames(a: string, b: string): number {
  * in it is ignored (and can be unignored) even before the next `list` says
  * so; a name `list` calls ignored that is not in it is ignored by the CLI's
  * `config.toml`, which the plugin never writes. `added` is `status`'s, for
- * `sortRows`. The rows come sorted by name.
+ * `sortRows`; `artVersion` is `artVersionOf`'s, for `customPortraitUrl`. The rows
+ * come sorted by name.
  */
 export function joinTitles(
   apps: readonly AppEvent[],
   entries: readonly EntryEvent[],
   ignoreFile: readonly string[] = [],
   added: Readonly<AddedTitles> = {},
+  artVersion = 0,
 ): TitleRow[] {
   const byName = new Map<string, EntryEvent>();
   for (const entry of entries) {
@@ -218,6 +267,7 @@ export function joinTitles(
         entry: byName.get(app.name) ?? null,
         ignoredBy,
         added,
+        artVersion,
       }),
     );
   }
@@ -235,6 +285,7 @@ export function joinTitles(
         entry,
         ignoredBy: inFile.has(entry.name) ? "plugin" : null,
         added,
+        artVersion,
       }),
     );
   }
@@ -385,6 +436,15 @@ export function applyPin(apps: readonly AppEvent[], pinned: PinnedEvent, matched
         }
       : app,
   );
+}
+
+/**
+ * `entries` with `name`'s marked `stale_art`, as `pin --defer-art` leaves
+ * it, until the next `status` says so itself: the row shows the new match's
+ * capsule, not the old match's art still on disk.
+ */
+export function markStaleArt(entries: readonly EntryEvent[], name: string): EntryEvent[] {
+  return entries.map((entry) => (entry.name === name && !entry.client ? { ...entry, stale_art: true } : entry));
 }
 
 // ---------------------------------------------------------------------------

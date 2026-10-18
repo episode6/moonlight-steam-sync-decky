@@ -971,6 +971,25 @@ describe("the Titles page (spec 3.8)", () => {
     expect(load.data.added).toEqual({}); // a backend from before `added`
   });
 
+  it("versions the thumbnails by the last run, so loads in between keep their URLs", async () => {
+    const before = "2026-10-17T12:00:00Z";
+    const after = "2026-10-17T13:00:00Z";
+    const controller = await loaded({ pending: { ok: true, ...PENDING, since: before } });
+    const first = await controller.loadTitles();
+    const second = await controller.loadTitles();
+    expect(first.ok && first.data.artVersion).toBe(Date.parse(before));
+    expect(second.ok && second.data.artVersion).toBe(Date.parse(before));
+    // a finished run may have replaced art under the same file names
+    await controller.onSyncDone(done("sync", [], 0, { since: after }));
+    const third = await controller.loadTitles();
+    expect(third.ok && third.data.artVersion).toBe(Date.parse(after));
+  });
+
+  it("versions the thumbnails 0 before any run", async () => {
+    const load = await (await loaded()).loadTitles();
+    expect(load.ok && load.data.artVersion).toBe(0);
+  });
+
   it("hands the page status's added times (the Recently added order)", async () => {
     const added = { Balatro: "2026-09-27T10:00:00Z", "Hades II": null };
     const controller = await loaded({

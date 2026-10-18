@@ -14,6 +14,12 @@ project uses [semantic versioning](https://semver.org/).
   serve), so those titles synced without a logo every time. The next
   **Sync now** fills them in; a logo already on a title, including one
   picked by hand, is kept.
+- **The Titles page shows every title's art.** A row's thumbnail is now
+  the portrait its shortcut actually has, served by the Steam client, so
+  titles matched only on SteamGridDB, and newer Steam games whose art has
+  moved off the old CDN path, no longer show the striped placeholder. A
+  title without a shortcut still gets Steam's capsule, and a re-matched
+  title shows its new match's capsule until the next sync replaces the art.
 
 ### Changed
 

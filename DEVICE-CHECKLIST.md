@@ -240,6 +240,22 @@ to `~/homebrew/logs/steam-input-probe/steam-input-probe.log` (the loader's
 - [ ] **Titles list, idle.** With nothing running, press the panel
       header's list button. Expect "N published by MY-GAMING-PC · sorted by name"
       and rows with capsules, badges and chips.
+- [ ] **Titles thumbnails are the shortcuts' own art** (Decision 15 as
+      amended 2026-10-17). Every row whose shortcut has a portrait shows
+      the same image as its library tile, including a title matched only on
+      SteamGridDB (`SGDB <id>`) and a newer Steam game (on the SteamOS
+      machine, 2026-10-17: *007 First Light*, *F1 25*, *PRAGMATA*), which
+      showed the striped placeholder before. Those three have no CDN
+      capsule, so a placeholder on them means the client's
+      `customimages/` URL itself failed (its `?v=` query string included:
+      every own portrait would fall back to the CDN otherwise). Close
+      and reopen the page with no run in between: no thumbnail blanks
+      and reloads. Change a title's match: the row shows the new match's
+      capsule with *art refreshes on next sync*; after the sync and the
+      restart, reopen the page: the new art. A title with two portrait
+      files (the CLI's and one set through Steam's *Set custom artwork*
+      in another format) may show the CLI's here: `status` names the
+      first in name order, and which one the client draws is unmeasured.
 - [ ] **Titles page mid-sync.** Start *Sync now*, then open Settings →
       Titles while it runs. Expect "N published by MY-GAMING-PC[ · listed
       <relative time>] · refreshes when the sync finishes", the note "A

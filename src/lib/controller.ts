@@ -41,7 +41,7 @@ import {
   stagingErrorText,
 } from "./cli";
 import { lastOf } from "./events";
-import type { PinChoice } from "./join";
+import { artVersionOf, type PinChoice } from "./join";
 import {
   applyDefault,
   defaultLayoutOf,
@@ -176,6 +176,8 @@ export interface TitlesData {
   /** The cache's timestamp ("listed <when>"). */
   cachedWhen: string | null;
   statusError: string | null;
+  /** The thumbnails' version, `artVersionOf(pending.since)`: it moves only when a run finished, the only writer of art. */
+  artVersion: number;
 }
 
 export type TitlesLoad =
@@ -887,6 +889,7 @@ export class Controller {
         source,
         cachedWhen,
         statusError: isFailure(status) ? errorText(status) : null,
+        artVersion: artVersionOf(this.state.pending?.since),
       },
     };
   }
