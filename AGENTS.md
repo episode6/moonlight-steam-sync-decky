@@ -1961,6 +1961,10 @@ page's and the gear menu's layout items removed), times on Steam's
 12 / 24-hour clock, `install.sh` offering Decky Loader and a temporary
 password, and fixes to the update check's HTTP cache (amendment A6) and
 the panel's spacing; the CLI takes `0.13.0`, the minimum stays `0.4.0`.
+Plugin `v0.13.1` (the user asked for it on 2026-10-20) is a patch release
+for SteamGridDB logos (PNG-only queries, any style as a fallback) and the
+Titles page's thumbnails from each shortcut's own art; the CLI takes
+`0.13.1`, the minimum stays `0.4.0`.
 
 Once everything intended for the release has merged to `main`
 (substitute the version being cut for `X.Y.Z`):
