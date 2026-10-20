@@ -11,7 +11,9 @@ The CLI moved here on 2026-09-23 from its own repo,
 (now archived, with its history and its releases up to `v0.4.0`), into the
 repo of the Decky plugin that drives it. The repo-level concerns -- CI, the
 release, the version, the plugin's own hard rules -- are in the root
-[`AGENTS.md`](../AGENTS.md); this file keeps the CLI's.
+[`AGENTS.md`](../AGENTS.md) and the repo skills it lists (`../.agents/`:
+`moonlight-sync-ci`, `moonlight-sync-release`, …); this file keeps the
+CLI's.
 
 ## What this tool does
 
@@ -601,8 +603,9 @@ New end-to-end tests should build on those rather than monkeypatching
 ## Cutting a release
 
 The CLI has no release of its own any more: every release of this repo is
-one, cut from the root as described in the root [`AGENTS.md`](../AGENTS.md)
-("Cutting a release"). The CLI shares the plugin's version -- its
+one, cut from the root as described in the root
+[`moonlight-sync-release`](../.agents/moonlight-sync-release/SKILL.md)
+skill. The CLI shares the plugin's version -- its
 `__version__` in `src/moonlight_steam_sync/__init__.py` is bumped with
 `package.json`'s `"version"` in the same commit (`scripts/build_cli.py`
 refuses to build when they differ) -- and the root `release.yml` builds the

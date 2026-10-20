@@ -885,7 +885,8 @@ other leaves the build alone. Pull requests never publish a build.
 Then copy `out/Moonlight-Sync.zip` to the Deck and install it as above.
 `decky plugin build` (Docker) still works through `backend/Dockerfile` and
 `backend/entrypoint.sh`, but it is only for a store submission. See
-[`AGENTS.md`](AGENTS.md) for the module map and the test harness.
+[`AGENTS.md`](AGENTS.md) and the repo skills it lists (`.agents/`) for the
+module map and the test harness.
 
 ## License
 
