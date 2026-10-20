@@ -6,6 +6,8 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-10-20
+
 ### Fixed
 
 - **Logos from SteamGridDB.** A title whose game has no logo on Steam's
