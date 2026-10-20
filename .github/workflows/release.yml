@@ -14,7 +14,8 @@
 # The build job also runs on pull_request and workflow_dispatch, so the
 # release path is exercised by ordinary CI rather than sitting untested until
 # a tag; only the final "create the release and attach the assets" job is
-# tag-only. See AGENTS.md "Cutting a release" for the command sequence that
+# tag-only. See the moonlight-sync-release skill
+# (.agents/moonlight-sync-release/SKILL.md) for the command sequence that
 # pushes a v* tag -- no agent runs it unasked.
 name: Release
 

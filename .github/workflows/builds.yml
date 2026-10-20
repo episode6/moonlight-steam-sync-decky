@@ -33,7 +33,7 @@
 #   cleanup  on a branch's deletion, deletes its release and its tag, only
 #            when the release's title is that branch's name.
 #
-# Rules (AGENTS.md "CI and release outline"):
+# Rules (the moonlight-sync-ci skill, .agents/moonlight-sync-ci/SKILL.md):
 # - Only push, workflow_dispatch and delete trigger this. Never a pull-request
 #   event of any kind: code from a fork never reaches a release.
 #   tests/test_hard_rules.py holds the triggers and the permissions.

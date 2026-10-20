@@ -32,7 +32,8 @@ against a real Steam Deck beyond the initial `v0.1.0` install** -- the
 device checklist in the design spec (section 8) is still open, and the
 plugin's PR-0 device probes have only been run on a generic SteamOS
 machine, not a Deck. See [`AGENTS.md`](AGENTS.md) for the work plan and
-the root [`AGENTS.md`](../AGENTS.md) for the release procedure.
+the root [`moonlight-sync-release`](../.agents/moonlight-sync-release/SKILL.md)
+skill for the release procedure.
 
 ## Install
 
@@ -635,7 +636,8 @@ the root `.github/workflows/release.yml` builds it again on a `v*` tag,
 bundles it into the plugin zip and attaches it to the release. See
 [`CHANGELOG.md`](CHANGELOG.md) for the CLI's history up to `v0.4.0`, the
 root [`CHANGELOG.md`](../CHANGELOG.md) for what changed since, and the
-root [`AGENTS.md`](../AGENTS.md#cutting-a-release) for the exact steps to
+root [`moonlight-sync-release`](../.agents/moonlight-sync-release/SKILL.md)
+skill for the exact steps to
 cut a release.
 
 ## License
