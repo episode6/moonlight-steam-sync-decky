@@ -174,10 +174,8 @@ scripts/package.py          Docker-free zip: out/Moonlight-Sync.zip ("Moonlight 
   before it reached `main` needs a rebase), `delete` runs the default
   branch's copy, and a branch `build_info.py` refuses (a `+` or `@` in
   its name) cannot be built.
-
 - The plugin PRs are stacked (PR-0 → PR-5 → PR-6 → PR-7 → PR-8), each branch
-  on the previous one; never push to `main`, force-push only with
-  `--force-with-lease` on this stack's own branches.
+  on the previous one (`AGENTS.md`'s *Commands* has the push rules).
 
 ## Testing the build scripts and workflows
 

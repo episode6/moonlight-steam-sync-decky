@@ -151,7 +151,9 @@ python3 scripts/package.py        # out/Moonlight-Sync.zip (pnpm run package)
 gh workflow run builds.yml --ref <branch>   # publish a branch's build (then every push)
 ```
 
-Run long commands through `tee` to a log file, never `tail`.
+Run long commands through `tee` to a log file, never `tail`. Never push
+to `main`; force-push only with `--force-with-lease`, and only on the
+PR's own branch.
 
 ## How probes/ is kept out
 

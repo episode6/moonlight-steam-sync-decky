@@ -96,7 +96,6 @@ There is no Steam Deck during development; everything else is tested.
   `steam.test.ts` the `NavigateToExternalWeb` / `steam://openurl/`
   fallback; the modal, the browser and `NavigateBack` are device checks
   (DEVICE-CHECKLIST §14).
-
 - `tests/conftest.py`: `backend` / `make_backend` (a started Backend over
   the fake; `@pytest.mark.scenario("full-sync")` puts that scenario in front
   of `common/`), `steam_gone`, `install_env` (a `python3` shim that prints
@@ -131,7 +130,6 @@ There is no Steam Deck during development; everything else is tested.
   `STAGED_HASH_DIGITS`, `STAGED_FILE_SUFFIX`) equal to what the
   backend's `updates.staged_path` builds (update spec §3.12.5), each read
   out of the TypeScript source by a regular expression.
-
 - The CLI's own suite is `cli/tests` (see `cli/AGENTS.md`, "Testing"): it
   has its own conftest and fakes, runs apart from `tests/` (`python3 -m
   pytest cli`), and `cli/tests/test_release_zipapp.py` builds through
