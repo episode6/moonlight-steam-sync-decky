@@ -40,21 +40,28 @@ from dataclasses import dataclass
 #: The one place this value lives.
 MIN_CLI_VERSION: tuple[int, int, int] = (0, 4, 0)
 
-Version = tuple[int, int, int]
+#: ``(X, Y, Z)``, or ``(X, Y, Z, H)`` for a hotfix (the moonlight-sync-release
+#: skill: a hotfix of ``0.13.3`` is ``0.13.3.1``). Tuple order puts a hotfix
+#: between its release and the next: ``(0, 13, 3) < (0, 13, 3, 1) < (0, 13, 4)``.
+Version = tuple[int, ...]
 
-_VERSION_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)")
-#: A snapshot's spelling after ``X.Y.Z``: the CLI's ``.dev0`` (PEP 440, what
+_VERSION_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)(?:\.(\d+))?")
+#: A snapshot's spelling after the number: the CLI's ``.dev0`` (PEP 440, what
 #: ``scripts/build_cli.py``'s ``cli_spelling`` writes for ``package.json``'s
 #: ``-SNAPSHOT``), and the plugin's ``-SNAPSHOT`` itself for good measure.
-_SNAPSHOT_RE = re.compile(r"^\d+\.\d+\.\d+(\.dev\d*|-SNAPSHOT)(?![\w])")
+_SNAPSHOT_RE = re.compile(r"^\d+\.\d+\.\d+(\.\d+)?(\.dev\d*|-SNAPSHOT)(?![\w])")
 
 
 def parse_version(text: str) -> Version | None:
-    """``"0.3.0"`` / ``"0.4.0.dev1"`` / ``"1.2.3rc1"`` -> a tuple; else ``None``."""
+    """``"0.3.0"`` / ``"0.4.0.dev1"`` / ``"1.2.3rc1"`` -> a 3-tuple, a hotfix's
+    ``"0.13.3.1"`` a 4-tuple (``"0.13.3.1.dev0"`` too); else ``None``."""
     match = _VERSION_RE.match(text.strip())
     if not match:
         return None
-    return (int(match.group(1)), int(match.group(2)), int(match.group(3)))
+    parts = [int(match.group(1)), int(match.group(2)), int(match.group(3))]
+    if match.group(4) is not None:
+        parts.append(int(match.group(4)))
+    return tuple(parts)
 
 
 def is_snapshot(text: str) -> bool:

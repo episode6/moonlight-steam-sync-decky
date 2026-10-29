@@ -80,8 +80,9 @@ Breaking any of these is a blocker, not a judgement call.
    version as `X.Y.Z-SNAPSHOT`, which the CLI spells `X.Y.Z.dev0` (PEP 440
    has no `-SNAPSHOT`; `build_cli.py`'s `cli_spelling` is that rule's one
    home and `scripts/set_version.py` writes both); a release is the bare
-   `X.Y.Z`, set on its `release/vX.Y.Z` branch and never on `main`
-   (the `moonlight-sync-release` skill has the flow).
+   `X.Y.Z`, set on its `release/vX.Y.Z` branch and never on `main`, and
+   a hotfix of it adds a fourth part, `X.Y.Z.1` (the
+   `moonlight-sync-release` skill has the flow).
 9. **`src/lib/` is pure**: no `@decky/*`, `react` or `react-icons` import
    (an eslint `no-restricted-imports` rule enforces it), so vitest can load
    all of it. Decky-facing code lives in `src/components/`, `src/instance.tsx`

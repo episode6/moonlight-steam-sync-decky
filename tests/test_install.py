@@ -154,6 +154,8 @@ def test_a_newer_release_is_kept_over_a_bundled_snapshot(install_env) -> None:
         (" 0.13.4.dev0\n", True),
         ("0.13.4", False),
         ("0.13.4rc1", False),
+        ("0.13.4.1.dev0", True),
+        ("0.13.4.1", False),
         ("0.13.4.developer", False),
         ("0.13.4-SNAPSHOTS", False),
         ("dev", False),
@@ -162,6 +164,19 @@ def test_a_newer_release_is_kept_over_a_bundled_snapshot(install_env) -> None:
 )
 def test_is_snapshot(text: str, snapshot: bool) -> None:
     assert install.is_snapshot(text) is snapshot
+
+
+def test_a_hotfix_upgrades_its_release_and_is_kept_over_it(install_env) -> None:
+    """A hotfix's fourth part orders it above its release and below the next."""
+    install_env.bundled("moonlight-steam-sync.pyz 0.13.3.1")
+    install_env.installed("moonlight-steam-sync 0.13.3")
+    report = ensure(install_env)
+    assert report.action == "upgraded"
+    assert report.installed == (0, 13, 3, 1)
+    install_env.bundled("moonlight-steam-sync.pyz 0.13.3")
+    assert ensure(install_env).action == "kept"
+    install_env.bundled("moonlight-steam-sync.pyz 0.13.4")
+    assert ensure(install_env).action == "upgraded"
 
 
 def test_newer_installed_is_kept_whatever_its_bytes(install_env) -> None:
@@ -249,6 +264,8 @@ def test_no_bundle_is_not_an_error(install_env) -> None:
         ("moonlight-steam-sync.pyz 0.3.0", (0, 3, 0)),
         ("prog 0.4.0.dev1", (0, 4, 0)),
         ("__main__.py 1.2.3rc1", (1, 2, 3)),
+        ("moonlight-steam-sync 0.13.3.1", (0, 13, 3, 1)),
+        ("moonlight-steam-sync 0.13.3.1.dev0", (0, 13, 3, 1)),
         ("garbage", None),
         ("moonlight-steam-sync v0.3", None),
         ("", None),

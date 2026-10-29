@@ -3,22 +3,29 @@
  *
  * The backend decides `too_old` with `install.MIN_CLI_VERSION`; this module
  * only turns `cli_version()` into the panel's one row and About's lines, and
- * parses versions the same way the backend does (`X.Y.Z`, suffixes ignored).
+ * parses versions the same way the backend does (`install.parse_version`:
+ * `X.Y.Z`, or a hotfix's `X.Y.Z.H` with its fourth part, suffixes ignored).
  */
 
 import type { CliVersion } from "./cli";
 
-export type Version = [number, number, number];
+/** `[X, Y, Z]`, or `[X, Y, Z, H]` for a hotfix; a missing fourth part compares as 0. */
+export type Version = readonly number[];
 
 export function parseVersion(text: string | null | undefined): Version | null {
   if (!text) return null;
-  const match = /^(\d+)\.(\d+)\.(\d+)/.exec(text.trim());
-  return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:\.(\d+))?/.exec(text.trim());
+  if (!match) return null;
+  const parts = [Number(match[1]), Number(match[2]), Number(match[3])];
+  if (match[4] !== undefined) parts.push(Number(match[4]));
+  return parts;
 }
 
 export function compareVersions(a: Version, b: Version): number {
-  for (let i = 0; i < 3; i++) {
-    if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1;
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const left = a[i] ?? 0;
+    const right = b[i] ?? 0;
+    if (left !== right) return left < right ? -1 : 1;
   }
   return 0;
 }

@@ -284,9 +284,12 @@ src/lib/                    pure modules (vitest)
                             headline's), addedText() ("added today 2:02 PM")
   __tests__/join.test.ts    the join, every badge/chip, filters, sort, paging (fixtures)
   restart.ts                restartDecision() (the §3.9 table), modal text
-  version.ts                version parsing, the CLI-missing / too-old row,
-                            BUNDLED_CLI_RULE (About's text for when the bundled CLI
-                            is installed, Decision U12's equal-version replace included)
+  version.ts                version parsing (a Version is [X, Y, Z], or a hotfix's
+                            [X, Y, Z, H]; a missing fourth part compares as 0, suffixes
+                            such as -SNAPSHOT / .dev0 are ignored), the CLI-missing /
+                            too-old row, BUNDLED_CLI_RULE (About's text for when the
+                            bundled CLI is installed: Decision U12's equal-version
+                            replace and a snapshot replaced by a release included)
   format.ts                 relative times (relativeTime(), its clock 12-hour unless
                             setClockSource()'s source, steam.ts's steamClock24h at
                             plugin load and read at every call, says 24-hour, or an

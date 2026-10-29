@@ -235,7 +235,7 @@ def test_one_version_lives_in_package_json_and_the_cli() -> None:
     # `10.9.0`) is not the version.
     package = json.loads((ROOT / "package.json").read_text())
     version = package["version"]
-    assert re.fullmatch(r"\d+\.\d+\.\d+(-SNAPSHOT)?", version), version
+    assert re.fullmatch(r"\d+\.\d+\.\d+(-SNAPSHOT|\.\d+)?", version), version
     assert "moonlightSteamSync" not in package
     assert package["license"] == "MIT"
     assert "remote_binary" not in package

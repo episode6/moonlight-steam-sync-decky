@@ -25,7 +25,9 @@ project uses [semantic versioning](https://semver.org/).
   `scripts/set_version.py` writes a version in both of its spellings,
   `scripts/ship_release.py` creates the release from the branch with the
   CHANGELOG section as its notes, the release workflow refuses to tag a
-  snapshot, and CI also runs on pushes to release branches. Nothing
+  snapshot, CI also runs on pushes to release branches, and a hotfix
+  adds a fourth part to the version (`0.1.2.1`), which the updater and
+  the bundled-CLI check order between the release and the next. Nothing
   changes for an installed release: `install.sh`, `cli/install.sh` and
   the updater keep following the newest `v*` release.
 

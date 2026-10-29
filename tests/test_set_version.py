@@ -56,6 +56,7 @@ def set_version(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
         ("0.14.0-SNAPSHOT", "0.14.0.dev0"),
         ("1.0.0-SNAPSHOT", "1.0.0.dev0"),
         ("1.2.3rc1", "1.2.3rc1"),
+        ("0.13.3.1", "0.13.3.1"),
     ],
 )
 def test_cli_spelling(plugin: str, cli: str) -> None:
@@ -86,6 +87,13 @@ def test_a_snapshot_is_dev0_in_the_cli(tree: Path) -> None:
     assert build_cli.cli_version(tree) == build_cli.cli_spelling(build_cli.plugin_version(tree))
 
 
+def test_a_hotfix_is_written_alike_in_both(tree: Path) -> None:
+    result = set_version(tree, "0.13.3.1")
+    assert result.returncode == 0, result.stderr
+    assert json.loads((tree / "package.json").read_text())["version"] == "0.13.3.1"
+    assert (tree / INIT).read_text() == INIT_TEXT.replace("0.13.2", "0.13.3.1")
+
+
 def test_the_version_is_the_only_change_to_package_json(tree: Path) -> None:
     before = (tree / "package.json").read_text()
     assert set_version(tree, "0.14.0-SNAPSHOT").returncode == 0
@@ -98,8 +106,12 @@ def test_the_version_is_the_only_change_to_package_json(tree: Path) -> None:
     "version",
     [
         "0.14",
-        "0.14.0.1",
         "v0.14.0",
+        "01.2.3",
+        "0.14.0.0",
+        "0.14.0.01",
+        "0.14.0.1.1",
+        "0.14.0.1-SNAPSHOT",
         "0.14.0-snapshot",
         "0.14.0.dev0",
         "0.14.0-SNAPSHOT1",
@@ -112,7 +124,9 @@ def test_any_other_shape_is_refused_and_nothing_written(tree: Path, version: str
     before = ((tree / "package.json").read_text(), (tree / INIT).read_text())
     result = set_version(tree, version)
     assert result.returncode == 1
-    assert result.stderr.strip() == f"set_version.py: {version!r} is not X.Y.Z or X.Y.Z-SNAPSHOT"
+    assert result.stderr.strip() == (
+        f"set_version.py: {version!r} is not X.Y.Z, X.Y.Z-SNAPSHOT or a hotfix's X.Y.Z.H"
+    )
     assert ((tree / "package.json").read_text(), (tree / INIT).read_text()) == before
 
 

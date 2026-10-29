@@ -2,6 +2,7 @@
 """Set the one version in both of its spellings (AGENTS.md hard rule 8).
 
     python3 scripts/set_version.py X.Y.Z[-SNAPSHOT] [--root DIR]
+    python3 scripts/set_version.py X.Y.Z.H [--root DIR]          # a hotfix
 
 Writes ``package.json``'s ``"version"`` as given and the CLI's
 ``__version__`` (``cli/src/moonlight_steam_sync/__init__.py``) as
@@ -10,8 +11,11 @@ that ``X.Y.Z-SNAPSHOT`` (what ``main`` carries between releases) is
 ``X.Y.Z.dev0`` for the CLI, PEP 440's spelling of "before X.Y.Z". The
 release-branch flow (the moonlight-sync-release skill) runs it twice per
 release: on ``main`` for the next snapshot and on the release branch to
-strip the suffix. It refuses (exit 1, nothing written) any other shape of
-version, and refuses to touch a file it cannot read as expected.
+strip the suffix; a hotfix on the release branch is ``X.Y.Z.H`` (``0.1.2``
+-> ``0.1.2.1``), a fourth part from 1 that never carries ``-SNAPSHOT``,
+since a release branch never does. It refuses (exit 1, nothing written)
+any other shape of version, and refuses to touch a file it cannot read as
+expected.
 ``package.json`` is rewritten with its two-space indentation and trailing
 newline, so a version is the only change. Standard library only.
 """
@@ -27,13 +31,16 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from build_cli import _VERSION_RE, PACKAGE, cli_spelling  # noqa: E402
 
-VERSION_PATTERN = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-SNAPSHOT)?$")
+NUMBER = r"(0|[1-9][0-9]*)"
+VERSION_PATTERN = re.compile(rf"^{NUMBER}\.{NUMBER}\.{NUMBER}(-SNAPSHOT|\.[1-9][0-9]*)?$")
 
 
 def set_version(root: Path, version: str) -> tuple[str, str]:
     """Write ``version`` into both files; the two spellings written, or ``SystemExit``."""
     if not VERSION_PATTERN.match(version):
-        raise SystemExit(f"set_version.py: {version!r} is not X.Y.Z or X.Y.Z-SNAPSHOT")
+        raise SystemExit(
+            f"set_version.py: {version!r} is not X.Y.Z, X.Y.Z-SNAPSHOT or a hotfix's X.Y.Z.H"
+        )
     package_path = root / "package.json"
     init_path = root / "cli" / "src" / PACKAGE / "__init__.py"
     try:
@@ -60,7 +67,9 @@ def set_version(root: Path, version: str) -> tuple[str, str]:
 def main(argv: list[str] | None = None) -> int:
     default_root = Path(__file__).resolve().parents[1]
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("version", help="X.Y.Z, or X.Y.Z-SNAPSHOT between releases")
+    parser.add_argument(
+        "version", help="X.Y.Z, X.Y.Z-SNAPSHOT between releases, or a hotfix's X.Y.Z.H"
+    )
     parser.add_argument("--root", type=Path, default=default_root, help="the repo root")
     args = parser.parse_args(argv)
     plugin, cli = set_version(args.root.resolve(), args.version)

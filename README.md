@@ -874,7 +874,9 @@ its notes; the tag triggers `.github/workflows/release.yml`, which builds
 the zip and the CLI from the tagged commit and attaches them with their
 checksums. `release.yml` refuses a tag whose `package.json` is a
 `-SNAPSHOT` or does not match the tag, so a release can only ever come
-from a release branch.
+from a release branch. A hotfix, should one ever ship, stays on that
+branch and adds a fourth part to the version (`0.1.2` → `0.1.2.1`),
+which the updater orders between the release and the next one.
 
 A zip CI builds also carries `Moonlight Sync/build.json`, which says what
 it was built from (`scripts/build_info.py`: `release` and the tag, or

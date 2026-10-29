@@ -37,8 +37,8 @@ scripts/build_cli.py        cli/src -> moonlight-steam-sync.pyz (zipapp, deflate
                             package.json's "version" in the CLI's spelling (cli_spelling:
                             X.Y.Z-SNAPSHOT is X.Y.Z.dev0, the rule's one home)
 scripts/set_version.py      the one version in both spellings: package.json's "version" as
-                            given (X.Y.Z or X.Y.Z-SNAPSHOT, anything else refused with
-                            nothing written) and the CLI's __version__ as build_cli.py's
+                            given (X.Y.Z, X.Y.Z-SNAPSHOT or a hotfix's X.Y.Z.H with H
+                            from 1, anything else refused with nothing written) and the CLI's __version__ as build_cli.py's
                             cli_spelling says (a snapshot's -SNAPSHOT is .dev0, PEP 440);
                             package.json rewritten with its two-space indent and newline
 scripts/ship_release.py     the release from a release branch (the moonlight-sync-release
@@ -223,8 +223,9 @@ scripts/package.py          Docker-free zip: out/Moonlight-Sync.zip ("Moonlight 
   fixture tree (`--root`): `cli_spelling`'s table, a release written alike
   in both files, a snapshot as `.dev0` in the CLI (and what it wrote is
   what `build_cli.py` accepts), the version the only change to
-  `package.json` (indent, newline, non-ASCII kept), every other shape
-  (`0.14`, `v0.14.0`, `0.14.0-snapshot`, `0.14.0.dev0`, `01.2.3`, …)
+  `package.json` (indent, newline, non-ASCII kept), a hotfix's `X.Y.Z.H`
+  written alike in both, every other shape (`0.14`, `v0.14.0`,
+  `0.14.0-snapshot`, `0.14.0.dev0`, `01.2.3`, `0.14.0.0`, `0.14.0.1.1`, …)
   refused with nothing written, a file without a version refused, and the
   real tree's two spellings agreeing. `tests/test_ship_release.py` runs
   `scripts/ship_release.py` against a fixture tree with a fake `gh` on

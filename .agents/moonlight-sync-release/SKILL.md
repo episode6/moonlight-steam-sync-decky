@@ -5,7 +5,8 @@ description: >-
   CLI) with the episode6 release-branch flow: who may tag, main's
   X.Y.Z-SNAPSHOT (the CLI's X.Y.Z.dev0) and scripts/set_version.py, cutting
   release/vX.Y.Z and its two version PRs, the CHANGELOG section,
-  scripts/ship_release.py, checking the release assets, hotfixes, and the
+  scripts/ship_release.py, checking the release assets, hotfixes (a fourth
+  version part, X.Y.Z.H), and the
   history of every release so far. Load whenever asked to cut a release or a
   release branch, prepare or bump a version, touch the version number, or
   write a release's CHANGELOG section.
@@ -138,8 +139,8 @@ lives once, in `scripts/build_cli.py`'s `cli_spelling`; `scripts/
 set_version.py X.Y.Z[-SNAPSHOT]` writes both files, and
 `build_cli.py` refuses to build when they disagree. Every version
 parser in the plugin (`install.parse_version`, `version.ts`'s
-`parseVersion`) reads the leading `X.Y.Z` and ignores the suffix, so a
-snapshot compares equal to its release: the updater offers a release to
+`parseVersion`) reads the leading `X.Y.Z` (and a hotfix's fourth part)
+and ignores the suffix, so a snapshot compares equal to its release: the updater offers a release to
 a snapshot only through the branch-build rule (a build of a branch is
 offered a *switch* to the newest release whatever the versions say,
 update spec 3.12.4), and the bundled CLI's "same version, other bytes"
@@ -259,12 +260,21 @@ are).
 ### Hotfixes
 
 Not expected (the user's note of 2026-10-29: hotfixes will probably never
-ship), but the branch allows one. No new branch: cherry-pick the fix into
-`release/v<VERSION>` (the `cherry-pick-pr` skill), then a version PR on
-that branch sets the next patch (`set_version.py <VERSION+1 patch>`, a
-dated `## [<that>]` CHANGELOG section above `[<VERSION>]`) and
-`ship_release.py` tags it from the same branch. `package.json` is semver
-(three numbers, no fourth segment), so a hotfix takes the patch number
-`main`'s snapshot was going to use: bump `main` past it in a
-`[VERSION] Snapshot` PR of its own (`0.13.4-SNAPSHOT` → `0.13.5-SNAPSHOT`)
-so the next release is above the hotfix.
+ship), but the branch allows one, and **a hotfix adds a fourth part to
+the version** (the user's decision of 2026-10-29, the same scheme as
+collins): a hotfix of `0.1.2` is `0.1.2.1`, the next `0.1.2.2`. Both
+halves order it between its release and the next (`install.parse_version`
+and `version.ts`'s `parseVersion` read the fourth part; a missing one
+compares as 0), `updates.ts`'s `RELEASE_TAG_RE` reads the `v0.1.2.1`
+tag as a release, `set_version.py` accepts `X.Y.Z.H` (from 1, never with
+`-SNAPSHOT`), pnpm accepts the four-part `package.json` version and PEP
+440 the CLI's. `main` is not involved: its snapshot stays the next
+release's number, and nothing is bumped there.
+
+No new branch: cherry-pick the fix into `release/v<VERSION>` (the
+`cherry-pick-pr` skill), then a `[VERSION] Hotfix v<VERSION>.H` PR on
+that branch (`set_version.py <VERSION>.H`, a dated `## [<VERSION>.H]`
+CHANGELOG section above `[<VERSION>]`, which `ship_release.py` reads as
+the notes), and `ship_release.py` tags it from the same branch
+(`v<VERSION>.H`). The updater offers it to `<VERSION>` as an update, and
+`releases/latest` names it until the next release.
