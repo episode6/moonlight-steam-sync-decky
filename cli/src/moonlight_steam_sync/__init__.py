@@ -4,7 +4,7 @@
 #: at the repo root): every plugin release is a CLI release too. The two are
 #: bumped together, and ``scripts/build_cli.py`` refuses to build when they
 #: differ.
-__version__ = "0.13.2"
+__version__ = "0.13.3.dev0"
 
 
 def version() -> str:

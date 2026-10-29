@@ -6,6 +6,24 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Builds of `main` say they are snapshots.** Between releases
+  `package.json` carries the next release's version with `-SNAPSHOT`
+  after it (`0.13.3-SNAPSHOT` now), so Settings → About, Decky's install
+  dialog and the Updates page show when what is running is a build of
+  `main` rather than a release. The CLI spells the same version
+  `0.13.3.dev0`, the way Python packaging can read it; its `--version`
+  and the plugin's version check read both as `0.13.3`, so the bundled
+  CLI is installed and replaced as before. Releases are now cut on a
+  `release/vX.Y.Z` branch the way the other episode6 projects do it:
+  `scripts/set_version.py` writes a version in both of its spellings,
+  `scripts/ship_release.py` creates the release from the branch with the
+  CHANGELOG section as its notes, the release workflow refuses to tag a
+  snapshot, and CI also runs on pushes to release branches. Nothing
+  changes for an installed release: `install.sh`, `cli/install.sh` and
+  the updater keep following the newest `v*` release.
+
 ## [0.13.2] - 2026-10-29
 
 ### Added

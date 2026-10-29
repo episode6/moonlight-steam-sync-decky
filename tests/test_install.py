@@ -72,8 +72,9 @@ def test_same_version_and_same_bytes_is_untouched(install_env, monkeypatch) -> N
 
 
 def test_same_version_with_other_bytes_is_replaced(install_env, monkeypatch) -> None:
-    """Decision U12: a branch build carries the last release's version, so an
-    equal version with other bytes is replaced, through the atomic install."""
+    """Decision U12: every build of a branch carries that branch's version
+    (main's X.Y.Z.dev0 parses as X.Y.Z), so an equal version with other
+    bytes is replaced, through the atomic install."""
     install_env.bundled("moonlight-steam-sync.pyz 0.4.0")
     install_env.installed("moonlight-steam-sync 0.4.0")
     calls = []

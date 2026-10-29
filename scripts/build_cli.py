@@ -16,7 +16,12 @@ written through a ``.tmp`` and ``os.replace``.
 
 The CLI shares the plugin's version: it refuses to build (exit 1, nothing
 written) when ``cli/src/moonlight_steam_sync/__init__.py``'s ``__version__``
-is not ``package.json``'s ``"version"``. Standard library only.
+is not ``package.json``'s ``"version"`` spelled the CLI's way: the same
+string, except that a snapshot (``X.Y.Z-SNAPSHOT``, what ``main`` carries
+between releases) is ``X.Y.Z.dev0`` in the CLI, since PEP 440 has no
+``-SNAPSHOT`` and pip refuses to install the CLI under one (``cli_spelling``
+is that rule's one home; ``scripts/set_version.py`` writes both). Standard
+library only.
 """
 
 from __future__ import annotations
@@ -35,6 +40,22 @@ MAIN = f"{PACKAGE}.__main__:main"
 INTERPRETER = "/usr/bin/env python3"
 
 _VERSION_RE = re.compile(r'^__version__\s*=\s*"([^"]+)"', re.MULTILINE)
+
+#: package.json's suffix for the version `main` carries between releases
+#: (semver's spelling), and the CLI's (PEP 440's: a dev release of the
+#: version to come, which sorts before it like semver's pre-release does).
+SNAPSHOT_SUFFIX = "-SNAPSHOT"
+CLI_SNAPSHOT_SUFFIX = ".dev0"
+
+
+def cli_spelling(plugin_version: str) -> str:
+    """``package.json``'s version as the CLI's ``__version__`` spells it.
+
+    ``"0.14.0"`` is ``"0.14.0"``; ``"0.14.0-SNAPSHOT"`` is ``"0.14.0.dev0"``.
+    """
+    if plugin_version.endswith(SNAPSHOT_SUFFIX):
+        return plugin_version[: -len(SNAPSHOT_SUFFIX)] + CLI_SNAPSHOT_SUFFIX
+    return plugin_version
 
 
 def cli_version(root: Path) -> str | None:
@@ -75,10 +96,10 @@ def build(root: Path, out: Path) -> str:
         raise SystemExit(f"build_cli.py: no __version__ in cli/src/{PACKAGE}/__init__.py")
     if plugin is None:
         raise SystemExit("build_cli.py: no version in package.json")
-    if cli != plugin:
+    if cli != cli_spelling(plugin):
         raise SystemExit(
             f"build_cli.py: the CLI's __version__ ({cli}) is not package.json's version "
-            f"({plugin}); they are bumped together"
+            f"({plugin}); they are bumped together (scripts/set_version.py)"
         )
     out.parent.mkdir(parents=True, exist_ok=True)
     tmp = out.with_name(out.name + ".tmp")

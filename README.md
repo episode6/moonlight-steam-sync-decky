@@ -150,9 +150,12 @@ It downloads and goes through the same dialog.
   commit) whenever the branch has a build you do not have, and the
   automatic check announces a new push as it does a release. Each install
   from a branch checks GitHub again first, so what is downloaded is the
-  build that is there now. Decky's dialog names it as, say, "0.12.0 (main
-  @ abc1234)", since a branch's build carries the last release's version
-  number. *Installed* then reads `0.12.0 · main @ abc1234 · built …`, and
+  build that is there now. Decky's dialog names it as, say,
+  "0.14.0-SNAPSHOT (main @ abc1234)": a build of `main` carries the next
+  release's version with `-SNAPSHOT` after it, so a snapshot is never
+  mistaken for a release (a build of another branch carries whatever
+  version that branch does, usually `main`'s). *Installed* then reads
+  `0.14.0-SNAPSHOT · main @ abc1234 · built …`, and
   Settings → About's **Built from** and **Commit** rows say the same with
   the whole commit.
 - **Back to Releases**: pick *Releases*; the page then offers **Switch to
@@ -160,9 +163,11 @@ It downloads and goes through the same dialog.
   (Decky asks to *overwrite*). *Install another version* works from a
   branch's build too.
 
-A branch's build brings its own CLI. Because it carries the same version
-number as the release it came after, the plugin replaces your installed
-CLI of that version with the branch's (see *The bundled CLI* below), and
+A branch's build brings its own CLI, at the branch's version (`main`'s
+`0.14.0-SNAPSHOT` is `0.14.0.dev0` to the CLI, which reads as `0.14.0`
+to the version check). Because every build of the branch carries that
+same number, the plugin replaces your installed CLI of that version with
+the branch's (see *The bundled CLI* below), and
 installing a release again puts the release's own CLI back the same way
 (or, for a newer release, as an update). A CLI newer than the build's,
 installed by hand, is never replaced.
@@ -214,9 +219,10 @@ compares that copy with `~/.local/bin/moonlight-steam-sync`:
 - missing there, or older → the bundled one is copied into place
   (atomically, `~/.local/bin` is created if needed);
 - the same version but different bytes → the bundled one replaces it, the
-  same way. A build of a branch carries the last release's version number,
-  so this is how its CLI gets installed; it also replaces a CLI of that
-  version you built or installed by hand;
+  same way. Every build of a branch carries that branch's version number
+  (`main`'s `X.Y.Z-SNAPSHOT` is the CLI's `X.Y.Z.dev0`, read as `X.Y.Z`),
+  so this is how each new build's CLI gets installed; it also replaces a
+  CLI of that version you built or installed by hand;
 - the same version and the same bytes, or newer → left alone. A newer CLI
   you installed by hand stays; the plugin never installs an older one.
 
@@ -833,7 +839,35 @@ ruff check . && python3 -m pytest && python3 -m pytest cli
 
 `scripts/build_cli.py` refuses to build when the CLI's `__version__`
 (`cli/src/moonlight_steam_sync/__init__.py`) is not `package.json`'s
-`"version"`: the two are bumped together.
+`"version"`: the two are bumped together, by `scripts/set_version.py`.
+Between releases `main` carries the *next* release's version as
+`X.Y.Z-SNAPSHOT`, so About, Decky's dialogs and the Updates page say
+when what you run is a snapshot; the CLI spells the same version
+`X.Y.Z.dev0`, the way Python packaging can read it. A release is the
+bare `X.Y.Z`, and it is set on a release branch, never on `main`.
+
+### Releasing
+
+Releases follow the episode6 release-branch flow (the
+`moonlight-sync-release` skill in `.agents/` has every step). In short:
+once `main` is green, cut `release/vX.Y.Z` from it and open two PRs, one
+to `main` that moves it on to the next snapshot (`scripts/set_version.py
+X.Y.Z+1-SNAPSHOT`) and one to the release branch that drops the suffix
+(`scripts/set_version.py X.Y.Z`) and dates the CHANGELOG section. Fixes
+land on `main` first and are cherry-picked into the release branch. Then,
+from the release branch:
+
+```sh
+python3 scripts/ship_release.py --dry-run --output /tmp/release.json   # the notes and the command
+python3 scripts/ship_release.py --output /tmp/release.json             # gh release create vX.Y.Z
+```
+
+which creates the tag and the release page with the CHANGELOG section as
+its notes; the tag triggers `.github/workflows/release.yml`, which builds
+the zip and the CLI from the tagged commit and attaches them with their
+checksums. `release.yml` refuses a tag whose `package.json` is a
+`-SNAPSHOT` or does not match the tag, so a release can only ever come
+from a release branch.
 
 A zip CI builds also carries `Moonlight Sync/build.json`, which says what
 it was built from (`scripts/build_info.py`: `release` and the tag, or

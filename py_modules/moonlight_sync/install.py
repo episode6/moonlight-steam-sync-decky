@@ -4,9 +4,11 @@ The plugin zip carries ``bin/moonlight-steam-sync.pyz`` (spec 3.6.1). On
 startup the backend compares it with ``~/.local/bin/moonlight-steam-sync``
 and copies the bundle into place when the installed copy is missing or
 older, and also when it has the same version but other bytes (update spec
-3.12.3, Decision U12: a branch build carries the last release's version
-number, so without this its CLI would never reach the device; it also
-replaces a hand-installed build of the same version). It never downgrades:
+3.12.3, Decision U12: a branch build's CLI carries the version its branch
+does, ``X.Y.Z.dev0`` for ``main``'s ``X.Y.Z-SNAPSHOT``, which
+:func:`parse_version` reads as ``X.Y.Z``, so build after build of a branch
+shares one version and without this its CLI would never reach the device;
+it also replaces a hand-installed build of the same version). It never downgrades:
 a newer CLI the user installed by hand stays, and so does one of the same
 version whose bytes are the bundle's.
 

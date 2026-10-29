@@ -32,6 +32,11 @@ def plugin_version() -> str:
     return json.loads((ROOT / "package.json").read_text())["version"]
 
 
+def cli_version() -> str:
+    """The plugin's version as the CLI spells it (a snapshot's -SNAPSHOT is .dev0)."""
+    return build_cli.cli_spelling(plugin_version())
+
+
 @pytest.fixture
 def sandbox(tmp_path: Path) -> Path:
     plugin = tmp_path / "plugin"
@@ -71,8 +76,8 @@ def test_builds_a_runnable_zipapp_with_mode_0755(sandbox: Path) -> None:
     pyz = out_file(sandbox)
     assert stat.S_IMODE(pyz.stat().st_mode) == 0o755
     assert pyz.read_bytes().startswith(b"#!/usr/bin/env python3\n")
-    assert f"moonlight-steam-sync v{plugin_version()} ->" in result.stdout
-    assert result.stdout.strip().endswith(plugin_version())
+    assert f"moonlight-steam-sync v{cli_version()} ->" in result.stdout
+    assert result.stdout.strip().endswith(cli_version())
 
 
 def test_the_zipapp_holds_the_package_only(sandbox: Path) -> None:
@@ -121,7 +126,8 @@ def test_a_missing_cli_source_fails(sandbox: Path) -> None:
 
 
 def test_the_cli_shares_the_plugins_version() -> None:
-    # One version for both: a plugin release is a CLI release.
-    assert build_cli.cli_version(ROOT) == plugin_version()
+    # One version for both: a plugin release is a CLI release. Between
+    # releases main's X.Y.Z-SNAPSHOT is the CLI's X.Y.Z.dev0.
+    assert build_cli.cli_version(ROOT) == cli_version()
     assert build_cli.plugin_version(ROOT) == plugin_version()
     assert (ROOT / INIT).exists()

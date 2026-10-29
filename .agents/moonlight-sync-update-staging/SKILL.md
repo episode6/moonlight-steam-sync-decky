@@ -104,8 +104,10 @@ the downloader is being spawned kills it the moment it exists. Every exit releas
 guard. `startup()` runs `updates.cleanup` (staged files older than an
 hour, every `*.part`; creates nothing). `install.ensure_installed`
 replaces an installed CLI of the bundled one's version whose bytes differ
-(`replaced`, Decision U12: a branch build carries the last release's
-version); a newer installed CLI is still kept and nothing is downgraded.
+(`replaced`, Decision U12: every build of a branch carries that branch's
+version, `main`'s `X.Y.Z.dev0` for its `X.Y.Z-SNAPSHOT`, which
+`parse_version` reads as `X.Y.Z`); a newer installed CLI is still kept and
+nothing is downgraded.
 The frontend (update spec 3.12.5) calls `stage_update` with exactly one
 of a release's `version` and a branch build's `ref`, the other `null`,
 checks the answer against its offer (`stagedMatches`: the hash, a
