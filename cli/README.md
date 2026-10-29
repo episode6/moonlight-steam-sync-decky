@@ -346,7 +346,11 @@ Steam Input settings.
   appid in the file. A fuzzy hit is right often enough for artwork, but a
   wrong Stream button on the real game's page is worse than an extra
   tile, so fuzzy matches keep their visible shortcut; pin them with
-  `match` to promote them.
+  `match` to promote them. A fuzzy SteamGridDB hit, or an exact one
+  for a game SteamGridDB has no Steam release for, also sends the
+  search on to Steam's store: an exact store hit wins over the fuzzy
+  one, or supplies the appid the SteamGridDB entry lacks, which is
+  what a game newer than SteamGridDB's catalogue needs.
 - The hidden entry is named exactly as the owned game (no `name_suffix`),
   because Steam Input keys a shortcut's layout by its lowercased name and
   offers a same-named shortcut the retail game's community layouts. Its

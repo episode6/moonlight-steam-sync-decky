@@ -15,7 +15,7 @@ from moonlight_steam_sync.art.resolve import (
     pick,
 )
 from moonlight_steam_sync.art.sgdb import SgdbClient, steam_appid_from_game
-from moonlight_steam_sync.art.steamstore import SteamStoreClient
+from moonlight_steam_sync.art.steamstore import SteamStoreClient, store_search_url
 from tests.art_fixtures import FakeTransport, make_fetcher
 
 
@@ -102,6 +102,70 @@ def test_a_non_steam_game_resolves_with_no_steam_appid(tmp_path) -> None:
     assert match.sgdb_id == 7001
     assert match.steam_appid is None
     assert match.how == "sgdb:exact"
+
+
+def test_a_non_steam_game_asks_the_store_too_and_keeps_its_sgdb_match(tmp_path) -> None:
+    # An exact SteamGridDB match with no Steam release is a weak one: the
+    # store is asked, finds nothing, and the SteamGridDB match stands, cached.
+    resolver, transport, cache = build(tmp_path)
+    match = resolver.resolve("Fan Made Adventure")
+    assert any("storesearch" in call for call in transport.calls)
+    assert (match.how, match.sgdb_id, match.steam_appid) == ("sgdb:exact", 7001, None)
+    assert match.transient is False
+    assert "Fan Made Adventure" in cache
+
+
+# -- a weak SteamGridDB answer falls through to the store (2026-10-29) -----
+
+def test_an_exact_store_hit_replaces_a_fuzzy_sgdb_match(tmp_path) -> None:
+    # SteamGridDB knows only "Brand New" (the franchise's first game), so
+    # autocomplete is a prefix hit on a different game; the store has the
+    # sequel itself, and that is the match -- with the wrong sgdb id dropped.
+    resolver, transport, cache = build(tmp_path)
+    match = resolver.resolve("Brand New Sequel")
+    assert (match.how, match.steam_appid, match.sgdb_id) == ("steamstore:exact", 610200, None)
+    assert match.matched_name == "Brand New Sequel"
+    assert store_search_url("Brand New Sequel") in transport.calls
+    assert cache.get("Brand New Sequel") == match
+
+
+def test_an_exact_store_hit_lends_its_appid_to_an_unlinked_sgdb_match(tmp_path) -> None:
+    # A verified SteamGridDB entry nobody has linked to Steam yet: the store's
+    # exact hit supplies the appid, the SteamGridDB id stays for community
+    # art, and `how` stays an exact SteamGridDB match (a `stream` kind).
+    resolver, _, cache = build(tmp_path)
+    match = resolver.resolve("Unlinked Launch")
+    assert (match.how, match.steam_appid, match.sgdb_id) == ("sgdb:exact-verified", 620300, 8500)
+    assert cache.get("Unlinked Launch") == match
+
+
+def test_a_non_exact_store_answer_leaves_a_fuzzy_sgdb_match_alone(tmp_path) -> None:
+    resolver, transport, _ = build(tmp_path)
+    url = store_search_url("Brand New Sequel")
+    transport.responses = dict(transport.responses)
+    transport.responses[url] = {
+        "status": 200,
+        "body": "responses/steam-storesearch-unknown.json",
+        "content_type": "application/json",
+    }
+    match = resolver.resolve("Brand New Sequel")
+    assert (match.how, match.steam_appid, match.sgdb_id) == ("sgdb:fuzzy", 610100, 8400)
+    assert match.transient is False
+
+
+def test_a_failed_store_lookup_keeps_the_weak_sgdb_match_for_this_run_only(tmp_path) -> None:
+    resolver, transport, cache = build(tmp_path)
+    url = store_search_url("Unlinked Launch")
+    transport.fail_with[url] = NetworkError("down")
+    match = resolver.resolve("Unlinked Launch")
+    assert (match.how, match.steam_appid, match.sgdb_id) == ("sgdb:exact-verified", None, 8500)
+    assert match.transient is True
+    assert "Unlinked Launch" not in cache
+    # The next run asks again and gets the store's answer.
+    del transport.fail_with[url]
+    again = resolver.resolve("Unlinked Launch")
+    assert again.steam_appid == 620300
+    assert "Unlinked Launch" in cache
 
 
 def test_zero_results_falls_through_to_the_store_and_then_to_no_match(tmp_path) -> None:

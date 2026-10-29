@@ -168,6 +168,16 @@
       "body": "images/tiny.png",
       "content_type": "image/png"
     },
+    "https://store.steampowered.com/api/storesearch/?term=Brand+New+Sequel&l=english&cc=US": {
+      "status": 200,
+      "body": "responses/steam-storesearch-brand-new-sequel.json",
+      "content_type": "application/json"
+    },
+    "https://store.steampowered.com/api/storesearch/?term=Fan+Made+Adventure&l=english&cc=US": {
+      "status": 200,
+      "body": "responses/steam-storesearch-fan-made-adventure.json",
+      "content_type": "application/json"
+    },
     "https://store.steampowered.com/api/storesearch/?term=Rate+Limited+Game&l=english&cc=US": {
       "status": 429,
       "body": null,
@@ -178,6 +188,11 @@
     "https://store.steampowered.com/api/storesearch/?term=Totally+Unknown+Title&l=english&cc=US": {
       "status": 200,
       "body": "responses/steam-storesearch-unknown.json",
+      "content_type": "application/json"
+    },
+    "https://store.steampowered.com/api/storesearch/?term=Unlinked+Launch&l=english&cc=US": {
+      "status": 200,
+      "body": "responses/steam-storesearch-unlinked-launch.json",
       "content_type": "application/json"
     },
     "https://www.steamgriddb.com/api/v2/games/id/5241?platformdata=steam": {
@@ -208,6 +223,16 @@
     "https://www.steamgriddb.com/api/v2/games/id/8200?platformdata=steam": {
       "status": 200,
       "body": "responses/sgdb-game-8200.json",
+      "content_type": "application/json"
+    },
+    "https://www.steamgriddb.com/api/v2/games/id/8400?platformdata=steam": {
+      "status": 200,
+      "body": "responses/sgdb-game-8400.json",
+      "content_type": "application/json"
+    },
+    "https://www.steamgriddb.com/api/v2/games/id/8500?platformdata=steam": {
+      "status": 200,
+      "body": "responses/sgdb-game-8500.json",
       "content_type": "application/json"
     },
     "https://www.steamgriddb.com/api/v2/grids/game/7001?types=static&dimensions=460x215&styles=alternate&mimes=image/png,image/jpeg": {
@@ -270,6 +295,11 @@
       "body": "responses/sgdb-logos-8200-white.json",
       "content_type": "application/json"
     },
+    "https://www.steamgriddb.com/api/v2/search/autocomplete/Brand%20New%20Sequel": {
+      "status": 200,
+      "body": "responses/sgdb-search-brand-new-sequel.json",
+      "content_type": "application/json"
+    },
     "https://www.steamgriddb.com/api/v2/search/autocomplete/Custom%20Logo%20Quest": {
       "status": 200,
       "body": "responses/sgdb-search-custom-logo-quest.json",
@@ -310,6 +340,11 @@
     "https://www.steamgriddb.com/api/v2/search/autocomplete/Totally%20Unknown%20Title": {
       "status": 200,
       "body": "responses/sgdb-search-unknown.json",
+      "content_type": "application/json"
+    },
+    "https://www.steamgriddb.com/api/v2/search/autocomplete/Unlinked%20Launch": {
+      "status": 200,
+      "body": "responses/sgdb-search-unlinked-launch.json",
       "content_type": "application/json"
     }
   }

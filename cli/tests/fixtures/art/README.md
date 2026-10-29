@@ -29,18 +29,20 @@
 | `images/tiny.{png,jpg,webp}` | 1x1 stand-in bodies. Only the magic bytes are load-bearing: the selector sniffs PNG/JPEG and rejects everything else, and `tiny.webp` exists to prove WebP never reaches `grid/`. Real captures do **not** need to replace these, and `record_fixtures.py` deliberately keeps pointing at them. |
 | `make_synthetic.py` | regenerates the synthetic set, and documents what each title is for. |
 
-## The eight titles and what each one is for
+## The ten titles and what each one is for
 
 | title | case |
 |---|---|
 | `Elden Ring` | exact **verified** SteamGridDB match; every slot comes from the Steam CDN, so not one community call is made. |
 | `Hades II™` | a title carrying a trademark glyph (normalisation), and a missing `library_600x900_2x.jpg` so the 1x official portrait URL is used. |
-| `Fan Made Adventure` | a **non-Steam** game: community art only, score sorting (the fixture lists the low-score asset first), a second-choice query (`920x430` empty -> `460x215`), and an asset whose bytes are WebP behind a `.png` URL, which must be rejected. |
+| `Fan Made Adventure` | a **non-Steam** game (an exact SteamGridDB match with no Steam release, so the resolver asks the store too and gets an empty answer): community art only, score sorting (the fixture lists the low-score asset first), a second-choice query (`920x430` empty -> `460x215`), and an asset whose bytes are WebP behind a `.png` URL, which must be rejected. |
 | `Old Console Classic` | a Steam game with **no `logo.png` on the CDN**, so the logo slot falls through to community art while the rest stay official. |
 | `Totally Unknown Title` | **zero results** anywhere: no match, a negative cache entry, every slot missing. |
 | `Rate Limited Game` | SteamGridDB and the store both answer **429** forever, so the run hits the five-consecutive-429 hard stop and exits 4 with everything so far kept. |
 | `Hollow Knight` | the adoptable SteamTinkerLaunch-era entry in `../shortcuts_synthetic.vdf`, so the `sync` end-to-end tests can adopt an existing shortcut and dress it (every slot official, like Elden Ring). |
 | `Custom Logo Quest` | a Steam game with **no `logo.png` on the CDN**, an `official` SteamGridDB logo whose bytes are WebP and no `white` one, so the `custom` query beats a higher-scored `black` logo; a test that empties `custom` checks the any-style query skips the failed `official` logo it lists first. Only its logo chain is recorded. |
+| `Brand New Sequel` | a game SteamGridDB does not have yet: autocomplete returns only the franchise's first game, `Brand New`, which the prefix rule picks as a **fuzzy** hit, so the store is asked and its exact hit wins (`steamstore:exact`, the wrong SteamGridDB id dropped). Only the two searches and the `games/id` lookup are recorded. |
+| `Unlinked Launch` | a **verified** SteamGridDB entry nobody has linked to a Steam release yet, so the store is asked and its exact hit lends its appid (`sgdb:exact-verified` with the store's appid, the SteamGridDB id kept for community art). Only the searches and the `games/id` lookup are recorded. |
 
 When a real device run turns up a match the heuristics get wrong, add it here
 as a ninth case rather than special-casing it in the code.

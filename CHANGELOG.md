@@ -6,6 +6,18 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **New games match their Steam game again.** A game newer than
+  SteamGridDB's catalogue either fuzzy-matched an older game of the
+  same franchise or matched a SteamGridDB entry nobody had linked to
+  Steam yet, and either way the search stopped there, so Steam's own
+  store was never asked and the title got a visible shortcut instead
+  of a Stream entry on the owned game. Such a weak SteamGridDB answer
+  now falls through to the store search, whose exact hit wins. A title
+  already matched wrongly keeps its cached match; re-match it from the
+  Titles page (or `match`) as before.
+
 ## [0.13.1] - 2026-10-20
 
 ### Fixed
