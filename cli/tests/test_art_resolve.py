@@ -305,11 +305,26 @@ def test_an_owned_name_heals_a_cached_weak_match_but_not_a_strong_one(tmp_path) 
     cache.put(Match(name="Brand New Sequel", steam_appid=610100, sgdb_id=8400, how="sgdb:fuzzy"))
     cache.put(Match(name="Elden Ring", steam_appid=4242, sgdb_id=4242, how="sgdb:exact-verified"))
     cache.put(Match(name="DOOM (1993)", how="none"))
-    assert resolver.resolve("Brand New Sequel").how == "owned:exact"  # fuzzy: healed
-    assert resolver.resolve("DOOM (1993)").steam_appid == 2280  # a cached miss: healed
+    healed = resolver.resolve("Brand New Sequel")  # fuzzy: healed, its art flagged
+    assert (healed.how, healed.stale_art) == ("owned:exact", True)
+    assert cache.get("Brand New Sequel").stale_art is True
+    assert resolver.resolve("Brand New Sequel").stale_art is True  # cached, still flagged
+    doom = resolver.resolve("DOOM (1993)")  # a cached miss: healed, no art to flag
+    assert (doom.steam_appid, doom.stale_art) == (2280, False)
     strong = resolver.resolve("Elden Ring")  # exact with an appid: trusted
     assert (strong.how, strong.steam_appid) == ("sgdb:exact-verified", 4242)
     assert not any("autocomplete" in c for c in transport.calls)
+
+
+def test_the_owned_index_follows_the_map_not_its_address(tmp_path) -> None:
+    # A long-lived Resolver (a test harness reusing services) may see a
+    # different map of the same length at a reused address.
+    resolver, _, _ = build(tmp_path, api_key="", owned={1: "Alpha"})
+    assert resolver.resolve("Alpha").steam_appid == 1
+    resolver.owned = None
+    resolver.owned = {2: "Beta"}
+    assert resolver.resolve("Beta").steam_appid == 2
+    assert dict(resolver._owned_by_name()) == {"beta": (2,)}
 
 
 def test_a_pin_beats_the_owned_name(tmp_path) -> None:

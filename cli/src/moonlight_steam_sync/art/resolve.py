@@ -78,10 +78,7 @@ def normalise(name: str) -> str:
     >>> normalise("Hades II™ (2024)")
     'hades ii'
     """
-    text = name.translate(_TRADEMARKS).casefold().strip()
-    text = _TRAILING_YEAR.sub("", text)
-    text = _NON_WORD.sub(" ", text)
-    return " ".join(text.split())
+    return normalise_strict(_TRAILING_YEAR.sub("", name.strip()))
 
 
 def normalise_strict(name: str) -> str:
@@ -136,7 +133,8 @@ class Match:
     ``how`` is the match chain's verdict, printed by ``art --explain``:
     ``override``, ``pinned`` (``match``, decky spec 3.4.4), ``unpinned``
     (the placeholder ``match --unpin --defer-art`` leaves; not a
-    resolution), ``cache``, ``sgdb:exact-verified``, ``sgdb:exact``,
+    resolution), ``owned:exact`` (the title is an owned game's name,
+    ``sync --owned-apps``), ``cache``, ``sgdb:exact-verified``, ``sgdb:exact``,
     ``sgdb:fuzzy``, ``steamstore:exact``, ``steamstore:fuzzy``, ``none`` or
     ``skipped`` (``art = false`` in ``[overrides]``).
     """
@@ -444,7 +442,7 @@ class Resolver:
     _owned_index: Mapping[str, tuple[int, ...]] = field(
         default_factory=dict, init=False, repr=False, compare=False
     )
-    _owned_index_key: tuple[int, int] | None = field(
+    _owned_index_for: Mapping[int, str] | None = field(
         default=None, init=False, repr=False, compare=False
     )
 
@@ -518,6 +516,11 @@ class Resolver:
                 cached.explain = [f"cache: how={cached.how} when={cached.when}"]
                 return cached
             explain.insert(0, f"cache: how={cached.how} when={cached.when} (weak; owned name wins)")
+            if cached.how.endswith(":fuzzy"):
+                # The grid files on disk were fetched for the fuzzy pick,
+                # another game: a `rematched` replacement, not a rename.
+                owned_match.stale_art = True
+                explain.append("art on disk is the fuzzy pick's; flagged stale")
         else:
             owned_match = self._owned_match(name, explain)
         if owned_match is not None:
@@ -586,13 +589,14 @@ class Resolver:
     def _owned_by_name(self) -> Mapping[str, tuple[int, ...]]:
         """``normalise_strict(display name) -> owned appids``, built once per map."""
         owned = self.owned or {}
-        key = id(owned), len(owned)
-        if self._owned_index_key != key:
+        if self._owned_index_for is not owned:
             index: dict[str, list[int]] = {}
             for appid, display_name in owned.items():
                 index.setdefault(normalise_strict(str(display_name)), []).append(int(appid))
             self._owned_index = {k: tuple(sorted(v)) for k, v in index.items() if k}
-            self._owned_index_key = key
+            # The mapping itself, not its id(): a kept reference cannot be
+            # reused by a later, different map of the same length.
+            self._owned_index_for = owned
         return self._owned_index
 
     def _override(self, name: str) -> Mapping[str, Any] | None:

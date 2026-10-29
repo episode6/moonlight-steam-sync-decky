@@ -277,16 +277,23 @@ def test_a_cached_fuzzy_match_heals_into_a_stream_entry_when_the_title_is_an_own
     """The 2026-10-29 shape: a new title cached as a fuzzy hit on another
     game. Once the account owns a game of exactly that name, the next sync
     matches it by name, with no search and no lookup beyond SteamGridDB's
-    id for the appid; the art on disk is replaced (``rematched``)."""
+    id for the appid; the art on disk, the other game's, is replaced
+    (a ``rematched`` replacement: deleted and re-fetched, never renamed
+    onto the Stream entry)."""
     host_publishes(tmp_path, monkeypatch, ["Elden Ring"])
+    # The fuzzy pick is Hades II, a game the manifest serves art for, so
+    # the first sync dresses the visible tile with Hades II's five files.
     seed_cache(
         world,
-        Match(name="Elden Ring", steam_appid=9999, sgdb_id=9999, how="sgdb:fuzzy",
-              matched_name="Elden Ring Nightreign"),
+        Match(name="Elden Ring", steam_appid=HADES_STEAM, sgdb_id=HADES_SGDB,
+              how="sgdb:fuzzy", matched_name="Hades II"),
     )
     first = world.run(["sync"])
     assert first.code == 0, first.err
-    assert entry(world, "Elden Ring").is_hidden == 0
+    visible = entry(world, "Elden Ring")
+    assert visible.is_hidden == 0
+    assert len(grid_of(world, visible.appid)) == 5
+    assert any(f"/apps/{HADES_STEAM}/" in url for url in first.calls)
     owned = owned_file(tmp_path, {ELDEN_STEAM: ELDEN_OWNED})
 
     result = world.run(["--json", "sync", "--owned-apps", owned])
@@ -301,7 +308,16 @@ def test_a_cached_fuzzy_match_heals_into_a_stream_entry_when_the_title_is_an_own
     assert (cached["how"], cached["steam_appid"], cached["sgdb_id"]) == (
         "owned:exact", ELDEN_STEAM, ELDEN_SGDB,
     )
-    assert len(grid_of(world, entry(world, "Elden Ring").appid)) == 5
+    assert "stale_art" not in cached  # cleared once the art was re-fetched
+    replace = next(e for e in json_lines(result.out) if e["event"] == "replace")
+    assert replace["reason"] == "rematched"
+    # The visible tile's (Hades II's) files are gone, the Stream entry has
+    # Elden Ring's five, fetched this run.
+    assert grid_of(world, visible.appid) == []
+    stream = entry(world, "Elden Ring")
+    assert len(grid_of(world, stream.appid)) == 5
+    assert any(f"/apps/{ELDEN_STEAM}/" in url for url in result.calls)
+    assert not any(f"/apps/{HADES_STEAM}/" in url for url in result.calls)
 
 
 def test_an_exact_cached_match_with_an_appid_is_not_overridden_by_an_owned_name(

@@ -505,11 +505,18 @@ every title (`tests/test_art_apply.py`).
   `how: "owned:exact"` (in `STREAM_HOWS`) to that appid before any
   search; two owned games of one name leave it to the searches. It
   runs *ahead of the cache*, so a cached weak match (no appid, a fuzzy
-  one, or a miss) heals the next run; a cached exact match that has an
-  appid stands, and so does a pin. SteamGridDB is then asked once for
-  the id behind the appid (`games/steam/{appid}`): a 404 is a definite
-  "no community art" and is cached, anything else keeps the match for
-  this run only, uncached. The plugin's match modal names the source
+  one, or a miss) heals the next run -- a healed *fuzzy* one with
+  `stale_art` set, since the grid files on disk are the other game's,
+  so the plan deletes and re-fetches them (`rematched`) instead of
+  renaming them onto the Stream entry; a cached exact match that has
+  an appid stands, and so does a pin. SteamGridDB is then asked once
+  for the id behind the appid (`games/steam/{appid}`): a 404 is a
+  definite "no community art" and is cached -- for good, like a
+  `steamstore:exact` match's missing id, until `art --force` or a pin,
+  so a game SteamGridDB links later keeps its CDN-only art -- and
+  anything else keeps the match for this run only, uncached. The
+  `_owned_by_name` index is memoised on the map object itself, never
+  its `id()`. The plugin's match modal names the source
   (`join.ts`'s `howText`: "by its name in your Steam library").
 - **Pins are the one cache state `--force` keeps.** `match` writes a
   `how: "pinned"` entry into `matches.json`, and `Resolver.resolve()`
