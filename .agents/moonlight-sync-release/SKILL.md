@@ -144,6 +144,11 @@ a snapshot only through the branch-build rule (a build of a branch is
 offered a *switch* to the newest release whatever the versions say,
 update spec 3.12.4), and the bundled CLI's "same version, other bytes"
 rule (Decision U12) is what carries a new build's CLI onto the device.
+Going back from a build of `main` to a release is the one place the
+numbers mislead (the snapshot's `0.13.4.dev0` parses above the release's
+`0.13.3`), so `install.ensure_installed` replaces a snapshot CLI with a
+release's whatever their numbers (`is_snapshot`); a newer *release* CLI
+installed by hand is still kept.
 
 A release is the bare `X.Y.Z`. It exists only on the release branch:
 `release.yml` refuses a tag whose `package.json` is a `-SNAPSHOT`, and
@@ -222,7 +227,9 @@ python3 scripts/ship_release.py --output /tmp/release.json
 ```
 
 The script reads `package.json`'s version (refusing a `-SNAPSHOT`, a
-CLI `__version__` that disagrees, or a branch that is not `release/*`),
+CLI `__version__` that disagrees, a branch that is not `release/*` or not
+the one checked out, or a local `HEAD` that is not what `origin` has for
+the branch, since the tag lands on the remote's head),
 takes `CHANGELOG.md`'s `## [<VERSION>] - <date>` section as the notes
 and runs `gh release create v<VERSION> --target release/v<VERSION>
 --title v<VERSION> --notes-file …`, which makes the tag and the release

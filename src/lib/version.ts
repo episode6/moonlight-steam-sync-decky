@@ -49,10 +49,12 @@ export function cliStatus(info: Pick<CliVersion, "installed" | "minimum" | "too_
 /**
  * About's rule for when the bundled CLI goes into `~/.local/bin` (spec 3.6.1,
  * and update spec 3.12.3's Decision U12: an equal version with other bytes
- * is replaced too, so a branch build's CLI reaches the device).
+ * is replaced too, so a branch build's CLI reaches the device; and a
+ * snapshot CLI is replaced by a release's whatever their numbers, since a
+ * build of `main` is numbered after the release it follows).
  */
 export const BUNDLED_CLI_RULE =
-  "Installed when the CLI in ~/.local/bin is missing or older, or is the same version with other bytes; a newer one is kept";
+  "Installed when the CLI in ~/.local/bin is missing or older, is the same version with other bytes, or is a snapshot (.dev) while this is a release; a newer one is kept otherwise";
 
 /** About's "bundled CLI" line (spec 3.6.1). */
 export function bundledLine(info: Pick<CliVersion, "bundled" | "minimum">): string {

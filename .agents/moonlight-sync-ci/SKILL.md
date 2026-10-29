@@ -44,7 +44,9 @@ scripts/set_version.py      the one version in both spellings: package.json's "v
 scripts/ship_release.py     the release from a release branch (the moonlight-sync-release
                             skill): package.json's version (a -SNAPSHOT refused, the CLI's
                             __version__ cross-checked), --branch or the branch checked out
-                            (must be release/*; a dry run only warns), CHANGELOG.md's
+                            (must be release/*, must be the one checked out, and the local
+                            HEAD must be origin's head for it by `git ls-remote`, since
+                            `--target` tags the remote; a dry run only warns), CHANGELOG.md's
                             `## [X.Y.Z] - date` section as the notes (missing: an error;
                             empty: a warning), `gh release create vX.Y.Z --target <branch>
                             --title vX.Y.Z --notes-file …` (gh is the one tool it runs),
@@ -230,11 +232,18 @@ scripts/package.py          Docker-free zip: out/Moonlight-Sync.zip ("Moonlight 
   create v0.14.0 --target release/v0.14.0 --title v0.14.0 --notes-file`
   call with the `## [0.14.0]` section (headings kept, up to the next
   `## `) and the JSON report; a dry run (no call, `command` in the
-  report); the branch read from a scratch checkout (`symbolic-ref`); a
-  snapshot, a non-release branch (a warning on a dry run), a CLI version
-  that disagrees and a missing section each refused before `gh` runs and
-  without a report; an empty section a warning; a failing `gh` reported
-  with its stderr, the notes temp file removed either way.
+  report, `RELEASE_NOTES.md` standing for the notes file); the fixture is
+  a scratch checkout with a bare `origin` the branch is pushed to, so the
+  branch is read from it (`symbolic-ref`) and the push guard (`--branch`
+  not the one checked out; a local commit `origin` lacks) refuses, or
+  warns on a dry run; a snapshot, a non-release branch (a warning on a
+  dry run), a CLI version that disagrees or is missing and a missing
+  section each refused before `gh` runs and without a report; an empty
+  section a warning; a failing `gh` reported with its stderr, the notes
+  temp file removed either way. `test_set_version.py` also holds the real
+  `package.json` to the `json.dumps(indent=2)` shape the script rewrites
+  it in, so a reformat would show up before a bump turned into a
+  whole-file diff.
   `tests/test_build_info.py` runs `scripts/build_info.py` with
   `sys.executable` in `tmp_path`: the keys and their order, `built_at`'s
   form, `--out`, and every refusal (one stderr line, nothing written; exit

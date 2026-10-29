@@ -117,7 +117,10 @@ to `~/homebrew/logs/steam-input-probe/steam-input-probe.log` (the loader's
       versions matching the plugin's own version (About's *Plugin
       version*): the CLI is built from `cli/` at the same version. On a
       build of `main` the plugin reads `X.Y.Z-SNAPSHOT` and the CLI
-      `X.Y.Z.dev0`, the same snapshot in Python's spelling.
+      `X.Y.Z.dev0`, the same snapshot in Python's spelling; switching
+      back to a release puts the release's CLI in place of that `.dev0`
+      one (About's *Bundled CLI install* row says so), and a *Switch
+      to main* afterwards brings the `.dev0` back as a replace.
 - [ ] **Counters, Sync now, the restart modal.** Press *Sync now*. Expect
       progress lines, then either the restart modal (writes pending) or
       "nothing to do"; the four counters and *Last sync* update after.

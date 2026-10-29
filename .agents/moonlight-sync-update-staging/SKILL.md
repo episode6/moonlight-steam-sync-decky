@@ -106,8 +106,11 @@ hour, every `*.part`; creates nothing). `install.ensure_installed`
 replaces an installed CLI of the bundled one's version whose bytes differ
 (`replaced`, Decision U12: every build of a branch carries that branch's
 version, `main`'s `X.Y.Z.dev0` for its `X.Y.Z-SNAPSHOT`, which
-`parse_version` reads as `X.Y.Z`); a newer installed CLI is still kept and
-nothing is downgraded.
+`parse_version` reads as `X.Y.Z`), and replaces a snapshot CLI
+(`install.is_snapshot`: `.dev` or `-SNAPSHOT` after the number) with a
+release's whatever their numbers, since `main`'s builds are numbered
+after the release they follow (`replaced` too); any other newer installed
+CLI is kept and nothing else is downgraded.
 The frontend (update spec 3.12.5) calls `stage_update` with exactly one
 of a release's `version` and a branch build's `ref`, the other `null`,
 checks the answer against its offer (`stagedMatches`: the hash, a

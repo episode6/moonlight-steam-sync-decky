@@ -135,3 +135,11 @@ def test_an_init_without_a_version_is_refused(tree: Path) -> None:
 def test_the_repo_s_two_spellings_agree() -> None:
     # Hard rule 8 as the scripts see it: the real tree builds.
     assert build_cli.cli_version(ROOT) == build_cli.cli_spelling(build_cli.plugin_version(ROOT))
+
+
+def test_the_real_package_json_has_the_shape_the_script_rewrites() -> None:
+    # set_version.py rewrites package.json whole with json.dumps(indent=2);
+    # as long as the file keeps that shape, a bump changes the version line
+    # and nothing else. A reformat (prettier, say) would show up here first.
+    text = (ROOT / "package.json").read_text(encoding="utf-8")
+    assert json.dumps(json.loads(text), indent=2, ensure_ascii=False) + "\n" == text

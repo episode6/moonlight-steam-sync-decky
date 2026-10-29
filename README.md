@@ -168,9 +168,11 @@ A branch's build brings its own CLI, at the branch's version (`main`'s
 to the version check). Because every build of the branch carries that
 same number, the plugin replaces your installed CLI of that version with
 the branch's (see *The bundled CLI* below), and
-installing a release again puts the release's own CLI back the same way
-(or, for a newer release, as an update). A CLI newer than the build's,
-installed by hand, is never replaced.
+installing a release again puts the release's own CLI back too: a
+snapshot's CLI (`.dev0`) is replaced by a release's whatever their
+numbers, since a build of `main` is numbered after the release it
+follows. A newer *release* of the CLI, installed by hand, is never
+replaced.
 
 Settings, the ignore list, the SteamGridDB key, the CLI's caches, your
 shortcuts and artwork live outside the plugin's directory and are
@@ -223,8 +225,13 @@ compares that copy with `~/.local/bin/moonlight-steam-sync`:
   (`main`'s `X.Y.Z-SNAPSHOT` is the CLI's `X.Y.Z.dev0`, read as `X.Y.Z`),
   so this is how each new build's CLI gets installed; it also replaces a
   CLI of that version you built or installed by hand;
-- the same version and the same bytes, or newer → left alone. A newer CLI
-  you installed by hand stays; the plugin never installs an older one.
+- a snapshot (`X.Y.Z.dev0`, a build of `main`) while the bundled one is a
+  release → the release's replaces it, whatever the numbers say: a build
+  of `main` carries the *next* release's number, so going back to a
+  release would otherwise keep the snapshot's CLI as the newer one;
+- the same version and the same bytes, or newer → left alone. A newer
+  release of the CLI you installed by hand stays; the plugin never
+  installs an older release over it.
 
 If `~/.local/bin/moonlight-steam-sync` is a symlink (to a checkout, say),
 a replace, whether for an older version or for the same version with other

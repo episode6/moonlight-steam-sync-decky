@@ -14,7 +14,11 @@ and the branch is pulled:
   a release's);
 - the branch (``--branch``, else the one checked out) must be a
   ``release/`` branch, since ``main`` carries a snapshot and a tag there
-  would fail ``release.yml``'s tag check anyway;
+  would fail ``release.yml``'s tag check anyway; it must be the branch
+  checked out, and the local ``HEAD`` must be what ``origin`` has for it
+  (``git ls-remote``), since ``gh release create --target`` tags the
+  remote's head while the version and the notes are read from the local
+  tree (a dry run only warns about either);
 - the notes are ``CHANGELOG.md``'s ``## [X.Y.Z] - YYYY-MM-DD`` section,
   which the release PR wrote (a missing section is an error, an empty one
   a warning);
@@ -24,11 +28,13 @@ and the branch is pulled:
   tag against ``package.json`` and whose ``github-release`` job uploads
   the four assets into the release that now exists.
 
-``--dry-run`` prints the command and the notes and runs nothing.
-``--output`` (required) gets a JSON report either way: ``success``,
-``dry_run``, ``tag``, ``title``, ``version``, ``branch``, ``notes`` and,
-after a real run, ``url`` (``command`` on a dry run). Standard library
-only; ``gh`` is the one tool it runs.
+``--dry-run`` prints the command and the notes and runs nothing but
+``git``. ``--output`` (required) gets a JSON report either way:
+``success``, ``dry_run``, ``tag``, ``title``, ``version``, ``branch``,
+``notes`` and, after a real run, ``url`` (``command`` on a dry run, with
+``RELEASE_NOTES.md`` standing for the notes file a real run writes to a
+temporary path). Standard library only; ``git`` and ``gh`` are the tools
+it runs.
 """
 
 from __future__ import annotations
@@ -42,6 +48,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import NoReturn
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from build_cli import SNAPSHOT_SUFFIX, cli_spelling, cli_version, plugin_version  # noqa: E402
@@ -50,12 +57,37 @@ CHANGELOG = "CHANGELOG.md"
 RELEASE_BRANCH_PREFIX = "release/"
 
 
-def fail(message: str) -> None:
+def fail(message: str) -> NoReturn:
     print(f"ship_release.py: {message}", file=sys.stderr)
     sys.exit(1)
 
 
+def warn_or_fail(message: str, dry_run: bool) -> None:
+    """A refusal, or on a dry run a warning (so the notes can still be checked)."""
+    if dry_run:
+        print(f"ship_release.py: [dry-run] warning: {message}", file=sys.stderr)
+    else:
+        fail(message)
+
+
+def git(root: Path, *args: str) -> str:
+    """``git -C root args``'s stdout, stripped; exit 1 with git's stderr on a failure."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(root), *args],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except OSError as error:
+        fail(f"cannot run git: {error}")
+    except subprocess.CalledProcessError as error:
+        fail(f"git {args[0]} failed: {error.stderr.strip() or 'no output'}")
+    return result.stdout.strip()
+
+
 def current_branch(root: Path) -> str:
+    """The branch checked out at ``root``; exit 1 on a detached ``HEAD`` or no checkout."""
     try:
         result = subprocess.run(
             ["git", "-C", str(root), "symbolic-ref", "--quiet", "--short", "HEAD"],
@@ -63,10 +95,34 @@ def current_branch(root: Path) -> str:
             text=True,
             check=True,
         )
-    except (OSError, subprocess.CalledProcessError) as error:
-        detail = error.stderr.strip() if isinstance(error, subprocess.CalledProcessError) else error
-        fail(f"cannot read the current branch ({detail or 'detached HEAD'}); pass --branch")
+    except OSError as error:
+        fail(f"cannot run git: {error}")
+    except subprocess.CalledProcessError as error:
+        fail(f"cannot read the current branch ({error.stderr.strip() or 'detached HEAD'})")
     return result.stdout.strip()
+
+
+def check_pushed(root: Path, branch: str, checked_out: str, dry_run: bool) -> None:
+    """The branch to tag is the one checked out, at the commit ``origin`` has for it.
+
+    ``gh release create --target`` tags the remote branch's head, while the
+    version and the notes come from the local tree: both must be the same
+    commit, or the tag lands on one this script never looked at.
+    """
+    if branch != checked_out:
+        warn_or_fail(
+            f"{branch} is not the branch checked out ({checked_out}); check it out and pull first",
+            dry_run,
+        )
+        return
+    head = git(root, "rev-parse", "HEAD")
+    remote = git(root, "ls-remote", "origin", f"refs/heads/{branch}").split()
+    if not remote or remote[0] != head:
+        warn_or_fail(
+            f"origin/{branch} is at {remote[0][:7] if remote else 'nothing'}, not the local "
+            f"{head[:7]}: pull (or push) so the tag lands on the commit checked here",
+            dry_run,
+        )
 
 
 def read_version(root: Path) -> str:
@@ -80,19 +136,18 @@ def read_version(root: Path) -> str:
             "once its [VERSION] Release PR has merged, never from main"
         )
     cli = cli_version(root)
+    if cli is None:
+        fail("no __version__ in cli/src/moonlight_steam_sync/__init__.py")
     if cli != cli_spelling(plugin):
         fail(f"the CLI's __version__ ({cli}) is not package.json's version ({plugin})")
     return plugin
 
 
 def check_release_branch(branch: str, dry_run: bool) -> None:
-    if branch.startswith(RELEASE_BRANCH_PREFIX):
-        return
-    message = f"{branch} is not a {RELEASE_BRANCH_PREFIX}* branch; releases ship from one"
-    if dry_run:
-        print(f"ship_release.py: [dry-run] warning: {message}", file=sys.stderr)
-    else:
-        fail(message)
+    if not branch.startswith(RELEASE_BRANCH_PREFIX):
+        warn_or_fail(
+            f"{branch} is not a {RELEASE_BRANCH_PREFIX}* branch; releases ship from one", dry_run
+        )
 
 
 def changelog_notes(root: Path, version: str) -> str:
@@ -122,6 +177,21 @@ def changelog_notes(root: Path, version: str) -> str:
     return content
 
 
+def gh_command(tag: str, branch: str, notes_path: str) -> list[str]:
+    return [
+        "gh",
+        "release",
+        "create",
+        tag,
+        "--target",
+        branch,
+        "--title",
+        tag,
+        "--notes-file",
+        notes_path,
+    ]
+
+
 def run_gh_release(version: str, notes: str, branch: str, *, dry_run: bool) -> dict[str, object]:
     tag = f"v{version}"
     report: dict[str, object] = {
@@ -133,31 +203,23 @@ def run_gh_release(version: str, notes: str, branch: str, *, dry_run: bool) -> d
         "branch": branch,
         "notes": notes,
     }
+    if dry_run:
+        command = " ".join(gh_command(tag, branch, "RELEASE_NOTES.md"))
+        print(
+            "ship_release.py: [dry-run] would run (RELEASE_NOTES.md standing for the notes below):"
+        )
+        print(command)
+        print("\n[dry-run] release notes:")
+        print("-" * 40)
+        print(notes)
+        print("-" * 40)
+        report["command"] = command
+        return report
     fd, notes_path = tempfile.mkstemp(suffix=".md", prefix="release-notes-")
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
         handle.write(notes + "\n")
     try:
-        command = [
-            "gh",
-            "release",
-            "create",
-            tag,
-            "--target",
-            branch,
-            "--title",
-            tag,
-            "--notes-file",
-            notes_path,
-        ]
-        if dry_run:
-            print("ship_release.py: [dry-run] would run:")
-            print(" ".join(command))
-            print("\n[dry-run] release notes:")
-            print("-" * 40)
-            print(notes)
-            print("-" * 40)
-            report["command"] = " ".join(command)
-            return report
+        command = gh_command(tag, branch, notes_path)
         print(f"ship_release.py: running {' '.join(command)}")
         try:
             result = subprocess.run(command, capture_output=True, text=True, check=True)
@@ -180,7 +242,9 @@ def run_gh_release(version: str, notes: str, branch: str, *, dry_run: bool) -> d
 def main(argv: list[str] | None = None) -> int:
     default_root = Path(__file__).resolve().parents[1]
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--branch", help="the release branch to tag (default: the one checked out)")
+    parser.add_argument(
+        "--branch", help="the release branch to tag (default, and must be, the one checked out)"
+    )
     parser.add_argument(
         "--dry-run", action="store_true", help="print the command and the notes, run nothing"
     )
@@ -189,8 +253,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     root = args.root.resolve()
 
-    branch = args.branch or current_branch(root)
+    checked_out = current_branch(root)
+    branch = args.branch or checked_out
     check_release_branch(branch, args.dry_run)
+    check_pushed(root, branch, checked_out, args.dry_run)
     version = read_version(root)
     notes = changelog_notes(root, version)
     report = run_gh_release(version, notes, branch, dry_run=args.dry_run)

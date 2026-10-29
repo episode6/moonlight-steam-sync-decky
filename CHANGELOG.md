@@ -15,7 +15,12 @@ project uses [semantic versioning](https://semver.org/).
   `main` rather than a release. The CLI spells the same version
   `0.13.3.dev0`, the way Python packaging can read it; its `--version`
   and the plugin's version check read both as `0.13.3`, so the bundled
-  CLI is installed and replaced as before. Releases are now cut on a
+  CLI is installed and replaced as before, with one addition: a
+  release's CLI replaces an installed snapshot's whatever their numbers
+  (a build of `main` is numbered after the release it follows), so
+  switching back from a build of `main` to a release puts the release's
+  own CLI back, as it did when builds carried the last release's
+  number. Releases are now cut on a
   `release/vX.Y.Z` branch the way the other episode6 projects do it:
   `scripts/set_version.py` writes a version in both of its spellings,
   `scripts/ship_release.py` creates the release from the branch with the
