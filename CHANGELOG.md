@@ -14,9 +14,10 @@ project uses [semantic versioning](https://semver.org/).
   Steam yet, and either way the search stopped there, so Steam's own
   store was never asked and the title got a visible shortcut instead
   of a Stream entry on the owned game. Such a weak SteamGridDB answer
-  now falls through to the store search, whose exact hit wins. A title
-  already matched wrongly keeps its cached match; re-match it from the
-  Titles page (or `match`) as before.
+  now falls through to the store search, whose exact hit wins. A
+  lookup that fails on the way is never cached: the next sync asks
+  again. A title already matched wrongly keeps its cached match;
+  re-match it from the Titles page (or `match`) as before.
 
 ## [0.13.1] - 2026-10-20
 

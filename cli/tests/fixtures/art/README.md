@@ -45,4 +45,4 @@
 | `Unlinked Launch` | a **verified** SteamGridDB entry nobody has linked to a Steam release yet, so the store is asked and its exact hit lends its appid (`sgdb:exact-verified` with the store's appid, the SteamGridDB id kept for community art). Only the searches and the `games/id` lookup are recorded. |
 
 When a real device run turns up a match the heuristics get wrong, add it here
-as a ninth case rather than special-casing it in the code.
+as the next case rather than special-casing it in the code.

@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from moonlight_steam_sync.art.http import NetworkError
 from moonlight_steam_sync.art.resolve import (
     NEGATIVE_TTL,
@@ -139,18 +141,78 @@ def test_an_exact_store_hit_lends_its_appid_to_an_unlinked_sgdb_match(tmp_path) 
     assert cache.get("Unlinked Launch") == match
 
 
-def test_a_non_exact_store_answer_leaves_a_fuzzy_sgdb_match_alone(tmp_path) -> None:
-    resolver, transport, _ = build(tmp_path)
+@pytest.mark.parametrize("body", ["steam-storesearch-unknown", "steam-storesearch-soundtrack"])
+def test_a_non_exact_store_answer_leaves_a_fuzzy_sgdb_match_alone(tmp_path, body) -> None:
+    # An empty store answer, and one that is itself only a fuzzy hit (the
+    # sequel's soundtrack): neither firms the match up, so the fuzzy
+    # SteamGridDB pick stands and is cached, as before this fall-through.
+    resolver, transport, cache = build(tmp_path)
     url = store_search_url("Brand New Sequel")
     transport.responses = dict(transport.responses)
-    transport.responses[url] = {
-        "status": 200,
-        "body": "responses/steam-storesearch-unknown.json",
-        "content_type": "application/json",
-    }
+    if body == "steam-storesearch-soundtrack":
+        (tmp_path / "soundtrack.json").write_text(
+            json.dumps(
+                {"total": 1, "items": [{"id": 610210, "name": "Brand New Sequel Soundtrack"}]}
+            )
+        )
+        transport.responses[url] = {
+            "status": 200,
+            "body": str(tmp_path / "soundtrack.json"),
+            "content_type": "application/json",
+        }
+    else:
+        transport.responses[url] = {
+            "status": 200,
+            "body": "responses/steam-storesearch-unknown.json",
+            "content_type": "application/json",
+        }
     match = resolver.resolve("Brand New Sequel")
     assert (match.how, match.steam_appid, match.sgdb_id) == ("sgdb:fuzzy", 610100, 8400)
     assert match.transient is False
+    assert "Brand New Sequel" in cache
+
+
+def test_a_failed_store_lookup_drops_a_fuzzy_sgdb_match_for_this_run(tmp_path) -> None:
+    # A fuzzy pick is a different game: used for this run it would fetch
+    # that game's art, which the next run's kind change would rename onto
+    # the right one. So it is dropped, uncached, and the next run asks again.
+    resolver, transport, cache = build(tmp_path)
+    url = store_search_url("Brand New Sequel")
+    transport.fail_with[url] = NetworkError("down")
+    match = resolver.resolve("Brand New Sequel")
+    assert (match.how, match.found, match.transient) == ("none", False, True)
+    assert "Brand New Sequel" not in cache
+    del transport.fail_with[url]
+    again = resolver.resolve("Brand New Sequel")
+    assert (again.how, again.steam_appid) == ("steamstore:exact", 610200)
+    assert "Brand New Sequel" in cache
+
+
+def test_a_failed_steam_release_lookup_is_not_cached_as_no_release(tmp_path) -> None:
+    # games/id fails and the store has no exact hit: "no Steam release" is
+    # unanswered, not known, so the exact match is kept for this run only.
+    resolver, transport, cache = build(tmp_path)
+    game_url = "https://www.steamgriddb.com/api/v2/games/id/8500?platformdata=steam"
+    transport.fail_with[game_url] = NetworkError("down")
+    # The store answers 404 (its URL dropped from the manifest): a failed
+    # lookup too, without a second run of retries toward the hard stop.
+    transport.responses = dict(transport.responses)
+    del transport.responses[store_search_url("Unlinked Launch")]
+    match = resolver.resolve("Unlinked Launch")
+    assert (match.how, match.sgdb_id, match.steam_appid) == ("sgdb:exact-verified", 8500, None)
+    assert match.transient is True
+    assert "Unlinked Launch" not in cache
+    assert any("steam release lookup failed" in line for line in match.explain)
+
+
+def test_the_stores_exact_hit_rescues_a_failed_steam_release_lookup(tmp_path) -> None:
+    resolver, transport, cache = build(tmp_path)
+    game_url = "https://www.steamgriddb.com/api/v2/games/id/8500?platformdata=steam"
+    transport.fail_with[game_url] = NetworkError("down")
+    match = resolver.resolve("Unlinked Launch")
+    assert (match.how, match.sgdb_id, match.steam_appid) == ("sgdb:exact-verified", 8500, 620300)
+    assert match.transient is False
+    assert cache.get("Unlinked Launch") == match
 
 
 def test_a_failed_store_lookup_keeps_the_weak_sgdb_match_for_this_run_only(tmp_path) -> None:

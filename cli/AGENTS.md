@@ -481,10 +481,19 @@ every title (`tests/test_art_apply.py`).
   SteamGridDB pick outright (`steamstore:exact`, the other game's id
   dropped) and lends its appid to an unlinked exact one (`how` stays
   `sgdb:exact*`, the id stays for community art). A non-exact store
-  answer changes nothing, and a store lookup that fails keeps the weak
-  answer for this run only, uncached. A strong SteamGridDB answer still
-  costs no store call, so a synced library's zero-HTTP second pass is
-  unchanged.
+  answer changes nothing. A lookup that fails on the way is never
+  cached: a failed store search keeps an unlinked exact match for this
+  run only but drops a fuzzy one (used, it would fetch the other
+  game's art, which the next run's `kind-changed` rename would carry
+  onto the right game), and a failed `games/id` call
+  (`_steam_appid_for` says so, as its second value) is not "no Steam
+  release" but unanswered, so that exact match is kept for this run
+  only unless the store's exact hit supplied the appid. A strong
+  SteamGridDB answer still costs no store call, so a synced library's
+  zero-HTTP second pass is unchanged; what does cost one more store
+  call, once, is every non-Steam title (exact SteamGridDB match, no
+  release) on a first resolution, `art --force` or after *Reset match
+  cache*.
 - **Pins are the one cache state `--force` keeps.** `match` writes a
   `how: "pinned"` entry into `matches.json`, and `Resolver.resolve()`
   returns it *before* it looks at `force` or `retry_missing`, so neither
