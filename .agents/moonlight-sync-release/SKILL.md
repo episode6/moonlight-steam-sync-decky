@@ -110,6 +110,11 @@ Plugin `v0.13.1` (the user asked for it on 2026-10-20) is a patch release
 for SteamGridDB logos (PNG-only queries, any style as a fallback) and the
 Titles page's thumbnails from each shortcut's own art; the CLI takes
 `0.13.1`, the minimum stays `0.4.0`.
+Plugin `v0.13.2` (the user asked for it on 2026-10-29) is a patch release
+for new games mismatched while SteamGridDB lags (a weak SteamGridDB match
+falls through to Steam's store, and a title that is an owned game's name
+matches that game before any search); the CLI takes `0.13.2`, the minimum
+stays `0.4.0`.
 
 Once everything intended for the release has merged to `main`
 (substitute the version being cut for `X.Y.Z`):
