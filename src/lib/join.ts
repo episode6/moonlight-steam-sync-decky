@@ -587,6 +587,7 @@ function howText(how: string): string {
   if (how.endsWith(":fuzzy")) return "by a fuzzy title search";
   if (how === "pinned") return "by a pin";
   if (how === "override") return "by an override in config.toml";
+  if (how === "owned:exact") return "by its name in your Steam library";
   if (how.endsWith(":exact") || how.endsWith(":exact-verified")) return "by an exact title search";
   return "";
 }

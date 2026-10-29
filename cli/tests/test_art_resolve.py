@@ -14,6 +14,7 @@ from moonlight_steam_sync.art.resolve import (
     MatchCache,
     Resolver,
     normalise,
+    normalise_strict,
     pick,
 )
 from moonlight_steam_sync.art.sgdb import SgdbClient, steam_appid_from_game
@@ -228,6 +229,95 @@ def test_a_failed_store_lookup_keeps_the_weak_sgdb_match_for_this_run_only(tmp_p
     again = resolver.resolve("Unlinked Launch")
     assert again.steam_appid == 620300
     assert "Unlinked Launch" in cache
+
+
+# -- the owned-name match (sync --owned-apps, 2026-10-29) ------------------
+
+OWNED = {1245620: "ELDEN RING", 610200: "Brand New Sequel", 2280: "DOOM (1993)"}
+
+
+def test_normalise_strict_keeps_a_trailing_year() -> None:
+    assert normalise_strict("DOOM (1993)") == "doom 1993"
+    assert normalise("DOOM (1993)") == "doom"
+    assert normalise_strict("Hades II™") == "hades ii"
+
+
+def test_an_owned_name_is_matched_without_a_search(tmp_path) -> None:
+    resolver, transport, cache = build(tmp_path, owned=OWNED)
+    match = resolver.resolve("Brand New Sequel")
+    assert (match.how, match.steam_appid, match.sgdb_id) == ("owned:exact", 610200, None)
+    assert match.matched_name == "Brand New Sequel"
+    assert not any("autocomplete" in c or "storesearch" in c for c in transport.calls)
+    # SteamGridDB's 404 for the appid is a definite answer: cached, no retry.
+    assert cache.get("Brand New Sequel") == match
+    transport.calls.clear()
+    assert resolver.resolve("Brand New Sequel").how == "owned:exact"
+    assert transport.calls == []
+
+
+def test_an_owned_name_match_takes_its_sgdb_id_from_the_appid(tmp_path) -> None:
+    resolver, transport, _ = build(tmp_path, owned=OWNED)
+    match = resolver.resolve("elden ring")
+    assert (match.how, match.steam_appid, match.sgdb_id) == ("owned:exact", 1245620, 5297)
+    assert transport.calls == ["https://www.steamgriddb.com/api/v2/games/steam/1245620"]
+
+
+def test_an_owned_name_match_without_a_key_has_no_sgdb_id(tmp_path) -> None:
+    resolver, transport, _ = build(tmp_path, api_key="", owned=OWNED)
+    match = resolver.resolve("Elden Ring")
+    assert (match.how, match.steam_appid, match.sgdb_id) == ("owned:exact", 1245620, None)
+    assert transport.calls == []
+
+
+def test_a_failed_sgdb_lookup_keeps_an_owned_name_match_for_this_run_only(tmp_path) -> None:
+    resolver, transport, cache = build(tmp_path, owned=OWNED)
+    url = "https://www.steamgriddb.com/api/v2/games/steam/1245620"
+    transport.fail_with[url] = NetworkError("down")
+    match = resolver.resolve("Elden Ring")
+    assert (match.how, match.steam_appid, match.transient) == ("owned:exact", 1245620, True)
+    assert "Elden Ring" not in cache
+    del transport.fail_with[url]
+    assert resolver.resolve("Elden Ring").sgdb_id == 5297
+    assert "Elden Ring" in cache
+
+
+def test_the_year_tells_a_re_release_from_its_original(tmp_path) -> None:
+    # "DOOM" is not "DOOM (1993)": the strict normalisation keeps the year,
+    # so the owned step passes and the searches decide (nothing recorded
+    # for "DOOM": no match).
+    resolver, transport, _ = build(tmp_path, owned=OWNED)
+    match = resolver.resolve("DOOM")
+    assert match.how != "owned:exact"
+    assert any("autocomplete" in c for c in transport.calls)
+    assert resolver.resolve("DOOM (1993)").steam_appid == 2280
+
+
+def test_an_ambiguous_owned_name_is_left_to_the_searches(tmp_path) -> None:
+    owned = dict(OWNED) | {777: "Elden Ring"}
+    resolver, transport, _ = build(tmp_path, owned=owned)
+    match = resolver.resolve("Elden Ring")
+    assert match.how == "sgdb:exact-verified"
+    assert any("autocomplete" in c for c in transport.calls)
+
+
+def test_an_owned_name_heals_a_cached_weak_match_but_not_a_strong_one(tmp_path) -> None:
+    resolver, transport, cache = build(tmp_path, owned=OWNED)
+    cache.put(Match(name="Brand New Sequel", steam_appid=610100, sgdb_id=8400, how="sgdb:fuzzy"))
+    cache.put(Match(name="Elden Ring", steam_appid=4242, sgdb_id=4242, how="sgdb:exact-verified"))
+    cache.put(Match(name="DOOM (1993)", how="none"))
+    assert resolver.resolve("Brand New Sequel").how == "owned:exact"  # fuzzy: healed
+    assert resolver.resolve("DOOM (1993)").steam_appid == 2280  # a cached miss: healed
+    strong = resolver.resolve("Elden Ring")  # exact with an appid: trusted
+    assert (strong.how, strong.steam_appid) == ("sgdb:exact-verified", 4242)
+    assert not any("autocomplete" in c for c in transport.calls)
+
+
+def test_a_pin_beats_the_owned_name(tmp_path) -> None:
+    resolver, transport, cache = build(tmp_path, owned=OWNED)
+    cache.pin(Match(name="Elden Ring", steam_appid=None, sgdb_id=None))
+    match = resolver.resolve("Elden Ring")
+    assert (match.how, match.steam_appid) == ("pinned", None)
+    assert transport.calls == []
 
 
 def test_zero_results_falls_through_to_the_store_and_then_to_no_match(tmp_path) -> None:

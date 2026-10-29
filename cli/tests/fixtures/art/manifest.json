@@ -235,6 +235,11 @@
       "body": "responses/sgdb-game-8500.json",
       "content_type": "application/json"
     },
+    "https://www.steamgriddb.com/api/v2/games/steam/1245620": {
+      "status": 200,
+      "body": "responses/sgdb-game-by-steam-1245620.json",
+      "content_type": "application/json"
+    },
     "https://www.steamgriddb.com/api/v2/grids/game/7001?types=static&dimensions=460x215&styles=alternate&mimes=image/png,image/jpeg": {
       "status": 200,
       "body": "responses/sgdb-grids-7001-460x215.json",

@@ -63,6 +63,10 @@ HOW_PINNED = "pinned"
 #: cache miss and the ``--json`` reports show it as no match at all.
 HOW_UNPINNED = "unpinned"
 
+#: ``Match.how`` of a title that is, to the letter, the name of a game the
+#: account owns (``sync --owned-apps``; :meth:`Resolver._owned_match`).
+HOW_OWNED = "owned:exact"
+
 _TRADEMARKS = str.maketrans({"™": "", "®": "", "©": ""})
 _TRAILING_YEAR = re.compile(r"\(\s*(?:19|20)\d{2}\s*\)\s*$")
 _NON_WORD = re.compile(r"[\W_]+", re.UNICODE)
@@ -76,6 +80,21 @@ def normalise(name: str) -> str:
     """
     text = name.translate(_TRADEMARKS).casefold().strip()
     text = _TRAILING_YEAR.sub("", text)
+    text = _NON_WORD.sub(" ", text)
+    return " ".join(text.split())
+
+
+def normalise_strict(name: str) -> str:
+    """:func:`normalise` without the trailing-year rule, for the owned-name match.
+
+    Steam tells a re-release from its original by the year (``DOOM`` and
+    ``DOOM (1993)``), and the owned-name match must not fold the two: a
+    title that reads ``DOOM`` is only the owned game called exactly that.
+
+    >>> normalise_strict("DOOM (1993)")
+    'doom 1993'
+    """
+    text = name.translate(_TRADEMARKS).casefold().strip()
     text = _NON_WORD.sub(" ", text)
     return " ".join(text.split())
 
@@ -416,6 +435,18 @@ class Resolver:
     #: ``--retry-missing``: re-query titles and slots whose miss is cached.
     #: Never re-queries a pinned title, not even a ``--none`` pin.
     retry_missing: bool = False
+    #: ``sync --owned-apps``: the account's games, Steam appid -> display
+    #: name (decky spec 3.4.1). A title that *is* one of those names, to
+    #: the letter after :func:`normalise_strict`, is that game
+    #: (``how == "owned:exact"``) before any search is made; ``None`` (an
+    #: ``art`` run, a plain ``sync``) turns the step off.
+    owned: Mapping[int, str] | None = None
+    _owned_index: Mapping[str, tuple[int, ...]] = field(
+        default_factory=dict, init=False, repr=False, compare=False
+    )
+    _owned_index_key: tuple[int, int] | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
 
     def resolve(self, name: str) -> Match:
         """Resolve ``name``, flushing the cache before returning (spec 3.5 A.4).
@@ -423,10 +454,24 @@ class Resolver:
         Order: a ``[overrides]`` entry in ``config.toml`` (config beats
         cache, so it also beats a pin), then a pinned cache entry --
         checked *before* ``force`` and ``retry_missing``, so neither ever
-        overwrites a pin -- then the ordinary cache, then the searches. An
-        ``unpinned`` placeholder (``match --unpin --defer-art``) is a cache
-        miss: it only exists to carry ``stale_art`` onto the resolution
-        that :meth:`MatchCache.put` writes over it.
+        overwrites a pin -- then the owned-name match (below), then the
+        ordinary cache, then the searches. An ``unpinned`` placeholder
+        (``match --unpin --defer-art``) is a cache miss: it only exists to
+        carry ``stale_art`` onto the resolution that :meth:`MatchCache.put`
+        writes over it.
+
+        The owned-name match (``sync --owned-apps``): a title that is,
+        after :func:`normalise_strict`, the name of exactly one game the
+        account owns is that game, with no lookup -- the library itself is
+        the authority on what it is called, and a title newer than the
+        search sources' catalogues is the title most likely to be
+        mismatched by them (2026-10-29). It runs ahead of the cache so a
+        cached *weak* match (no Steam appid, or a fuzzy one) heals the
+        next run; a cached match that already has an appid by an exact
+        search stands, and so does a pin. SteamGridDB is then asked once
+        for the id behind that appid (``games/steam/{appid}``), for
+        community art; a transient failure there keeps the match for this
+        run only, uncached.
         """
         explain: list[str] = []
 
@@ -465,8 +510,20 @@ class Resolver:
         if self.force or (cached is not None and cached.unpinned):
             cached = None
         if cached is not None and (cached.found or self._negative_still_valid(cached)):
-            cached.explain = [f"cache: how={cached.how} when={cached.when}"]
-            return cached
+            if not (cached.steam_appid is None or cached.how.endswith(":fuzzy")):
+                cached.explain = [f"cache: how={cached.how} when={cached.when}"]
+                return cached
+            owned_match = self._owned_match(name, explain)
+            if owned_match is None:
+                cached.explain = [f"cache: how={cached.how} when={cached.when}"]
+                return cached
+            explain.insert(0, f"cache: how={cached.how} when={cached.when} (weak; owned name wins)")
+        else:
+            owned_match = self._owned_match(name, explain)
+        if owned_match is not None:
+            if not owned_match.transient:
+                self.cache.put(owned_match)
+            return owned_match
 
         match = self._search(name, explain)
         if match.transient:
@@ -476,6 +533,67 @@ class Resolver:
         return match
 
     # -- internals -------------------------------------------------------
+
+    def _owned_match(self, name: str, explain: list[str]) -> Match | None:
+        """The owned game ``name`` is the name of, or ``None`` (see :meth:`resolve`).
+
+        Exactly one owned game may carry the name: two that do (``DOOM``
+        and ``DOOM (1993)`` are distinct under :func:`normalise_strict`,
+        but a re-release and its original can share a name to the letter)
+        leave the searches to decide. The SteamGridDB id, when a key is
+        configured, comes from ``games/steam/{appid}``; a 404 there is a
+        definite "no community art", anything else keeps the match for
+        this run only (``transient``).
+        """
+        if not self.owned:
+            return None
+        wanted = normalise_strict(name)
+        if not wanted:
+            return None
+        appids = self._owned_by_name().get(wanted)
+        if not appids:
+            return None
+        if len(appids) > 1:
+            explain.append(f"owned name: {len(appids)} owned games are called that; searching")
+            return None
+        (steam_appid,) = appids
+        match = Match(
+            name=name,
+            steam_appid=steam_appid,
+            sgdb_id=None,
+            matched_name=self.owned[steam_appid],
+            how=HOW_OWNED,
+            explain=explain,
+        )
+        explain.append(f"owned name: steam appid {steam_appid} ({match.matched_name!r})")
+        if self._sgdb_usable():
+            assert self.sgdb is not None
+            try:
+                game = self.sgdb.game_by_steam_appid(steam_appid)
+            except HardStop:
+                raise
+            except HttpError as exc:
+                explain.append(f"sgdb games/steam/{steam_appid} failed: {exc} (not cached)")
+                match.transient = True
+                return match
+            match.sgdb_id = _as_int(game.get("id")) if game is not None else None
+            explain.append(
+                f"sgdb games/steam/{steam_appid} -> "
+                f"{match.sgdb_id if match.sgdb_id is not None else 'no sgdb game'}"
+            )
+        return match
+
+    def _owned_by_name(self) -> Mapping[str, tuple[int, ...]]:
+        """``normalise_strict(display name) -> owned appids``, built once per map."""
+        owned = self.owned or {}
+        key = id(owned), len(owned)
+        if self._owned_index_key != key:
+            index: dict[str, list[int]] = {}
+            for appid, display_name in owned.items():
+                index.setdefault(normalise_strict(str(display_name)), []).append(int(appid))
+            self._owned_index = {k: tuple(sorted(v)) for k, v in index.items() if k}
+            self._owned_index_key = key
+        return self._owned_index
 
     def _override(self, name: str) -> Mapping[str, Any] | None:
         value = self.overrides.get(name)
