@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote, urlencode
 
-from moonlight_steam_sync.art.http import Fetcher, HttpError
+from moonlight_steam_sync.art.http import Fetcher, HttpError, HttpStatusError
 
 BASE_URL = "https://www.steamgriddb.com/api/v2"
 
@@ -111,6 +111,25 @@ class SgdbClient:
         if isinstance(data, list):
             data = data[0] if data else {}
         return data if isinstance(data, dict) else {}
+
+    def game_by_steam_appid(self, steam_appid: int) -> dict[str, Any] | None:
+        """``GET /games/steam/{appid}`` -> the game, or ``None`` when
+        SteamGridDB has no game linked to that Steam appid (a 404).
+
+        What the owned-name match (:mod:`moonlight_steam_sync.art.resolve`)
+        uses to find the SteamGridDB id behind an appid it already knows,
+        for community art. A 404 is that definite "none", not a failure;
+        every other error propagates as an :class:`HttpError`.
+        """
+        try:
+            data = self._get_data(f"/games/steam/{steam_appid}")
+        except HttpStatusError as exc:
+            if exc.status == 404:
+                return None
+            raise
+        if isinstance(data, list):
+            data = data[0] if data else {}
+        return data if isinstance(data, dict) else None
 
     def assets(self, kind: str, sgdb_id: int, **params: Any) -> list[dict[str, Any]]:
         """``GET /{kind}/game/{id}`` with :func:`asset_query`'s filters applied.

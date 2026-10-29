@@ -33,7 +33,7 @@
 
 | title | case |
 |---|---|
-| `Elden Ring` | exact **verified** SteamGridDB match; every slot comes from the Steam CDN, so not one community call is made. |
+| `Elden Ring` | exact **verified** SteamGridDB match; every slot comes from the Steam CDN, so not one community call is made. Also the one `games/steam/{appid}` recording, for the owned-name match (`sync --owned-apps`: a title that is an owned game's name asks SteamGridDB only for the id behind the appid; a title whose appid has no recording gets a 404, the definite "no community art"). |
 | `Hades II™` | a title carrying a trademark glyph (normalisation), and a missing `library_600x900_2x.jpg` so the 1x official portrait URL is used. |
 | `Fan Made Adventure` | a **non-Steam** game (an exact SteamGridDB match with no Steam release, so the resolver asks the store too and gets an empty answer): community art only, score sorting (the fixture lists the low-score asset first), a second-choice query (`920x430` empty -> `460x215`), and an asset whose bytes are WebP behind a `.png` URL, which must be rejected. |
 | `Old Console Classic` | a Steam game with **no `logo.png` on the CDN**, so the logo slot falls through to community art while the rest stay official. |

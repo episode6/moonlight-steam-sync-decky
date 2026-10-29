@@ -104,10 +104,12 @@ moonlight_steam_sync/
                    kinds (KIND_*, STREAM_HOWS, is_stream_match) both need
   art/
     http.py        urllib transport seam, User-Agent, timeouts, pacing, backoff, the 429 hard stop
-    sgdb.py        API client (urllib): search, game(platformdata), grids/heroes/logos/icons
+    sgdb.py        API client (urllib): search, game(platformdata), game_by_steam_appid,
+                   grids/heroes/logos/icons
     steamstore.py  storesearch, GetApps icon hash, CDN URL builders
-    resolve.py     title -> Match{steam_appid?, sgdb_id?, how}; match cache (flushed per title),
-                   pins (MatchCache.pin/unpin) and the stale_art flag
+    resolve.py     title -> Match{steam_appid?, sgdb_id?, how}; the owned-name match
+                   (sync --owned-apps); match cache (flushed per title), pins
+                   (MatchCache.pin/unpin) and the stale_art flag
     select.py      per-slot asset choice policy; download; mime sniff -> ext
     apply.py       write grid files for an appid (skip existing), set icon field
     cli.py         the `art`, `status`, `search` and `match` subcommands
@@ -494,6 +496,28 @@ every title (`tests/test_art_apply.py`).
   call, once, is every non-Steam title (exact SteamGridDB match, no
   release) on a first resolution, `art --force` or after *Reset match
   cache*.
+- **Under `--owned-apps`, a title that is an owned game's name is that
+  game, with no search.** `Resolver.owned` (set by `cmd_sync` alone;
+  `art`, a plain `sync` and `search` never match this way) is the
+  `--owned-apps` map, and a title equal to exactly one owned game's
+  display name under `normalise_strict` -- `normalise` minus the
+  trailing-year rule, so `DOOM` is not `DOOM (1993)` -- resolves
+  `how: "owned:exact"` (in `STREAM_HOWS`) to that appid before any
+  search; two owned games of one name leave it to the searches. It
+  runs *ahead of the cache*, so a cached weak match (no appid, a fuzzy
+  one, or a miss) heals the next run -- a healed *fuzzy* one with
+  `stale_art` set, since the grid files on disk are the other game's,
+  so the plan deletes and re-fetches them (`rematched`) instead of
+  renaming them onto the Stream entry; a cached exact match that has
+  an appid stands, and so does a pin. SteamGridDB is then asked once
+  for the id behind the appid (`games/steam/{appid}`): a 404 is a
+  definite "no community art" and is cached -- for good, like a
+  `steamstore:exact` match's missing id, until `art --force` or a pin,
+  so a game SteamGridDB links later keeps its CDN-only art -- and
+  anything else keeps the match for this run only, uncached. The
+  `_owned_by_name` index is memoised on the map object itself, never
+  its `id()`. The plugin's match modal names the source
+  (`join.ts`'s `howText`: "by its name in your Steam library").
 - **Pins are the one cache state `--force` keeps.** `match` writes a
   `how: "pinned"` entry into `matches.json`, and `Resolver.resolve()`
   returns it *before* it looks at `force` or `retry_missing`, so neither

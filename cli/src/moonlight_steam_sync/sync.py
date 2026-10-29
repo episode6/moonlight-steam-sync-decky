@@ -1471,6 +1471,9 @@ def cmd_sync(
         )
         services.resolver.force = False
         services.resolver.retry_missing = options.retry_missing
+        # The owned-name match (resolve.py): a title that is an owned game's
+        # name is that game before any search; off without --owned-apps.
+        services.resolver.owned = owned
         if not config.sgdb_api_key:
             reporter.note(
                 "no SteamGridDB API key configured; using Steam's store search and CDN only"

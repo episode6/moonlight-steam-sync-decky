@@ -96,6 +96,10 @@ def game_url(sgdb_id: int) -> str:
     return sgdb_url(f"/games/id/{sgdb_id}", {"platformdata": "steam"})
 
 
+def game_by_steam_url(steam_appid: int) -> str:
+    return sgdb_url(f"/games/steam/{steam_appid}")
+
+
 def asset_url(kind: str, sgdb_id: int, **params: str) -> str:
     return sgdb_url(f"/{kind}/game/{sgdb_id}", asset_query(kind, **params))
 
@@ -511,6 +515,17 @@ def main() -> int:
             "total": 1,
             "items": [{"id": 620300, "name": "Unlinked Launch", "type": "app"}],
         },
+    )
+
+    # -- the owned-name match (sync --owned-apps, 2026-10-29): a title that is
+    #    an owned game's name skips the searches and asks SteamGridDB only for
+    #    the id behind the appid. Elden Ring has one; Brand New Sequel (a game
+    #    SteamGridDB does not have yet) and Unlinked Launch (an entry not
+    #    linked to Steam) answer 404, which is simply their absence here.
+    json_response(
+        game_by_steam_url(1245620),
+        "sgdb-game-by-steam-1245620",
+        envelope(game(5297, "Elden Ring", 1245620)),
     )
 
     manifest = {

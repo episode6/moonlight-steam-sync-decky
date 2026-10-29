@@ -211,13 +211,15 @@ def test_a_verified_match_to_an_owned_game_becomes_a_hidden_entry_named_after_it
 
 def test_a_fuzzy_match_to_an_owned_game_stays_a_visible_shortcut(world, tmp_path, monkeypatch):
     """Spec 3.2 / decision 5: a fuzzy hit is fine for artwork but never a
-    Stream button."""
+    Stream button. (The owned game is named differently from the title
+    here; a title that *is* an owned game's name is matched by that name,
+    below.)"""
     host_publishes(tmp_path, monkeypatch, ["Hades II™"])
     seed_cache(
         world,
         Match(name="Hades II™", steam_appid=HADES_STEAM, sgdb_id=HADES_SGDB, how="sgdb:fuzzy"),
     )
-    owned = owned_file(tmp_path, {HADES_STEAM: HADES_OWNED})
+    owned = owned_file(tmp_path, {HADES_STEAM: "Hades II: Early Access"})
 
     result = world.run(["--json", "sync", "--owned-apps", owned])
 
@@ -232,6 +234,137 @@ def test_a_fuzzy_match_to_an_owned_game_stays_a_visible_shortcut(world, tmp_path
     # The fuzzy match is still used for the art (it resolves from the cache).
     assert f"{AUTOCOMPLETE}Hades%20II%E2%84%A2" not in result.calls
     assert any(f"/apps/{HADES_STEAM}/" in url for url in result.calls)
+
+
+# ---------------------------------------------------------------------------
+# the owned-name match (resolve.py, 2026-10-29): a title that is an owned
+# game's name is that game before any search
+# ---------------------------------------------------------------------------
+
+
+def test_a_title_that_is_an_owned_games_name_is_a_stream_entry_without_a_search(
+    world, tmp_path, monkeypatch
+):
+    """``Brand New Sequel`` is a game SteamGridDB does not have yet (its
+    autocomplete would fuzzy-match ``Brand New``); the account owns it under
+    that very name, so no search is made and the title is a Stream entry."""
+    host_publishes(tmp_path, monkeypatch, ["Brand New Sequel"])
+    owned = owned_file(tmp_path, {610200: "Brand New Sequel"})
+
+    result = world.run(["--json", "sync", "--owned-apps", owned, "--no-art"])
+
+    assert result.code == 0, result.err
+    assert_stream_entry(
+        entry(world, "Brand New Sequel"), owned_name="Brand New Sequel",
+        moonlight_name="Brand New Sequel",
+    )
+    assert not any("autocomplete" in url or "storesearch" in url for url in result.calls)
+    # SteamGridDB is asked once for the id behind the appid: a 404 (absent
+    # from the manifest) is a definite "no community art", and is cached.
+    assert result.calls == [f"https://www.steamgriddb.com/api/v2/games/steam/{610200}"]
+    cached = cache_entry(world, "Brand New Sequel")
+    assert cached is not None
+    assert (cached["how"], cached["steam_appid"], cached["sgdb_id"]) == (
+        "owned:exact", 610200, None,
+    )
+    plan = next(e for e in json_lines(result.out) if e["event"] == "plan")
+    assert (plan["stream"], plan["shortcut"]) == (1, 0)
+
+
+def test_a_cached_fuzzy_match_heals_into_a_stream_entry_when_the_title_is_an_owned_name(
+    world, tmp_path, monkeypatch
+):
+    """The 2026-10-29 shape: a new title cached as a fuzzy hit on another
+    game. Once the account owns a game of exactly that name, the next sync
+    matches it by name, with no search and no lookup beyond SteamGridDB's
+    id for the appid; the art on disk, the other game's, is replaced
+    (a ``rematched`` replacement: deleted and re-fetched, never renamed
+    onto the Stream entry)."""
+    host_publishes(tmp_path, monkeypatch, ["Elden Ring"])
+    # The fuzzy pick is Hades II, a game the manifest serves art for, so
+    # the first sync dresses the visible tile with Hades II's five files.
+    seed_cache(
+        world,
+        Match(name="Elden Ring", steam_appid=HADES_STEAM, sgdb_id=HADES_SGDB,
+              how="sgdb:fuzzy", matched_name="Hades II"),
+    )
+    first = world.run(["sync"])
+    assert first.code == 0, first.err
+    visible = entry(world, "Elden Ring")
+    assert visible.is_hidden == 0
+    assert len(grid_of(world, visible.appid)) == 5
+    assert any(f"/apps/{HADES_STEAM}/" in url for url in first.calls)
+    owned = owned_file(tmp_path, {ELDEN_STEAM: ELDEN_OWNED})
+
+    result = world.run(["--json", "sync", "--owned-apps", owned])
+
+    assert result.code == 0, result.err
+    assert "resolve [1/1] Elden Ring: owned:exact" in result.err
+    assert_stream_entry(
+        entry(world, "Elden Ring"), owned_name=ELDEN_OWNED, moonlight_name="Elden Ring"
+    )
+    assert f"{AUTOCOMPLETE}Elden%20Ring" not in result.calls
+    cached = cache_entry(world, "Elden Ring")
+    assert (cached["how"], cached["steam_appid"], cached["sgdb_id"]) == (
+        "owned:exact", ELDEN_STEAM, ELDEN_SGDB,
+    )
+    assert "stale_art" not in cached  # cleared once the art was re-fetched
+    replace = next(e for e in json_lines(result.out) if e["event"] == "replace")
+    assert replace["reason"] == "rematched"
+    # The visible tile's (Hades II's) files are gone, the Stream entry has
+    # Elden Ring's five, fetched this run.
+    assert grid_of(world, visible.appid) == []
+    stream = entry(world, "Elden Ring")
+    assert len(grid_of(world, stream.appid)) == 5
+    assert any(f"/apps/{ELDEN_STEAM}/" in url for url in result.calls)
+    assert not any(f"/apps/{HADES_STEAM}/" in url for url in result.calls)
+
+
+def test_an_exact_cached_match_with_an_appid_is_not_overridden_by_an_owned_name(
+    world, tmp_path, monkeypatch
+):
+    """A cached exact search match that already has an appid stands, even
+    when an owned game of the title's name has a different appid: the cache
+    is trusted, and a pin is the way to change it."""
+    host_publishes(tmp_path, monkeypatch, ["Hades II™"])
+    seed_cache(
+        world,
+        Match(name="Hades II™", steam_appid=HADES_STEAM, sgdb_id=HADES_SGDB,
+              how="sgdb:exact-verified"),
+    )
+    owned = owned_file(tmp_path, {HADES_STEAM: HADES_OWNED, 424242: "Hades II"})
+
+    result = world.run(["--json", "sync", "--owned-apps", owned, "--no-art"])
+
+    assert result.code == 0, result.err
+    assert result.calls == []
+    assert cache_entry(world, "Hades II™")["how"] == "sgdb:exact-verified"
+    assert_stream_entry(
+        entry(world, "Hades II™"), owned_name=HADES_OWNED, moonlight_name="Hades II™"
+    )
+
+
+def test_two_owned_games_of_one_name_leave_the_title_to_the_searches(
+    world, tmp_path, monkeypatch
+):
+    host_publishes(tmp_path, monkeypatch, ["Elden Ring"])
+    owned = owned_file(tmp_path, {ELDEN_STEAM: ELDEN_OWNED, 424242: "Elden Ring"})
+
+    result = world.run(["sync", "--owned-apps", owned, "--no-art"])
+
+    assert result.code == 0, result.err
+    assert "resolve [1/1] Elden Ring: sgdb:exact-verified" in result.out
+    assert f"{AUTOCOMPLETE}Elden%20Ring" in result.calls
+
+
+def test_a_plain_sync_never_matches_by_owned_name(world, tmp_path, monkeypatch):
+    host_publishes(tmp_path, monkeypatch, ["Brand New Sequel"])
+    result = world.run(["sync", "--no-art"])
+    assert result.code == 0, result.err
+    assert cache_entry(world, "Brand New Sequel") is None  # no resolution ahead of the plan
+    dressed = world.run(["sync"])
+    assert dressed.code == 0, dressed.err
+    assert cache_entry(world, "Brand New Sequel")["how"] == "steamstore:exact"
 
 
 @pytest.mark.parametrize("how", ["override", "pinned", "sgdb:exact", "steamstore:exact"])
@@ -309,8 +442,11 @@ def test_resolution_before_the_plan_is_cache_first_and_flushed_per_title(
     result = world.run(["sync", "--owned-apps", owned, "--no-art"])
 
     assert result.code == 0, result.err
-    assert "resolve [1/2] Elden Ring: sgdb:exact-verified" in result.out
+    # "Elden Ring" is the owned game's name ("ELDEN RING"), so it is matched
+    # by name; "Hades II™" is not owned, so it is searched.
+    assert "resolve [1/2] Elden Ring: owned:exact" in result.out
     assert "resolve [2/2] Hades II™: sgdb:exact-verified" in result.out
+    assert f"{AUTOCOMPLETE}Elden%20Ring" not in result.calls
     assert "Desktop" not in result.out.split("MY-GAMING-PC:")[0]  # ignored: not resolved
     assert not any("/steam/apps/" in url for url in result.calls)  # lookups only
     assert sorted(world.cache_titles()) == ["Elden Ring", "Hades II™"]

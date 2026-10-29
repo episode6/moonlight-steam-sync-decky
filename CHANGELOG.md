@@ -6,6 +6,20 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **A title that is an owned game's name is that game, with no search.**
+  When a published title reads exactly as a game in the Deck's library
+  (case, punctuation and ™ aside), the sync matches it to that game
+  before asking SteamGridDB or Steam's store, so a brand-new game the
+  search sources do not know yet still gets its Stream entry, and a
+  title matched wrongly on an earlier sync heals on the next one once
+  the library has a game of its name, with the wrong game's art
+  replaced. A title already matched exactly
+  to a game, or pinned, is left alone; two owned games of one name
+  leave the title to the searches. The match modal says "by its name
+  in your Steam library".
+
 ### Fixed
 
 - **New games match their Steam game again.** A game newer than

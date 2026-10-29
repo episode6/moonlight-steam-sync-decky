@@ -343,7 +343,11 @@ Steam Input settings.
 
 - A title counts as owned when it resolves -- by an exact match, an
   `[overrides]` entry or a `match` pin, never a fuzzy one -- to a Steam
-  appid in the file. A fuzzy hit is right often enough for artwork, but a
+  appid in the file. A title that *is* an owned game's name (case,
+  punctuation and ™ aside; a trailing year counts) is that game before
+  any search is made, which is what a game newer than the search
+  sources' catalogues needs; two owned games of one name leave it to
+  the searches. A fuzzy hit is right often enough for artwork, but a
   wrong Stream button on the real game's page is worse than an extra
   tile, so fuzzy matches keep their visible shortcut; pin them with
   `match` to promote them. A fuzzy SteamGridDB hit, or an exact one

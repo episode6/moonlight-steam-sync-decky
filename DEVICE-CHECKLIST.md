@@ -287,6 +287,12 @@ to `~/homebrew/logs/steam-input-probe/steam-input-probe.log` (the loader's
       button (Hades II re-matched from a fuzzy Hades hit is the spec's own
       example: expect a Stream button on Hades II and the visible tile
       gone).
+- [ ] **A new title matches by its library name.** Publish a game the
+      account owns, under exactly its Steam name, that SteamGridDB does
+      not know yet (a release of the last few days), then *Sync now*:
+      expect a Stream button on the owned game, no visible tile, the
+      row's match modal reading "by its name in your Steam library",
+      and `matches.json`'s entry `how: "owned:exact"`.
 - [ ] **Ignore.** *Ignore* on a title removes its tile on the next sync;
       *Unignore* restores it.
 - [ ] **Owned-apps mismatch recovery.** Sign in as a second Steam user on

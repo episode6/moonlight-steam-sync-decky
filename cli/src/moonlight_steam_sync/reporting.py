@@ -116,7 +116,7 @@ def is_default_host_app(name: str) -> bool:
 #: (decky spec 3.2): a fuzzy hit is right often enough for artwork, but a
 #: wrong Stream button on the real game's page is worse than an extra tile.
 STREAM_HOWS = frozenset(
-    {"override", "pinned", "sgdb:exact-verified", "sgdb:exact", "steamstore:exact"}
+    {"override", "pinned", "owned:exact", "sgdb:exact-verified", "sgdb:exact", "steamstore:exact"}
 )
 
 

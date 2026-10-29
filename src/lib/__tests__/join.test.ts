@@ -654,6 +654,9 @@ describe("the Change match modal's rows", () => {
     const exact = byName(rowsOf(), "Balatro").match;
     expect(matchSummary(exact).tail).toBe(" (Steam 2379780) by an exact title search.");
     expect(matchSummary({ ...exact!, how: "override" }).overrideWins).toBe(true);
+    expect(matchSummary({ ...exact!, how: "owned:exact" }).tail).toBe(
+      " (Steam 2379780) by its name in your Steam library.",
+    );
   });
 });
 
