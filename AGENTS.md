@@ -76,7 +76,13 @@ Breaking any of these is a blocker, not a judgement call.
    CLI's: the CLI's `__version__` (`cli/src/moonlight_steam_sync/__init__.py`)
    is its one other spelling, `scripts/build_cli.py` refuses to build when
    they differ, and a release tag must be `v<version>`. No script or
-   workflow spells the number.
+   workflow spells the number. Between releases `main` carries the next
+   version as `X.Y.Z-SNAPSHOT`, which the CLI spells `X.Y.Z.dev0` (PEP 440
+   has no `-SNAPSHOT`; `build_cli.py`'s `cli_spelling` is that rule's one
+   home and `scripts/set_version.py` writes both); a release is the bare
+   `X.Y.Z`, set on its `release/vX.Y.Z` branch and never on `main`, and
+   a hotfix of it adds a fourth part, `X.Y.Z.1` (the
+   `moonlight-sync-release` skill has the flow).
 9. **`src/lib/` is pure**: no `@decky/*`, `react` or `react-icons` import
    (an eslint `no-restricted-imports` rule enforces it), so vitest can load
    all of it. Decky-facing code lives in `src/components/`, `src/instance.tsx`
@@ -149,6 +155,8 @@ ruff check .                      # plugin and cli/; probes/ excluded in ruff.to
 backend/entrypoint.sh             # build cli/src -> backend/out/moonlight-steam-sync.pyz
 python3 scripts/package.py        # out/Moonlight-Sync.zip (pnpm run package)
 gh workflow run builds.yml --ref <branch>   # publish a branch's build (then every push)
+python3 scripts/set_version.py X.Y.Z[-SNAPSHOT]   # the one version, both spellings
+python3 scripts/ship_release.py --output REPORT.json [--dry-run]   # from release/vX.Y.Z
 ```
 
 Run long commands through `tee` to a log file, never `tail`. Never push

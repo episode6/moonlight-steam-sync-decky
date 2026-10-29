@@ -72,8 +72,9 @@ def test_same_version_and_same_bytes_is_untouched(install_env, monkeypatch) -> N
 
 
 def test_same_version_with_other_bytes_is_replaced(install_env, monkeypatch) -> None:
-    """Decision U12: a branch build carries the last release's version, so an
-    equal version with other bytes is replaced, through the atomic install."""
+    """Decision U12: every build of a branch carries that branch's version
+    (main's X.Y.Z.dev0 parses as X.Y.Z), so an equal version with other
+    bytes is replaced, through the atomic install."""
     install_env.bundled("moonlight-steam-sync.pyz 0.4.0")
     install_env.installed("moonlight-steam-sync 0.4.0")
     calls = []
@@ -111,6 +112,71 @@ def test_a_symlinked_cli_is_replaced_by_the_file_never_written_through(
     assert stat.S_ISREG(install_env.installed_path.lstat().st_mode)
     assert install_env.installed_path.read_bytes() == install_env.bundled_path.read_bytes()
     assert target.read_bytes() == before
+
+
+def test_a_snapshot_is_replaced_by_a_release_whatever_its_number(install_env) -> None:
+    """A build of main carries the next release's number (its CLI's X.Y.Z.dev0
+    parses above the release it follows), so going back to that release
+    would otherwise keep the snapshot's CLI as the newer one."""
+    install_env.bundled("moonlight-steam-sync.pyz 0.13.3")
+    install_env.installed("moonlight-steam-sync 0.13.4.dev0")
+    report = ensure(install_env)
+    assert report.action == "replaced"
+    assert report.bundled == (0, 13, 3)
+    assert report.installed == (0, 13, 3)
+    assert install_env.installed_path.read_bytes() == install_env.bundled_path.read_bytes()
+
+
+def test_a_snapshot_is_not_replaced_by_an_older_snapshot(install_env) -> None:
+    """Only a release's bundle outranks a snapshot; between snapshots the number decides."""
+    install_env.bundled("moonlight-steam-sync.pyz 0.13.3.dev0")
+    install_env.installed("moonlight-steam-sync 0.13.4.dev0")
+    before = install_env.installed_path.read_bytes()
+    assert ensure(install_env).action == "kept"
+    assert install_env.installed_path.read_bytes() == before
+
+
+def test_a_newer_release_is_kept_over_a_bundled_snapshot(install_env) -> None:
+    """The other way round is the ordinary never-downgrade rule."""
+    install_env.bundled("moonlight-steam-sync.pyz 0.13.3.dev0")
+    install_env.installed("moonlight-steam-sync 0.13.4")
+    before = install_env.installed_path.read_bytes()
+    assert ensure(install_env).action == "kept"
+    assert install_env.installed_path.read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    ("text", "snapshot"),
+    [
+        ("0.13.4.dev0", True),
+        ("0.13.4.dev12", True),
+        ("0.13.4-SNAPSHOT", True),
+        (" 0.13.4.dev0\n", True),
+        ("0.13.4", False),
+        ("0.13.4rc1", False),
+        ("0.13.4.1.dev0", True),
+        ("0.13.4.1", False),
+        ("0.13.4.developer", False),
+        ("0.13.4-SNAPSHOTS", False),
+        ("dev", False),
+        ("", False),
+    ],
+)
+def test_is_snapshot(text: str, snapshot: bool) -> None:
+    assert install.is_snapshot(text) is snapshot
+
+
+def test_a_hotfix_upgrades_its_release_and_is_kept_over_it(install_env) -> None:
+    """A hotfix's fourth part orders it above its release and below the next."""
+    install_env.bundled("moonlight-steam-sync.pyz 0.13.3.1")
+    install_env.installed("moonlight-steam-sync 0.13.3")
+    report = ensure(install_env)
+    assert report.action == "upgraded"
+    assert report.installed == (0, 13, 3, 1)
+    install_env.bundled("moonlight-steam-sync.pyz 0.13.3")
+    assert ensure(install_env).action == "kept"
+    install_env.bundled("moonlight-steam-sync.pyz 0.13.4")
+    assert ensure(install_env).action == "upgraded"
 
 
 def test_newer_installed_is_kept_whatever_its_bytes(install_env) -> None:
@@ -198,6 +264,8 @@ def test_no_bundle_is_not_an_error(install_env) -> None:
         ("moonlight-steam-sync.pyz 0.3.0", (0, 3, 0)),
         ("prog 0.4.0.dev1", (0, 4, 0)),
         ("__main__.py 1.2.3rc1", (1, 2, 3)),
+        ("moonlight-steam-sync 0.13.3.1", (0, 13, 3, 1)),
+        ("moonlight-steam-sync 0.13.3.1.dev0", (0, 13, 3, 1)),
         ("garbage", None),
         ("moonlight-steam-sync v0.3", None),
         ("", None),

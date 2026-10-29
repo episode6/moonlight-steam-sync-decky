@@ -228,26 +228,34 @@ def test_the_fetched_key_never_appears_in_an_event_or_a_log_line(
 def test_one_version_lives_in_package_json_and_the_cli() -> None:
     # Hard rule 8: package.json's "version" is the plugin's and the CLI's;
     # the CLI's __version__ is the one other spelling (build_cli.py refuses
-    # a mismatch) and no script or workflow spells it. Anchored, so a
-    # third-party pin that happens to share the number (an action's
-    # `@2.0.0`, a tool's `==1.2.3`, a longer `10.9.0`) is not the version.
+    # a mismatch; between releases main's X.Y.Z-SNAPSHOT is the CLI's
+    # X.Y.Z.dev0, since PEP 440 has no -SNAPSHOT) and no script or workflow
+    # spells either. Anchored, so a third-party pin that happens to share
+    # the number (an action's `@2.0.0`, a tool's `==1.2.3`, a longer
+    # `10.9.0`) is not the version.
     package = json.loads((ROOT / "package.json").read_text())
     version = package["version"]
+    assert re.fullmatch(r"\d+\.\d+\.\d+(-SNAPSHOT|\.\d+)?", version), version
     assert "moonlightSteamSync" not in package
     assert package["license"] == "MIT"
     assert "remote_binary" not in package
     init = (ROOT / "cli" / "src" / "moonlight_steam_sync" / "__init__.py").read_text()
-    assert f'__version__ = "{version}"' in init
-    spelled = re.compile(rf"(?<![\w.@=-])v?{re.escape(version)}(?![\w.])")
-    assert spelled.search(f'"{version}"') and spelled.search(f"v{version}")
-    assert not spelled.search(f"@{version}") and not spelled.search(f"1{version}")
+    cli = version[: -len("-SNAPSHOT")] + ".dev0" if version.endswith("-SNAPSHOT") else version
+    assert f'__version__ = "{cli}"' in init
+    number = version.removesuffix("-SNAPSHOT")
+    spelled = re.compile(rf"(?<![\w.@=-])v?{re.escape(number)}(?![\w.])")
+    assert spelled.search(f'"{number}"') and spelled.search(f"v{number}")
+    assert not spelled.search(f"@{number}") and not spelled.search(f"1{number}")
+    spelled_either = re.compile(rf"(?<![\w.@=-])v?{re.escape(number)}(-SNAPSHOT|\.dev0)?(?![\w.])")
     for path in (
         ROOT / "backend" / "entrypoint.sh",
         ROOT / "scripts" / "build_cli.py",
+        ROOT / "scripts" / "set_version.py",
+        ROOT / "scripts" / "ship_release.py",
         ROOT / "cli" / "install.sh",
         *(ROOT / ".github" / "workflows").glob("*.yml"),
     ):
-        assert not spelled.search(path.read_text()), path
+        assert not spelled_either.search(path.read_text()), path
 
 
 def test_the_cli_has_no_runtime_dependencies() -> None:

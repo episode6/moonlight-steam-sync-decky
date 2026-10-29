@@ -38,7 +38,8 @@ export const INSTALL_TYPES_LOADER_VERSION: Version = [3, 1, 0];
 export const CHECK_MIN_INTERVAL_MS = 60_000;
 export const NOTES_MAX_CHARS = 8000;
 export const TAG_RE = /^[A-Za-z0-9._-]{1,100}$/;
-export const RELEASE_TAG_RE = /^v(\d+)\.(\d+)\.(\d+)$/;
+/** A release's tag: `vX.Y.Z`, or a hotfix's `vX.Y.Z.H` (the moonlight-sync-release skill). */
+export const RELEASE_TAG_RE = /^v(\d+)\.(\d+)\.(\d+)(?:\.(\d+))?$/;
 /**
  * A branch's name as `build.json` and `update_channel` carry it (update spec
  * 3.12.1): the backend's `updates.REF_RE`, spelled alike
@@ -314,9 +315,8 @@ export function parseReleases(raw: unknown): Release[] {
       continue;
     }
     if (item.prerelease !== false) continue;
-    const match = RELEASE_TAG_RE.exec(tag);
-    if (!match) continue;
-    const version: Version = [Number(match[1]), Number(match[2]), Number(match[3])];
+    if (!RELEASE_TAG_RE.test(tag)) continue;
+    const version = parseVersion(tag.slice(1))!;
     releases.push([
       version,
       {

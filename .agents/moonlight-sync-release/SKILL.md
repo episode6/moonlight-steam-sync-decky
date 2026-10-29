@@ -2,10 +2,14 @@
 name: moonlight-sync-release
 description: >-
   How to cut a Moonlight Sync release (one version for the plugin and the
-  CLI): who may tag, bumping package.json and the CLI's __version__, the
-  CHANGELOG section, gh release create, checking the release assets, and the
-  history of every release so far. Load whenever asked to cut, prepare or bump
-  a release, touch the version number, or write a release's CHANGELOG section.
+  CLI) with the episode6 release-branch flow: who may tag, main's
+  X.Y.Z-SNAPSHOT (the CLI's X.Y.Z.dev0) and scripts/set_version.py, cutting
+  release/vX.Y.Z and its two version PRs, the CHANGELOG section,
+  scripts/ship_release.py, checking the release assets, hotfixes (a fourth
+  version part, X.Y.Z.H), and the
+  history of every release so far. Load whenever asked to cut a release or a
+  release branch, prepare or bump a version, touch the version number, or
+  write a release's CHANGELOG section.
 ---
 
 # Cutting a Moonlight Sync release
@@ -116,47 +120,161 @@ falls through to Steam's store, and a title that is an owned game's name
 matches that game before any search); the CLI takes `0.13.2`, the minimum
 stays `0.4.0`.
 
-Once everything intended for the release has merged to `main`
-(substitute the version being cut for `X.Y.Z`):
+Since 2026-10-29 releases follow the episode6 release-branch flow (the
+same one the library repos, podcast-hacker and collins use, adapted to
+this repo's two files and its Keep a Changelog format). The history above
+this point was cut the old way, a bump committed straight to `main` and
+tagged there; `v0.13.2` was the last of those, and `main` moved on to
+`0.13.3-SNAPSHOT` in the PR that brought the flow in.
+
+### The version between releases
+
+`main` always carries the *next* release's version with `-SNAPSHOT`
+after it (`0.13.3-SNAPSHOT`), so every build of `main`, About's *Plugin
+version*, Decky's install dialog and the Updates page say when what is
+running is a snapshot. The CLI spells the same version `X.Y.Z.dev0`
+(PEP 440 has no `-SNAPSHOT`, and `pip install -e ./cli` refuses one;
+`.dev0` sorts before `X.Y.Z` as semver's pre-release does). The rule
+lives once, in `scripts/build_cli.py`'s `cli_spelling`; `scripts/
+set_version.py X.Y.Z[-SNAPSHOT]` writes both files, and
+`build_cli.py` refuses to build when they disagree. Every version
+parser in the plugin (`install.parse_version`, `version.ts`'s
+`parseVersion`) reads the leading `X.Y.Z` (and a hotfix's fourth part)
+and ignores the suffix, so a snapshot compares equal to its release: the updater offers a release to
+a snapshot only through the branch-build rule (a build of a branch is
+offered a *switch* to the newest release whatever the versions say,
+update spec 3.12.4), and the bundled CLI's "same version, other bytes"
+rule (Decision U12) is what carries a new build's CLI onto the device.
+Going back from a build of `main` to a release is the one place the
+numbers mislead (the snapshot's `0.13.4.dev0` parses above the release's
+`0.13.3`), so `install.ensure_installed` replaces a snapshot CLI with a
+release's whatever their numbers (`is_snapshot`); a newer *release* CLI
+installed by hand is still kept.
+
+A release is the bare `X.Y.Z`. It exists only on the release branch:
+`release.yml` refuses a tag whose `package.json` is a `-SNAPSHOT`, and
+`ship_release.py` refuses to ship a snapshot or a branch that is not
+`release/*`.
+
+### Cut the release branch
+
+1. `main` is green (CI and the `build-main` build).
+2. `<VERSION>` is `main`'s version without `-SNAPSHOT` (`0.13.3-SNAPSHOT`
+   releases as `0.13.3`), unless the user wants a minor or major bump,
+   which is their call, never automatic (then `<VERSION>` is that, say
+   `0.14.0`).
+3. Cut the branch from `main` and push it, empty:
+
+   ```sh
+   git checkout main && git pull
+   git checkout -b release/v<VERSION>
+   git push -u origin release/v<VERSION>
+   ```
+
+### The two version PRs
+
+Both are drafts (the `open-pr` skill), both get CI; merge them through
+GitHub, never locally. `<NEXT>` is `<VERSION>` with the patch one higher
+(`0.13.3` → `0.13.4`), a patch-only bump: the next release PR picks a
+bigger number if one is wanted.
+
+**PR 1, `[VERSION] Snapshot v<NEXT>-SNAPSHOT` → `main`**, from a branch
+off `main`:
 
 ```sh
-git checkout main && git pull
-
-# 1. Bump the one version in both of its spellings (hard rule 8):
-#    package.json's "version" (decky-loader exports it as
-#    DECKY_PLUGIN_VERSION) and the CLI's __version__ (cli/pyproject.toml's
-#    version is dynamic and reads it). build_cli.py refuses a mismatch.
-$EDITOR package.json cli/src/moonlight_steam_sync/__init__.py
-
-# 2. Move the CHANGELOG's [Unreleased] entries (the plugin's and the
-#    CLI's alike) into a new dated [X.Y.Z] section and open a new empty
-#    [Unreleased] section above it. cli/CHANGELOG.md is the CLI's history
-#    up to 0.4.0 and is not edited any more.
-$EDITOR CHANGELOG.md
-
-# 3. Commit the bump.
-git add package.json cli/src/moonlight_steam_sync/__init__.py CHANGELOG.md
-git commit -m "Release vX.Y.Z"
-
-# 4. Push, then create the release. `gh release create` makes the tag and
-#    the release page in one step; the tag reaching GitHub triggers
-#    release.yml, whose build job checks the tag against package.json and
-#    whose github-release job uploads the assets into the release that
-#    now already exists (idempotent, see the comment on that step).
-git push origin main
-gh release create vX.Y.Z --target main --title vX.Y.Z --generate-notes
+python3 scripts/set_version.py <NEXT>-SNAPSHOT
 ```
 
-Pushing a plain `git tag` works too and takes the same path; the workflow
-creates the release itself in that case. After the push, watch the
-`Release` workflow to completion and confirm the release page has
-`Moonlight-Sync.zip`, `moonlight-steam-sync.pyz` and both `.sha256` files
-attached, then sanity-check both install paths end to end on a Deck:
+and in `CHANGELOG.md` turn `## [Unreleased]` into `## [<VERSION>] -
+<today>` (the plugin's and the CLI's entries alike; `cli/CHANGELOG.md` is
+the CLI's history up to 0.4.0 and is not edited any more) and open a new
+empty `## [Unreleased]` above it. If `<VERSION>` is a minor or major
+bump, this PR's number is the patch above *that* (`0.14.0` → `0.14.1-SNAPSHOT`).
+
+**PR 2, `[VERSION] Release v<VERSION>` → `release/v<VERSION>`**, from a
+branch off the release branch:
+
+```sh
+python3 scripts/set_version.py <VERSION>
+```
+
+and the same CHANGELOG change (the dated `## [<VERSION>]` section with
+everything since the last release, a fresh `## [Unreleased]` above it).
+`scripts/ship_release.py` reads that section as the release notes, so it
+has to be there and complete. The `[Unreleased]` heading stays, so the
+branch's CHANGELOG has the same shape as `main`'s and a hotfix has
+somewhere to go.
+
+### Harden
+
+Fix on `main` first, then bring the fix to the release branch with the
+user-global `cherry-pick-pr` skill (a 🍒 draft PR off the release branch
+that cherry-picks the squashed commit, its CHANGELOG entry moved into the
+`[<VERSION>]` section). Walk `DEVICE-CHECKLIST.md` on a build of the
+release branch: ask `builds.yml` for one (`gh workflow run builds.yml
+--ref release/v<VERSION>`), then follow the branch from Settings →
+Updates → *Channel*; its *Plugin version* reads `<VERSION>` without a
+suffix, as the release will.
+
+### Ship
+
+Only when the user asks for the release. From the release branch, pulled
+after PR 2 (and every hardening PR) merged:
+
+```sh
+git checkout release/v<VERSION> && git pull
+python3 scripts/ship_release.py --dry-run --output /tmp/release.json   # the notes and the command
+python3 scripts/ship_release.py --output /tmp/release.json
+```
+
+The script reads `package.json`'s version (refusing a `-SNAPSHOT`, a
+CLI `__version__` that disagrees, a branch that is not `release/*` or not
+the one checked out, or a local `HEAD` that is not what `origin` has for
+the branch, since the tag lands on the remote's head),
+takes `CHANGELOG.md`'s `## [<VERSION>] - <date>` section as the notes
+and runs `gh release create v<VERSION> --target release/v<VERSION>
+--title v<VERSION> --notes-file …`, which makes the tag and the release
+page in one step. The tag reaching GitHub triggers `release.yml`, whose
+build job checks the tag against `package.json` and whose
+`github-release` job uploads the assets into the release that now
+exists (idempotent, see the comment on that step; a plain `git tag` push
+takes the same path and the workflow creates the release itself). The
+report lands in `--output` (`tag`, `title`, `version`, `branch`, `notes`,
+`url`).
+
+After the push, watch the `Release` workflow to completion and confirm
+the release page has `Moonlight-Sync.zip`, `moonlight-steam-sync.pyz` and
+both `.sha256` files attached, then sanity-check both install paths end
+to end on a Deck:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/episode6/moonlight-steam-sync-decky/main/install.sh | sh
 curl -fsSL https://raw.githubusercontent.com/episode6/moonlight-steam-sync-decky/main/cli/install.sh | sh
-moonlight-steam-sync --version     # X.Y.Z
+moonlight-steam-sync --version     # <VERSION>
 ```
 
-Then walk `DEVICE-CHECKLIST.md` from the top.
+The updater on every installed release then offers `<VERSION>` (the
+newest `v*` release is `releases/latest`; `build-*` prereleases never
+are).
+
+### Hotfixes
+
+Not expected (the user's note of 2026-10-29: hotfixes will probably never
+ship), but the branch allows one, and **a hotfix adds a fourth part to
+the version** (the user's decision of 2026-10-29, the same scheme as
+collins): a hotfix of `0.1.2` is `0.1.2.1`, the next `0.1.2.2`. Both
+halves order it between its release and the next (`install.parse_version`
+and `version.ts`'s `parseVersion` read the fourth part; a missing one
+compares as 0), `updates.ts`'s `RELEASE_TAG_RE` reads the `v0.1.2.1`
+tag as a release, `set_version.py` accepts `X.Y.Z.H` (from 1, never with
+`-SNAPSHOT`), pnpm accepts the four-part `package.json` version and PEP
+440 the CLI's. `main` is not involved: its snapshot stays the next
+release's number, and nothing is bumped there.
+
+No new branch: cherry-pick the fix into `release/v<VERSION>` (the
+`cherry-pick-pr` skill), then a `[VERSION] Hotfix v<VERSION>.H` PR on
+that branch (`set_version.py <VERSION>.H`, a dated `## [<VERSION>.H]`
+CHANGELOG section above `[<VERSION>]`, which `ship_release.py` reads as
+the notes), and `ship_release.py` tags it from the same branch
+(`v<VERSION>.H`). The updater offers it to `<VERSION>` as an update, and
+`releases/latest` names it until the next release.

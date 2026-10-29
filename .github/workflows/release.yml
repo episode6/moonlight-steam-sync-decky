@@ -58,9 +58,17 @@ jobs:
         # The plugin and the CLI both report package.json's "version"
         # (build_cli.py holds the CLI to it), so a tag that says otherwise
         # would publish assets whose --version disagrees with the release.
+        # A -SNAPSHOT version is main's between releases (the
+        # moonlight-sync-release skill), never a release's: a tag on one
+        # is refused whatever it is named.
         if: startsWith(github.ref, 'refs/tags/')
         run: |
           version=$(python3 -c 'import json; print(json.load(open("package.json"))["version"])')
+          case "$version" in
+            *-SNAPSHOT)
+              echo "::error::package.json's version ${version} is a snapshot; releases ship from a release branch"
+              exit 1 ;;
+          esac
           if [ "${GITHUB_REF_NAME}" != "v${version}" ]; then
             echo "::error::tag ${GITHUB_REF_NAME} is not v${version} (package.json)"
             exit 1

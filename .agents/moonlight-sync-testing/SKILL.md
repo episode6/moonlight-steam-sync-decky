@@ -108,9 +108,10 @@ There is no Steam Deck during development; everything else is tested.
   is `v3.0.0-test`; a test deletes it to prove `loader_version` reads `""`.
 - `tests/test_hard_rules.py` greps for what can be proven mechanically:
   `flags: []`, no live shortcut API call in `src/`, one version
-  (`package.json`'s, spelled once more as the CLI's `__version__` and in no
-  script or workflow; the match is anchored, so a third-party pin that
-  shares the number does not count), the CLI's empty `dependencies`, the
+  (`package.json`'s `X.Y.Z` or `X.Y.Z-SNAPSHOT`, spelled once more as the
+  CLI's `__version__`, `.dev0` for a snapshot, and in no script or
+  workflow in either spelling; the match is anchored, so a third-party
+  pin that shares the number does not count), the CLI's empty `dependencies`, the
   placeholder SteamGridDB key (`tests/fixtures/sgdb/api.html`'s) spelled nowhere else under `tests/`
   but that file, and, over a whole browser fetch, the key in no result,
   event or log line (hard rule 4 for spec 3.20); and hard rule 12's names

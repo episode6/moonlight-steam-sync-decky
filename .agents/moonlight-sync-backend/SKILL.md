@@ -65,9 +65,11 @@ py_modules/moonlight_sync/  the backend (imports nothing from decky)
                             cancel_update() / _cancel_staging() (unload's: kill,
                             wait, remove *.part), startup's updates.cleanup(),
                             cli_version()'s `build` (updates.read_build)
-  install.py                read_version(), MIN_CLI_VERSION, atomic install/upgrade;
-                            sha256_file(); an equal version with other bytes is
-                            `replaced` (Decision U12), a newer one `kept`
+  install.py                read_version() / read_version_text(), is_snapshot(),
+                            MIN_CLI_VERSION, atomic install/upgrade; sha256_file();
+                            an equal version with other bytes is `replaced`
+                            (Decision U12), so is a snapshot (.dev0 / -SNAPSHOT)
+                            when the bundle is a release, a newer one `kept`
   settings.py               settings.json / ignore.json / owned-apps.json /
                             pending.json / layouts.json / added.json, all .tmp +
                             os.replace; added() / note_titles() (`added.json`,

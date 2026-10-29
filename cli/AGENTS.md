@@ -660,8 +660,11 @@ one, cut from the root as described in the root
 [`moonlight-sync-release`](../.agents/moonlight-sync-release/SKILL.md)
 skill. The CLI shares the plugin's version -- its
 `__version__` in `src/moonlight_steam_sync/__init__.py` is bumped with
-`package.json`'s `"version"` in the same commit (`scripts/build_cli.py`
-refuses to build when they differ) -- and the root `release.yml` builds the
+`package.json`'s `"version"` in the same commit, by the root
+`scripts/set_version.py` (`scripts/build_cli.py` refuses to build when
+they differ); between releases `main` is `X.Y.Z-SNAPSHOT`, which is
+`X.Y.Z.dev0` here, PEP 440's spelling, since pip refuses to install a
+`-SNAPSHOT` -- and the root `release.yml` builds the
 zipapp from `src/` with that script, smoke-runs `--version` and `doctor`,
 bundles it into the plugin zip as `bin/moonlight-steam-sync.pyz` and
 attaches it to the release as `moonlight-steam-sync.pyz` +

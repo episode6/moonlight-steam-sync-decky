@@ -131,6 +131,15 @@ describe("parseReleases (the fixture)", () => {
     ]);
   });
 
+  it("reads a hotfix's vX.Y.Z.H tag as a release between its release and the next", () => {
+    const release = (tag: string) => ({ tag_name: tag, draft: false, prerelease: false, assets: [{ name: ASSET }] });
+    const tags = parseReleases([release("v0.13.3"), release("v0.13.4"), release("v0.13.3.1"), release("v0.13.3.2")]).map(
+      (r) => r.tag,
+    );
+    expect(tags).toEqual(["v0.13.4", "v0.13.3.2", "v0.13.3.1", "v0.13.3"]);
+    expect(parseReleases([release("v0.13.3.0.1"), release("v0.13.3.")]).map((r) => r.tag)).toEqual([]);
+  });
+
   it("then the branch builds with a digest, by ref (update spec 3.12.4)", () => {
     // Skipped: build-no-digest (no hash, nothing offered without one) and
     // build-drafted (a draft).

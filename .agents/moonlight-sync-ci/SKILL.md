@@ -6,9 +6,11 @@ description: >-
   release.yml's build job, builds.yml (rolling build-<slug> prereleases per
   branch: gate, build, publish, cleanup), scripts/build_cli.py (the zipapp),
   scripts/build_info.py (build.json), scripts/package.py (Moonlight-Sync.zip),
-  backend/entrypoint.sh and backend/Dockerfile, and their tests
-  (test_entrypoint.py, test_package.py, test_build_info.py,
-  test_hard_rules.py's workflow checks). Load before changing any workflow,
+  scripts/set_version.py and scripts/ship_release.py (the release-branch
+  flow's two tools), backend/entrypoint.sh and backend/Dockerfile, and their
+  tests (test_entrypoint.py, test_package.py, test_build_info.py,
+  test_set_version.py, test_ship_release.py, test_hard_rules.py's workflow
+  checks). Load before changing any workflow,
   build or packaging script, the Python version CI uses, or when CI fails.
 ---
 
@@ -32,7 +34,24 @@ backend/Dockerfile          template's holo-base image, only for `decky plugin b
 scripts/build_cli.py        cli/src -> moonlight-steam-sync.pyz (zipapp, deflated,
                             `/usr/bin/env python3`, moonlight_steam_sync/ only: no
                             __pycache__ or egg-info), refusing a __version__ that is not
-                            package.json's "version"
+                            package.json's "version" in the CLI's spelling (cli_spelling:
+                            X.Y.Z-SNAPSHOT is X.Y.Z.dev0, the rule's one home)
+scripts/set_version.py      the one version in both spellings: package.json's "version" as
+                            given (X.Y.Z, X.Y.Z-SNAPSHOT or a hotfix's X.Y.Z.H with H
+                            from 1, anything else refused with nothing written) and the CLI's __version__ as build_cli.py's
+                            cli_spelling says (a snapshot's -SNAPSHOT is .dev0, PEP 440);
+                            package.json rewritten with its two-space indent and newline
+scripts/ship_release.py     the release from a release branch (the moonlight-sync-release
+                            skill): package.json's version (a -SNAPSHOT refused, the CLI's
+                            __version__ cross-checked), --branch or the branch checked out
+                            (must be release/*, must be the one checked out, and the local
+                            HEAD must be origin's head for it by `git ls-remote`, since
+                            `--target` tags the remote; a dry run only warns), CHANGELOG.md's
+                            `## [X.Y.Z] - date` section as the notes (missing: an error;
+                            empty: a warning), `gh release create vX.Y.Z --target <branch>
+                            --title vX.Y.Z --notes-file …` (gh is the one tool it runs),
+                            --dry-run prints and runs nothing, --output (required) gets a
+                            JSON report; the tag then triggers release.yml
 scripts/build_info.py       build.json (update spec 3.12.1): --kind release|branch --ref
                             --sha --run [--out], {schema: 1, kind, ref, sha, built_at,
                             run} in that order; refuses (one stderr line, nothing
@@ -69,7 +88,7 @@ scripts/package.py          Docker-free zip: out/Moonlight-Sync.zip ("Moonlight 
                             (from the root, from git, or why there is none)
 .github/workflows/release.yml  entrypoint.sh (the CLI from cli/src) + doctor smoke +
                             package.py --require-cli; on a v* tag (which must be
-                            v<package.json version>) Moonlight-Sync.zip,
+                            v<package.json version>, never a -SNAPSHOT) Moonlight-Sync.zip,
                             moonlight-steam-sync.pyz and their .sha256 files attached to
                             one GitHub release; the build job also runs on pull_request
 .github/workflows/builds.yml   branch builds (update spec 3.12.2): push / workflow_dispatch
@@ -86,7 +105,8 @@ scripts/package.py          Docker-free zip: out/Moonlight-Sync.zip ("Moonlight 
 
 ## CI and release outline
 
-- `.github/workflows/ci.yml` (push to `main`, every `pull_request`):
+- `.github/workflows/ci.yml` (push to `main` and to `release/**`, every
+  `pull_request`):
   `shellcheck` (`sh -n` on `install.sh`, `backend/entrypoint.sh` and
   `cli/install.sh`, then `ludeeus/action-shellcheck` over the whole tree),
   `frontend` (pnpm 9, Node 20: typecheck, lint, vitest, build, upload
@@ -114,8 +134,11 @@ scripts/package.py          Docker-free zip: out/Moonlight-Sync.zip ("Moonlight 
   carries `build.json` with `kind: release` and the tag; it is inside the
   zip, not a fifth asset), `package.py --require-cli`, and `sha256sum` of
   `Moonlight-Sync.zip` and `moonlight-steam-sync.pyz` against their bare
-  filenames. On a `v*` tag it first checks the tag is `v` + `package.json`'s
-  `"version"`, and the tag-gated `github-release` job attaches all four
+  filenames. On a `v*` tag it first checks that `package.json`'s
+  `"version"` is not a `-SNAPSHOT` (`main`'s between releases: a release
+  only ever comes from a `release/*` branch, where the release PR set the
+  bare version) and that the tag is `v` + that version, and the tag-gated
+  `github-release` job attaches all four
   files to one release through an idempotent `gh release view || create` /
   `upload --clobber` step. The build job also runs on `pull_request` and
   `workflow_dispatch`, so it is exercised before any tag.
@@ -196,6 +219,32 @@ scripts/package.py          Docker-free zip: out/Moonlight-Sync.zip ("Moonlight 
   `PYTHONUTF8=0`), a tree inside another checkout, no checkout, a checkout git calls
   dubious (`GIT_TEST_ASSUME_DIFFERENT_OWNER=1`, git's own message quoted)
   and no `git` on `PATH`; each asserts the stderr line.
+  `tests/test_set_version.py` runs `scripts/set_version.py` against a
+  fixture tree (`--root`): `cli_spelling`'s table, a release written alike
+  in both files, a snapshot as `.dev0` in the CLI (and what it wrote is
+  what `build_cli.py` accepts), the version the only change to
+  `package.json` (indent, newline, non-ASCII kept), a hotfix's `X.Y.Z.H`
+  written alike in both, every other shape (`0.14`, `v0.14.0`,
+  `0.14.0-snapshot`, `0.14.0.dev0`, `01.2.3`, `0.14.0.0`, `0.14.0.1.1`, …)
+  refused with nothing written, a file without a version refused, and the
+  real tree's two spellings agreeing. `tests/test_ship_release.py` runs
+  `scripts/ship_release.py` against a fixture tree with a fake `gh` on
+  `PATH` that logs its argv and copies the notes file: the one `release
+  create v0.14.0 --target release/v0.14.0 --title v0.14.0 --notes-file`
+  call with the `## [0.14.0]` section (headings kept, up to the next
+  `## `) and the JSON report; a dry run (no call, `command` in the
+  report, `RELEASE_NOTES.md` standing for the notes file); the fixture is
+  a scratch checkout with a bare `origin` the branch is pushed to, so the
+  branch is read from it (`symbolic-ref`) and the push guard (`--branch`
+  not the one checked out; a local commit `origin` lacks) refuses, or
+  warns on a dry run; a snapshot, a non-release branch (a warning on a
+  dry run), a CLI version that disagrees or is missing and a missing
+  section each refused before `gh` runs and without a report; an empty
+  section a warning; a failing `gh` reported with its stderr, the notes
+  temp file removed either way. `test_set_version.py` also holds the real
+  `package.json` to the `json.dumps(indent=2)` shape the script rewrites
+  it in, so a reformat would show up before a bump turned into a
+  whole-file diff.
   `tests/test_build_info.py` runs `scripts/build_info.py` with
   `sys.executable` in `tmp_path`: the keys and their order, `built_at`'s
   form, `--out`, and every refusal (one stderr line, nothing written; exit
