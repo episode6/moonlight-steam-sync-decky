@@ -6,6 +6,8 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.13.2] - 2026-10-29
+
 ### Added
 
 - **A title that is an owned game's name is that game, with no search.**
