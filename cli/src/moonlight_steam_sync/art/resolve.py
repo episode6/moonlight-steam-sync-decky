@@ -28,8 +28,10 @@ it as a cache miss, so the next run still re-resolves.
 
 Matching order (spec 3.5 step A): config override, then a pin, then the
 cache, then SteamGridDB autocomplete, then -- if there is no key, or
-SteamGridDB returned nothing -- Steam's own store search. Both searches use
-the same normalisation and the same pick rules.
+SteamGridDB returned nothing, or only a weak answer (a fuzzy pick, or an
+exact one with no Steam release; see :meth:`Resolver._search`) -- Steam's
+own store search. Both searches use the same normalisation and the same
+pick rules.
 """
 
 from __future__ import annotations
@@ -442,7 +444,7 @@ class Resolver:
                     steam_appid = looked_up
                     explain.append(f"cache: steam appid {looked_up} for the pinned sgdb id")
                 elif self._sgdb_usable():
-                    steam_appid = self._steam_appid_for(sgdb_id, explain)
+                    steam_appid, _failed = self._steam_appid_for(sgdb_id, explain)
             match = Match(
                 name=name,
                 steam_appid=steam_appid,
@@ -503,7 +505,35 @@ class Resolver:
         return self.sgdb is not None and self.sgdb.enabled
 
     def _search(self, name: str, explain: list[str]) -> Match:
+        """SteamGridDB autocomplete, then -- when it had nothing, or only a
+        *weak* answer -- Steam's own store search.
+
+        A SteamGridDB answer is weak when it is a fuzzy pick, or an exact
+        one for a game SteamGridDB has no Steam release for. Both happen
+        for a game released since SteamGridDB last caught up (measured
+        2026-10-29: a brand-new title with no SteamGridDB entry at all
+        fuzzy-matched its franchise's first game, and another had a
+        verified entry nobody had linked to Steam yet), and both used to
+        end the search, so the store's exact hit -- the appid the account
+        owns -- was never asked for. Now an exact store hit replaces a
+        fuzzy SteamGridDB pick outright (that pick was a different game)
+        and lends its appid to an unlinked exact one (the SteamGridDB id
+        stays for community art, and ``how`` stays ``sgdb:exact*``). A
+        store answer that is not exact changes nothing.
+
+        A weak answer the store does not firm up is cached as it stands,
+        except when a lookup failed along the way, which is never cached:
+        a failed store search keeps an unlinked exact match for this run
+        only but drops a fuzzy one outright (a fuzzy pick is a different
+        game, and this run would otherwise fetch that game's art, which
+        the next run's kind change would then rename onto the right one),
+        and a failed ``games/id`` lookup -- "no Steam release" is not
+        known, only unanswered -- keeps the exact match for this run only
+        unless the store's exact hit supplied the appid anyway.
+        """
         transient = False
+        weak: Match | None = None
+        release_lookup_failed = False
         if self._sgdb_usable():
             assert self.sgdb is not None
             try:
@@ -518,10 +548,12 @@ class Resolver:
                 explain.append(f"sgdb autocomplete: {len(results)} result(s) -> {how}")
             if chosen is not None:
                 sgdb_id = _as_int(chosen.get("id"))
-                steam_appid = (
-                    self._steam_appid_for(sgdb_id, explain) if sgdb_id is not None else None
+                steam_appid, release_lookup_failed = (
+                    self._steam_appid_for(sgdb_id, explain)
+                    if sgdb_id is not None
+                    else (None, False)
                 )
-                return Match(
+                match = Match(
                     name=name,
                     steam_appid=steam_appid,
                     sgdb_id=sgdb_id,
@@ -529,6 +561,15 @@ class Resolver:
                     how=f"sgdb:{how}",
                     explain=explain,
                 )
+                if how != "fuzzy" and steam_appid is not None:
+                    return match
+                weak = match
+                if how == "fuzzy":
+                    explain.append("sgdb match is weak (fuzzy)")
+                elif release_lookup_failed:
+                    explain.append("sgdb match is weak (steam release lookup failed)")
+                else:
+                    explain.append("sgdb match is weak (no steam release)")
         else:
             explain.append("sgdb: no api key, skipping")
 
@@ -544,25 +585,57 @@ class Resolver:
             chosen, how = pick(items, name, prefer_verified=False)
             if not store_failed:
                 explain.append(f"steam storesearch: {len(items)} result(s) -> {how}")
-            if chosen is not None:
+            store_appid = _as_int(chosen.get("id")) if chosen is not None else None
+            if chosen is not None and weak is None:
                 return Match(
                     name=name,
-                    steam_appid=_as_int(chosen.get("id")),
+                    steam_appid=store_appid,
                     sgdb_id=None,
                     matched_name=str(chosen.get("name") or ""),
                     how=f"steamstore:{how}",
                     explain=explain,
                 )
+            exact_store = chosen is not None and how == "exact" and store_appid is not None
+            if weak is not None and exact_store:
+                if weak.how == "sgdb:fuzzy":
+                    explain.append("steam storesearch exact match replaces the fuzzy sgdb one")
+                    return Match(
+                        name=name,
+                        steam_appid=store_appid,
+                        sgdb_id=None,
+                        matched_name=str(chosen.get("name") or ""),
+                        how="steamstore:exact",
+                        explain=explain,
+                    )
+                explain.append(f"steam appid {store_appid} from the store's exact match")
+                weak.steam_appid = store_appid
+                return weak
 
+        if weak is not None:
+            if transient and weak.how == "sgdb:fuzzy":
+                explain.append("fuzzy sgdb match dropped (store lookup failed; not cached)")
+                return Match(name=name, how="none", explain=explain, transient=True)
+            if transient or release_lookup_failed:
+                explain.append("weak sgdb match kept for this run (a lookup failed; not cached)")
+                weak.transient = True
+            return weak
         if transient:
             explain.append("no match (a lookup failed; not cached)")
             return Match(name=name, how="none", explain=explain, transient=True)
         explain.append("no match")
         return Match(name=name, how="none", explain=explain)
 
-    def _steam_appid_for(self, sgdb_id: int, explain: list[str]) -> int | None:
+    def _steam_appid_for(self, sgdb_id: int, explain: list[str]) -> tuple[int | None, bool]:
+        """``(steam appid, lookup failed)`` for a SteamGridDB game.
+
+        ``(None, False)`` is SteamGridDB's definite "no Steam release";
+        ``(None, True)`` is an unanswered ``games/id`` call (an
+        :class:`HttpError`), which :meth:`_search` does not cache. The
+        override path ignores the flag: a pinned sgdb id is re-queried
+        every run until it answers (:meth:`_cached_override`).
+        """
         if not self._sgdb_usable():
-            return None
+            return None, False
         assert self.sgdb is not None
         try:
             game = self.sgdb.game(sgdb_id)
@@ -570,10 +643,10 @@ class Resolver:
             raise
         except HttpError as exc:
             explain.append(f"sgdb games/id/{sgdb_id} failed: {exc}")
-            return None
+            return None, True
         steam_appid = steam_appid_from_game(game)
         explain.append(
             f"sgdb games/id/{sgdb_id}?platformdata=steam -> "
             f"{steam_appid if steam_appid is not None else 'no steam release'}"
         )
-        return steam_appid
+        return steam_appid, False

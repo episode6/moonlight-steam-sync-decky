@@ -874,6 +874,14 @@ and one title reading "no match".
       the pinned title comes back as whatever the CLI resolves for it
       (the pin is gone) and titles that already had artwork keep it. The
       Titles page, opened after the run, agrees.
+- [ ] **A game newer than SteamGridDB matches through the store.** A
+      title the account owns that SteamGridDB either does not list yet
+      or lists without a Steam link (the two titles of 2026-10-29 are
+      cached with their weak matches, so reset the cache or *Change
+      match* first): after the sync it is a Stream entry on the owned
+      game, and its `matches.json` entry is `steamstore:exact` (no
+      SteamGridDB entry) or `sgdb:exact-verified` with the store's
+      `steam_appid` (an unlinked one).
 - [ ] **Busy.** Start a sync, open Advanced while it runs: *Reset* is
       disabled. Pin a title and press *Reset* within the moment the pin
       is saving, if you can: the toast says "A match change is still

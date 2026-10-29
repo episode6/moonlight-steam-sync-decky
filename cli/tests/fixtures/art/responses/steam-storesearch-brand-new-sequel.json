@@ -1,0 +1,16 @@
+{
+  "_TODO": "SYNTHETIC FIXTURE -- invented, not captured. Replace with a real capture: SGDB_API_KEY=... python3 scripts/record_fixtures.py",
+  "total": 2,
+  "items": [
+    {
+      "id": 610200,
+      "name": "Brand New Sequel",
+      "type": "app"
+    },
+    {
+      "id": 610210,
+      "name": "Brand New Sequel Soundtrack",
+      "type": "app"
+    }
+  ]
+}

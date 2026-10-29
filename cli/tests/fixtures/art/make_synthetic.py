@@ -10,14 +10,15 @@ with real captures by running::
     SGDB_API_KEY=... python3 scripts/record_fixtures.py
 
 which hits the real SteamGridDB, Steam store and Steam CDN endpoints for the
-same eight titles and rewrites ``manifest.json`` plus ``responses/``. The tests
+same ten titles and rewrites ``manifest.json`` plus ``responses/``. The tests
 read the manifest, not these literals, so a real capture is a file
 replacement and not a test rewrite. Keep this script around afterwards: it
 documents what each title is *for*, and it is how the fixture set gets
 extended when a new match case shows up on a device.
 
-The eight titles exercise the cases spec PR-4 asks for (the seventh serves PR-5,
-the eighth the any-style logo fallback):
+The ten titles exercise the cases spec PR-4 asks for (the seventh serves PR-5,
+the eighth the any-style logo fallback, the ninth and tenth the store
+fall-through for a weak SteamGridDB match):
 
 1. ``Elden Ring``          -- exact verified SteamGridDB match, every slot official.
 2. ``Hades II(tm)``        -- a title with a trademark glyph; also the 2x portrait
@@ -41,6 +42,12 @@ the eighth the any-style logo fallback):
                               higher-scored ``black`` logo; with ``custom`` emptied
                               the any-style query must skip the failed ``official``
                               logo it lists first. Only its logo chain is recorded.
+9. ``Brand New Sequel``    -- SteamGridDB knows only the franchise's first game, so
+                              autocomplete is a fuzzy hit; the store has the sequel
+                              exactly and must win (``steamstore:exact``).
+10. ``Unlinked Launch``    -- a verified SteamGridDB entry with no Steam release
+                              linked; the store's exact hit lends its appid
+                              (``sgdb:exact-verified`` with the store's appid).
 
 Run from the repo root::
 
@@ -340,6 +347,14 @@ def main() -> int:
     )
     image_response(f"{community}/fan-icon.png", "tiny.png")
 
+    # A non-Steam game's exact SteamGridDB match is a weak one (no Steam
+    # release), so the resolver asks the store too; a real one finds nothing.
+    json_response(
+        steamstore.store_search_url("Fan Made Adventure"),
+        "steam-storesearch-fan-made-adventure",
+        {"_TODO": TODO, "total": 0, "items": []},
+    )
+
     # -- 4. Old Console Classic: Steam game, no logo on the CDN -------------
     json_response(
         search_url("Old Console Classic"),
@@ -458,6 +473,45 @@ def main() -> int:
     )
     image_response(f"{community}/clq-logo-custom.png", "tiny.png")
     image_response(f"{community}/clq-logo-black.png", "tiny.png")
+
+    # -- 9. Brand New Sequel: SteamGridDB has only the franchise's first game,
+    #       so autocomplete fuzzy-matches it; the store has the sequel exactly.
+    json_response(
+        search_url("Brand New Sequel"),
+        "sgdb-search-brand-new-sequel",
+        envelope([game(8400, "Brand New", 610100)]),
+    )
+    json_response(game_url(8400), "sgdb-game-8400", envelope(game(8400, "Brand New", 610100)))
+    json_response(
+        steamstore.store_search_url("Brand New Sequel"),
+        "steam-storesearch-brand-new-sequel",
+        {
+            "_TODO": TODO,
+            "total": 2,
+            "items": [
+                {"id": 610200, "name": "Brand New Sequel", "type": "app"},
+                {"id": 610210, "name": "Brand New Sequel Soundtrack", "type": "app"},
+            ],
+        },
+    )
+
+    # -- 10. Unlinked Launch: a verified SteamGridDB entry nobody has linked to
+    #        Steam yet; the store has the game exactly.
+    json_response(
+        search_url("Unlinked Launch"),
+        "sgdb-search-unlinked-launch",
+        envelope([game(8500, "Unlinked Launch", None)]),
+    )
+    json_response(game_url(8500), "sgdb-game-8500", envelope(game(8500, "Unlinked Launch", None)))
+    json_response(
+        steamstore.store_search_url("Unlinked Launch"),
+        "steam-storesearch-unlinked-launch",
+        {
+            "_TODO": TODO,
+            "total": 1,
+            "items": [{"id": 620300, "name": "Unlinked Launch", "type": "app"}],
+        },
+    )
 
     manifest = {
         "_TODO": TODO,
