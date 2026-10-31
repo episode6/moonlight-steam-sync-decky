@@ -22,8 +22,9 @@ from pathlib import Path
 
 import pytest
 
+from moonlight_steam_sync.art import steamstore
 from moonlight_steam_sync.shortcuts import Shortcut
-from tests.art_fixtures import FakeTransport, SimulatedCrash
+from tests.art_fixtures import FakeTransport, SimulatedCrash, store_url
 from tests.fakes import STEAMID3, STREAM_SH
 from tests.test_sync_e2e import (  # noqa: F401 - pytest fixtures
     SUFFIX,
@@ -153,13 +154,13 @@ def test_a_crash_in_the_art_phase_after_both_replacements_redoes_only_that_slot(
     world, old, owned = dressed_world
     (world.grid_dir / f"{old['Hollow Knight']}_hero.jpg").unlink()
     vdf_before = world.shortcuts_path.read_bytes()
-    hero_url = f"https://cdn.cloudflare.steamstatic.com/steam/apps/{HOLLOW_STEAM}/library_hero.jpg"
+    hero_url = store_url(HOLLOW_STEAM, "library_hero.jpg")
     dying = FakeTransport(fail_with={hero_url: SimulatedCrash("network died")})
 
     with pytest.raises(SimulatedCrash):
         world.run(["sync", "--owned-apps", owned], transport=dying)
 
-    assert dying.calls == [hero_url]
+    assert dying.calls == [steamstore.get_items_url(HOLLOW_STEAM), hero_url]
     assert world.shortcuts_path.read_bytes() == vdf_before
     new_hollow = hidden_appid(OWNED[HOLLOW_STEAM])
     new_elden = hidden_appid(OWNED[ELDEN_STEAM])
@@ -170,7 +171,7 @@ def test_a_crash_in_the_art_phase_after_both_replacements_redoes_only_that_slot(
 
     result = world.run(["sync", "--owned-apps", owned])
     assert result.code == 0, result.err
-    assert result.calls == [hero_url]
+    assert result.calls == [steamstore.get_items_url(HOLLOW_STEAM), hero_url]
     assert len(world.grid_files()) == 10
     assert all(s.is_hidden == 1 for s in world.owned())
     assert files_under(world, new_hollow) == expected_grid_files(new_hollow)

@@ -433,6 +433,10 @@ wins:
 
 1. **Steam's own CDN**, when the title resolves to a Steam appid -- the
    official store art, byte-for-byte what Steam shows for the real game.
+   The store is asked which files it has first (newer games keep theirs
+   on hashed paths that cannot be guessed), then the plain paths older
+   games still use are tried. The store lists no logo, so a newer game's
+   logo comes from SteamGridDB.
 2. **SteamGridDB**, for anything the CDN has no image for (and for non-Steam
    titles), preferring the styles that look like official box art and taking
    the highest-scored result. A logo with no `official` or `white` style

@@ -10,15 +10,23 @@ with real captures by running::
     SGDB_API_KEY=... python3 scripts/record_fixtures.py
 
 which hits the real SteamGridDB, Steam store and Steam CDN endpoints for the
-same ten titles and rewrites ``manifest.json`` plus ``responses/``. The tests
-read the manifest, not these literals, so a real capture is a file
+same eleven titles and rewrites ``manifest.json`` plus ``responses/``. The
+tests read the manifest, not these literals, so a real capture is a file
 replacement and not a test rewrite. Keep this script around afterwards: it
 documents what each title is *for*, and it is how the fixture set gets
 extended when a new match case shows up on a device.
 
-The ten titles exercise the cases spec PR-4 asks for (the seventh serves PR-5,
-the eighth the any-style logo fallback, the ninth and tenth the store
-fall-through for a weak SteamGridDB match):
+Every Steam title also has a ``GetItems`` answer, the store's own list of
+its asset files (2026-10-31): an app published before mid-2025 lists plain
+filenames (``library_600x900.jpg``), a newer one lists each behind its own
+hash (``<40 hex>/library_capsule.jpg``) and is a 404 on the unhashed CDN
+path; ``Brand New Sequel`` is the hashed one here, ``Delisted Relic`` the
+app the store no longer lists at all.
+
+The eleven titles exercise the cases spec PR-4 asks for (the seventh serves
+PR-5, the eighth the any-style logo fallback, the ninth and tenth the store
+fall-through for a weak SteamGridDB match, the eleventh the unhashed CDN
+fallback):
 
 1. ``Elden Ring``          -- exact verified SteamGridDB match, every slot official.
 2. ``Hades II(tm)``        -- a title with a trademark glyph; also the 2x portrait
@@ -44,10 +52,15 @@ fall-through for a weak SteamGridDB match):
                               logo it lists first. Only its logo chain is recorded.
 9. ``Brand New Sequel``    -- SteamGridDB knows only the franchise's first game, so
                               autocomplete is a fuzzy hit; the store has the sequel
-                              exactly and must win (``steamstore:exact``).
+                              exactly and must win (``steamstore:exact``). Its art
+                              is on hashed store paths, every unhashed URL a 404.
 10. ``Unlinked Launch``    -- a verified SteamGridDB entry with no Steam release
                               linked; the store's exact hit lends its appid
                               (``sgdb:exact-verified`` with the store's appid).
+11. ``Delisted Relic``     -- an exact verified match for a Steam game the store no
+                              longer lists (``GetItems`` answers ``success: 15``),
+                              so the unhashed CDN paths and the ``GetApps`` icon
+                              hash are the official sources.
 
 Run from the repo root::
 
@@ -106,6 +119,52 @@ def asset_url(kind: str, sgdb_id: int, **params: str) -> str:
 
 def envelope(data: object) -> dict[str, object]:
     return {"_TODO": TODO, "success": True, "data": data}
+
+
+#: The ``?t=`` stamp on every synthetic store asset URL (``tests/art_fixtures.py``
+#: has the same number as ``STORE_STAMP``; the two must agree).
+STORE_STAMP = 1700000000
+
+#: What ``GetItems`` lists for an app published before the move to hashed
+#: paths: the same filenames the unhashed CDN serves.
+UNHASHED_FILES = {
+    "library_capsule_2x": "library_600x900_2x.jpg",
+    "library_capsule": "library_600x900.jpg",
+    "header": "header.jpg",
+    "library_hero": "library_hero.jpg",
+}
+
+
+def store_url(appid: int, filename: str) -> str:
+    """The URL ``GetItems``' ``asset_url_format`` gives ``filename`` for ``appid``."""
+    return steamstore.store_asset_url(
+        f"steam/apps/{appid}/${{FILENAME}}?t={STORE_STAMP}", filename
+    )
+
+
+def store_items(
+    appid: int, name: str, files: dict[str, str] | None, icon: str | None
+) -> dict[str, object]:
+    """A ``GetItems`` body for one app; ``files=None`` is the store's answer for an
+    appid it does not list (``success: 15``, ``appid: 0``)."""
+    if files is None:
+        item: dict[str, object] = {
+            "item_type": 0, "id": appid, "success": 15, "visible": False,
+            "name": "", "store_url_path": "app/0/", "store_url_slug": "", "appid": 0,
+        }
+    else:
+        assets: dict[str, object] = {
+            "asset_url_format": f"steam/apps/{appid}/${{FILENAME}}?t={STORE_STAMP}",
+            **files,
+            "last_modified": STORE_STAMP,
+        }
+        if icon:
+            assets["community_icon"] = icon
+        item = {
+            "item_type": 0, "id": appid, "success": 1, "visible": True, "name": name,
+            "store_url_path": f"app/{appid}/", "appid": appid, "assets": assets,
+        }
+    return {"_TODO": TODO, "response": {"store_items": [item]}}
 
 
 def game(sgdb_id: int, name: str, steam_appid: int | None) -> dict[str, object]:
@@ -230,10 +289,16 @@ def main() -> int:
         ),
     )
     json_response(game_url(5297), "sgdb-game-5297", envelope(game(5297, "Elden Ring", 1245620)))
-    image_response(steamstore.portrait_urls(1245620)[0], "tiny.jpg")
-    image_response(steamstore.landscape_urls(1245620)[0], "tiny.jpg")
-    image_response(steamstore.hero_urls(1245620)[0], "tiny.jpg")
+    json_response(
+        steamstore.get_items_url(1245620),
+        "steam-getitems-1245620",
+        store_items(1245620, "ELDEN RING", UNHASHED_FILES, "1c1c1c1c1c1c1c1c1c1c"),
+    )
+    image_response(store_url(1245620, "library_600x900_2x.jpg"), "tiny.jpg")
+    image_response(store_url(1245620, "header.jpg"), "tiny.jpg")
+    image_response(store_url(1245620, "library_hero.jpg"), "tiny.jpg")
     image_response(steamstore.logo_urls(1245620)[0], "tiny.png")
+    # The icon hash comes with GetItems; GetApps is recorded for the fallback.
     json_response(
         steamstore.get_apps_url(1245620),
         "steam-getapps-1245620",
@@ -255,10 +320,15 @@ def main() -> int:
         envelope([game(5468, "Hades II", 1145350)]),
     )
     json_response(game_url(5468), "sgdb-game-5468", envelope(game(5468, "Hades II", 1145350)))
-    # portrait_urls(...)[0] (the 2x) is deliberately absent -> 404 -> 1x wins.
-    image_response(steamstore.portrait_urls(1145350)[1], "tiny.jpg")
-    image_response(steamstore.landscape_urls(1145350)[0], "tiny.jpg")
-    image_response(steamstore.hero_urls(1145350)[0], "tiny.jpg")
+    json_response(
+        steamstore.get_items_url(1145350),
+        "steam-getitems-1145350",
+        store_items(1145350, "Hades II", UNHASHED_FILES, "2d2d2d2d2d2d"),
+    )
+    # The 2x capsule the store lists is deliberately absent -> 404 -> 1x wins.
+    image_response(store_url(1145350, "library_600x900.jpg"), "tiny.jpg")
+    image_response(store_url(1145350, "header.jpg"), "tiny.jpg")
+    image_response(store_url(1145350, "library_hero.jpg"), "tiny.jpg")
     image_response(steamstore.logo_urls(1145350)[0], "tiny.png")
     json_response(
         steamstore.get_apps_url(1145350),
@@ -368,9 +438,14 @@ def main() -> int:
     json_response(
         game_url(8100), "sgdb-game-8100", envelope(game(8100, "Old Console Classic", 400910))
     )
-    image_response(steamstore.portrait_urls(400910)[0], "tiny.jpg")
-    image_response(steamstore.landscape_urls(400910)[0], "tiny.jpg")
-    image_response(steamstore.hero_urls(400910)[0], "tiny.jpg")
+    json_response(
+        steamstore.get_items_url(400910),
+        "steam-getitems-400910",
+        store_items(400910, "Old Console Classic", UNHASHED_FILES, "3e3e3e3e"),
+    )
+    image_response(store_url(400910, "library_600x900_2x.jpg"), "tiny.jpg")
+    image_response(store_url(400910, "header.jpg"), "tiny.jpg")
+    image_response(store_url(400910, "library_hero.jpg"), "tiny.jpg")
     # steamstore.logo_urls(400910)[0] is absent -> 404 -> community logo wins.
     json_response(
         asset_url("logos", 8100, styles="official"),
@@ -414,9 +489,14 @@ def main() -> int:
         envelope([game(5241, "Hollow Knight", 367520)]),
     )
     json_response(game_url(5241), "sgdb-game-5241", envelope(game(5241, "Hollow Knight", 367520)))
-    image_response(steamstore.portrait_urls(367520)[0], "tiny.jpg")
-    image_response(steamstore.landscape_urls(367520)[0], "tiny.jpg")
-    image_response(steamstore.hero_urls(367520)[0], "tiny.jpg")
+    json_response(
+        steamstore.get_items_url(367520),
+        "steam-getitems-367520",
+        store_items(367520, "Hollow Knight", UNHASHED_FILES, "4f4f4f4f"),
+    )
+    image_response(store_url(367520, "library_600x900_2x.jpg"), "tiny.jpg")
+    image_response(store_url(367520, "header.jpg"), "tiny.jpg")
+    image_response(store_url(367520, "library_hero.jpg"), "tiny.jpg")
     image_response(steamstore.logo_urls(367520)[0], "tiny.png")
     json_response(
         steamstore.get_apps_url(367520),
@@ -437,6 +517,12 @@ def main() -> int:
     json_response(
         game_url(8200), "sgdb-game-8200", envelope(game(8200, "Custom Logo Quest", 512300))
     )
+    json_response(
+        steamstore.get_items_url(512300),
+        "steam-getitems-512300",
+        store_items(512300, "Custom Logo Quest", UNHASHED_FILES, None),
+    )
+    # None of the listed files is recorded (this title is about its logo).
     # steamstore.logo_urls(512300)[0] is absent -> 404; the one `official`
     # logo is a .png URL serving WebP bytes, there is no `white` one, so the
     # `custom` query wins over the higher-scored `black` logo.
@@ -498,6 +584,24 @@ def main() -> int:
             ],
         },
     )
+    # A game published after Steam moved to hashed asset paths: the store
+    # lists each file behind its own hash, with the newer filenames, and
+    # the unhashed steamstore.*_urls(610200) are all 404 (not recorded).
+    hashed_files = {
+        "library_capsule_2x": "aaaa000000000000000000000000000000000001/library_capsule_2x.jpg",
+        "library_capsule": "aaaa000000000000000000000000000000000001/library_capsule.jpg",
+        "header": "bbbb000000000000000000000000000000000002/header.jpg",
+        "library_hero": "cccc000000000000000000000000000000000003/library_hero.jpg",
+    }
+    json_response(
+        steamstore.get_items_url(610200),
+        "steam-getitems-610200",
+        store_items(610200, "Brand New Sequel", hashed_files, "5a5a5a5a5a5a"),
+    )
+    image_response(store_url(610200, hashed_files["library_capsule_2x"]), "tiny.jpg")
+    image_response(store_url(610200, hashed_files["header"]), "tiny.jpg")
+    image_response(store_url(610200, hashed_files["library_hero"]), "tiny.jpg")
+    image_response(steamstore.icon_url(610200, "5a5a5a5a5a5a"), "tiny.jpg")
 
     # -- 10. Unlinked Launch: a verified SteamGridDB entry nobody has linked to
     #        Steam yet; the store has the game exactly.
@@ -516,6 +620,39 @@ def main() -> int:
             "items": [{"id": 620300, "name": "Unlinked Launch", "type": "app"}],
         },
     )
+    json_response(
+        steamstore.get_items_url(620300),
+        "steam-getitems-620300",
+        store_items(620300, "Unlinked Launch", UNHASHED_FILES, None),
+    )
+
+    # -- 11. Delisted Relic: a Steam game the store no longer lists, so
+    #        GetItems has nothing and the unhashed CDN paths plus the GetApps
+    #        icon hash are the official sources.
+    json_response(
+        search_url("Delisted Relic"),
+        "sgdb-search-delisted-relic",
+        envelope([game(8600, "Delisted Relic", 700700)]),
+    )
+    json_response(game_url(8600), "sgdb-game-8600", envelope(game(8600, "Delisted Relic", 700700)))
+    json_response(
+        steamstore.get_items_url(700700),
+        "steam-getitems-700700",
+        store_items(700700, "Delisted Relic", None, None),
+    )
+    image_response(steamstore.portrait_urls(700700)[0], "tiny.jpg")
+    image_response(steamstore.landscape_urls(700700)[0], "tiny.jpg")
+    image_response(steamstore.hero_urls(700700)[0], "tiny.jpg")
+    image_response(steamstore.logo_urls(700700)[0], "tiny.png")
+    json_response(
+        steamstore.get_apps_url(700700),
+        "steam-getapps-700700",
+        {
+            "_TODO": TODO,
+            "response": {"apps": [{"appid": 700700, "name": "Delisted Relic", "icon": "6b6b6b6b"}]},
+        },
+    )
+    image_response(steamstore.icon_url(700700, "6b6b6b6b"), "tiny.jpg")
 
     # -- the owned-name match (sync --owned-apps, 2026-10-29): a title that is
     #    an owned game's name skips the searches and asks SteamGridDB only for

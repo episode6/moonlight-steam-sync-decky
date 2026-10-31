@@ -1,0 +1,25 @@
+{
+  "_TODO": "SYNTHETIC FIXTURE -- invented, not captured. Replace with a real capture: SGDB_API_KEY=... python3 scripts/record_fixtures.py",
+  "response": {
+    "store_items": [
+      {
+        "item_type": 0,
+        "id": 610200,
+        "success": 1,
+        "visible": true,
+        "name": "Brand New Sequel",
+        "store_url_path": "app/610200/",
+        "appid": 610200,
+        "assets": {
+          "asset_url_format": "steam/apps/610200/${FILENAME}?t=1700000000",
+          "library_capsule_2x": "aaaa000000000000000000000000000000000001/library_capsule_2x.jpg",
+          "library_capsule": "aaaa000000000000000000000000000000000001/library_capsule.jpg",
+          "header": "bbbb000000000000000000000000000000000002/header.jpg",
+          "library_hero": "cccc000000000000000000000000000000000003/library_hero.jpg",
+          "last_modified": 1700000000,
+          "community_icon": "5a5a5a5a5a5a"
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "_TODO": "SYNTHETIC FIXTURE -- invented, not captured. Replace with a real capture: SGDB_API_KEY=... python3 scripts/record_fixtures.py",
+  "response": {
+    "store_items": [
+      {
+        "item_type": 0,
+        "id": 700700,
+        "success": 15,
+        "visible": false,
+        "name": "",
+        "store_url_path": "app/0/",
+        "store_url_slug": "",
+        "appid": 0
+      }
+    ]
+  }
+}

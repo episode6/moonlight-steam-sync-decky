@@ -2,18 +2,31 @@
 
 Sources per slot, in order (1. official, 2. community):
 
-* portrait ``<id>p`` -- CDN ``library_600x900_2x.jpg`` then
+* portrait ``<id>p`` -- the store's ``library_capsule_2x`` then
+  ``library_capsule``, then the unhashed CDN ``library_600x900_2x.jpg`` then
   ``library_600x900.jpg``; SGDB ``grids`` 600x900 ``alternate``.
-* landscape ``<id>`` -- CDN ``header.jpg``; SGDB ``grids`` 920x430 then
-  460x215.
-* hero ``<id>_hero`` -- CDN ``library_hero.jpg``; SGDB ``heroes`` 1920x620
-  then 3840x1240.
-* logo ``<id>_logo`` -- CDN ``logo.png``; SGDB ``logos`` ``official``, then
-  ``white``, then ``custom``, then any style (``black`` included), so a game
-  SteamGridDB has any static logo for never goes without one. ``black`` is
-  last because it is drawn for light backgrounds and most heroes are dark.
-* icon ``<id>_icon`` -- the ``GetApps`` hash then the community CDN; SGDB
-  ``icons`` ``official`` then ``custom``.
+* landscape ``<id>`` -- the store's ``header``, then the unhashed CDN
+  ``header.jpg``; SGDB ``grids`` 920x430 then 460x215.
+* hero ``<id>_hero`` -- the store's ``library_hero``, then the unhashed CDN
+  ``library_hero.jpg``; SGDB ``heroes`` 1920x620 then 3840x1240.
+* logo ``<id>_logo`` -- CDN ``logo.png`` (the store lists no logo); SGDB
+  ``logos`` ``official``, then ``white``, then ``custom``, then any style
+  (``black`` included), so a game SteamGridDB has any static logo for never
+  goes without one. ``black`` is last because it is drawn for light
+  backgrounds and most heroes are dark.
+* icon ``<id>_icon`` -- the store's ``community_icon`` hash, else the
+  ``GetApps`` hash, then the community CDN; SGDB ``icons`` ``official`` then
+  ``custom``.
+
+"The store's" is one ``GetItems`` call per title (spec 2.2, measured
+2026-10-31): Steam serves an app published since mid-2025 only from hashed
+paths (``<hash>/header.jpg``), one hash per asset, so the unhashed URLs the
+CDN builders make are 404s for it and the store has to be asked which files
+it has. :class:`Selector` asks once per Steam appid and remembers the answer
+for the run -- a failed answer too, as a failure, so a store outage marks
+every slot it would have served as a failed lookup rather than a cached miss
+-- and the unhashed URLs stay behind the store's as the fallback for an app
+the store has nothing for (delisted, say).
 
 Sources are evaluated lazily, so a slot that is filled by the CDN never costs
 a SteamGridDB call.
@@ -46,7 +59,7 @@ from moonlight_steam_sync.art import steamstore
 from moonlight_steam_sync.art.http import Fetcher, HardStop, HttpError
 from moonlight_steam_sync.art.resolve import Match
 from moonlight_steam_sync.art.sgdb import SgdbClient
-from moonlight_steam_sync.art.steamstore import SteamStoreClient
+from moonlight_steam_sync.art.steamstore import SteamStoreClient, StoreAssets
 
 
 @dataclass(frozen=True)
@@ -108,6 +121,9 @@ _OFFICIAL_URLS = {
 }
 
 _SNIFF_BYTES = 16
+
+#: :attr:`Selector._assets`' marker for a ``GetItems`` call that failed.
+_LOOKUP_FAILED = object()
 
 
 @dataclass(frozen=True)
@@ -180,6 +196,12 @@ class Selector:
     #: lookup failed*, rather than because no source has that image. Callers
     #: use it to avoid caching a negative result they are not sure about.
     last_attempt_failed: bool = field(default=False, repr=False)
+    #: ``GetItems`` answers by Steam appid, for the run: the assets, ``None``
+    #: for an app the store has nothing for, :data:`_LOOKUP_FAILED` when the
+    #: call failed (each slot that consults it then counts as a failed lookup).
+    _assets: dict[int, StoreAssets | None | object] = field(
+        default_factory=dict, repr=False
+    )
 
     # -- candidates ------------------------------------------------------
 
@@ -192,28 +214,59 @@ class Selector:
         appid = match.steam_appid
         if appid is None:
             return
+        assets = self._store_assets(appid)
         if slot.key == "icon":
             if self.store is None:
                 return
-            try:
-                icon_hash = self.store.app_icon_hash(appid)
-            except HardStop:
-                raise
-            except HttpError:
-                self.last_attempt_failed = True
-                return
+            if assets is not None and assets.icon_hash:
+                icon_hash: str | None = assets.icon_hash
+                via = "GetItems"
+            else:
+                try:
+                    icon_hash = self.store.app_icon_hash(appid)
+                except HardStop:
+                    raise
+                except HttpError:
+                    self.last_attempt_failed = True
+                    return
+                via = "GetApps"
             if icon_hash:
                 yield Candidate(
                     "official",
                     url=steamstore.icon_url(appid, icon_hash),
-                    detail=f"GetApps hash {icon_hash}",
+                    detail=f"{via} hash {icon_hash}",
                 )
             return
+        if assets is not None:
+            for url in assets.urls(slot.key):
+                yield Candidate("official", url=url, detail=f"store assets of appid {appid}")
         builder = _OFFICIAL_URLS.get(slot.key)
         if builder is None:
             return
         for url in builder(appid):
             yield Candidate("official", url=url, detail=f"steam appid {appid}")
+
+    def _store_assets(self, appid: int) -> StoreAssets | None:
+        """``GetItems`` for ``appid``, once per run; ``None`` when there is nothing to use.
+
+        A call that failed is remembered as failed: every slot that asks
+        afterwards is told the lookup failed (so its miss is not cached) and
+        the store is not asked again this run.
+        """
+        if self.store is None:
+            return None
+        if appid not in self._assets:
+            try:
+                self._assets[appid] = self.store.assets(appid)
+            except HardStop:
+                raise
+            except HttpError:
+                self._assets[appid] = _LOOKUP_FAILED
+        answer = self._assets[appid]
+        if answer is _LOOKUP_FAILED:
+            self.last_attempt_failed = True
+            return None
+        return answer  # type: ignore[return-value]
 
     def _community(self, slot: Slot, match: Match) -> Iterator[Candidate]:
         if not self.community_fallback:

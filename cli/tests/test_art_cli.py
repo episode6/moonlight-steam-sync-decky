@@ -16,7 +16,7 @@ from moonlight_steam_sync.art.select import Selector
 from moonlight_steam_sync.art.sgdb import SgdbClient
 from moonlight_steam_sync.art.steamstore import SteamStoreClient
 from moonlight_steam_sync.config import Config
-from tests.art_fixtures import FIXTURE_DIR, FakeTransport, make_fetcher
+from tests.art_fixtures import FIXTURE_DIR, FakeTransport, make_fetcher, store_url
 
 APPIDS = {"Elden Ring": 2800000001, "Fan Made Adventure": 2800000003}
 
@@ -132,7 +132,7 @@ def test_a_dropped_connection_mid_download_never_escapes_as_a_traceback(tmp_path
     # A body that dies halfway is the likeliest failure on a Deck over Wi-Fi.
     # It must cost the slot, not the run: no bare OSError out of cmd_art, and
     # no exit 1 (which spec 3.3 reserves for usage and config errors).
-    url = "https://cdn.cloudflare.steamstatic.com/steam/apps/1245620/library_600x900_2x.jpg"
+    url = store_url(1245620, "library_600x900_2x.jpg")
     code, out, _, _, provider = run_art_cmd(
         tmp_path,
         grid_dir,

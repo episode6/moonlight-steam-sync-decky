@@ -27,6 +27,17 @@ from moonlight_steam_sync.art.http import Fetcher, NetworkError, StreamResponse
 FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures" / "art"
 MANIFEST_PATH = FIXTURE_DIR / "manifest.json"
 
+#: The ``?t=`` stamp every synthetic ``GetItems`` answer puts on its asset
+#: URLs (``make_synthetic.py``'s ``STORE_STAMP``; the two must agree).
+STORE_STAMP = 1700000000
+
+
+def store_url(appid: int, filename: str, stamp: int = STORE_STAMP) -> str:
+    """The URL ``GetItems``' ``asset_url_format`` gives ``filename`` for ``appid``."""
+    from moonlight_steam_sync.art import steamstore
+
+    return steamstore.store_asset_url(f"steam/apps/{appid}/${{FILENAME}}?t={stamp}", filename)
+
 
 def load_manifest() -> dict[str, dict]:
     payload = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
@@ -125,7 +136,8 @@ def network_error(url: str) -> NetworkError:
 # ---------------------------------------------------------------------------
 
 #: The URLs one fully-official title costs, in the order the art phase
-#: makes them: resolve (2), the four CDN downloads, the icon hash, the icon.
+#: makes them: resolve (2), the store's asset list (``GetItems``, which
+#: also carries the icon hash), the five downloads.
 CALLS_PER_TITLE = 8
 
 
@@ -139,11 +151,13 @@ class BulkTransport:
     """Answers for every title in a library from URL patterns, no recordings.
 
     Built for the 500-title resumability test (spec PR-5 (b), 3.9): every
-    title resolves to an exact SteamGridDB match with a Steam release, and
-    the Steam CDN has all five assets, so a title costs exactly
-    :data:`CALLS_PER_TITLE` calls (:meth:`title_calls` lists them). Ids are
-    derived from the title's position in ``names`` so a real capture's
-    names work as well as the synthetic "Synthetic Title 001" ones.
+    title resolves to an exact SteamGridDB match with a Steam release, the
+    store lists its assets on hashed paths (the shape every app published
+    since mid-2025 has) and serves all of them, and the unhashed CDN has
+    the logo, so a title costs exactly :data:`CALLS_PER_TITLE` calls
+    (:meth:`title_calls` lists them). Ids are derived from the title's
+    position in ``names`` so a real capture's names work as well as the
+    synthetic "Synthetic Title 001" ones.
 
     TODO(real-data): this is a *synthetic* server, and so are the ids and
     the 1x1 images it serves. It is deliberately not a recording, because
@@ -187,8 +201,19 @@ class BulkTransport:
     def icon_hash(index: int) -> str:
         return f"h{index:04d}"
 
+    @staticmethod
+    def asset_files(index: int) -> dict[str, str]:
+        """The store's filenames for a title: one hash per asset, like the real thing."""
+        return {
+            "library_capsule_2x": f"c{index:04d}/library_capsule_2x.jpg",
+            "library_capsule": f"c{index:04d}/library_capsule.jpg",
+            "header": f"d{index:04d}/header.jpg",
+            "library_hero": f"e{index:04d}/library_hero.jpg",
+        }
+
     def title_calls(self, name: str) -> list[str]:
-        """Every URL a fresh, empty-slot run makes for ``name``, in order."""
+        """Every URL a fresh, empty-slot run makes for ``name``, in order:
+        the two lookups, ``GetItems``, then one download per slot."""
         from urllib.parse import quote
 
         from moonlight_steam_sync.art import steamstore
@@ -196,14 +221,15 @@ class BulkTransport:
 
         i = self._index[name]
         appid = self.steam_appid(i)
+        files = self.asset_files(i)
         return [
             f"{BASE_URL}/search/autocomplete/{quote(name, safe='')}",
             f"{BASE_URL}/games/id/{self.sgdb_id(i)}?platformdata=steam",
-            steamstore.portrait_urls(appid)[0],
-            steamstore.landscape_urls(appid)[0],
-            steamstore.hero_urls(appid)[0],
+            steamstore.get_items_url(appid),
+            store_url(appid, files["library_capsule_2x"]),
+            store_url(appid, files["header"]),
+            store_url(appid, files["library_hero"]),
             steamstore.logo_urls(appid)[0],
-            steamstore.get_apps_url(appid),
             steamstore.icon_url(appid, self.icon_hash(i)),
         ]
 
@@ -252,6 +278,31 @@ class BulkTransport:
                 return 404, b""
             payload = {"response": {"apps": [{"appid": appid, "icon": self.icon_hash(i)}]}}
             return 200, json.dumps(payload).encode()
+        if "IStoreBrowseService/GetItems" in path:
+            request = json.loads(unquote(path.split("input_json=", 1)[1]))
+            appid = int(request["ids"][0]["appid"])
+            i = self._by_steam.get(appid)
+            if i is None:
+                # What the store answers for an appid it does not list.
+                item = {"item_type": 0, "id": appid, "success": 15, "appid": 0}
+            else:
+                item = {
+                    "item_type": 0,
+                    "id": appid,
+                    "success": 1,
+                    "appid": appid,
+                    "assets": {
+                        "asset_url_format": f"steam/apps/{appid}/${{FILENAME}}?t={STORE_STAMP}",
+                        **self.asset_files(i),
+                        "community_icon": self.icon_hash(i),
+                    },
+                }
+            return 200, json.dumps({"response": {"store_items": [item]}}).encode()
+        if "/store_item_assets/steam/apps/" in path:
+            tail = path.split("?", 1)[0].rsplit("/", 1)[-1]
+            if tail in ("library_capsule_2x.jpg", "header.jpg", "library_hero.jpg"):
+                return 200, self._jpg
+            return 404, b""
         if "/steam/apps/" in path:
             tail = path.rsplit("/", 1)[-1]
             if tail in ("library_600x900_2x.jpg", "header.jpg", "library_hero.jpg"):
