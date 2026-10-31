@@ -875,6 +875,12 @@ and one title reading "no match".
       or the progress shows the title looked up on both runs, once each,
       and a title whose art is complete makes no call. There is no *Retry
       missing art* toggle on the Artwork page.
+- [ ] **What the retries cost.** A matched game with no logo anywhere
+      costs about six calls per sync (`GetItems`, the plain CDN path, four
+      SteamGridDB logo queries, at 250 ms each). On a real library, count
+      the empty logo slots, time a sync that has nothing else to do, and
+      note it here; a run that ends in exit 4 with no shortcuts written is
+      the 429 stop, and is worth reporting.
 - [ ] **The file goes, and the toast counts it.** Note
       `~/.cache/moonlight-steam-sync/matches.json` (over SSH: the `titles`
       count and how many are `"how": "pinned"`). Settings → Advanced →

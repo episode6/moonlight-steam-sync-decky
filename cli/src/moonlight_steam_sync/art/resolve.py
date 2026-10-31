@@ -382,7 +382,7 @@ class Resolver:
     #: (``how == "owned:exact"``) before any search is made; ``None`` (an
     #: ``art`` run, a plain ``sync``) turns the step off.
     owned: Mapping[int, str] | None = None
-    #: Titles this run has already searched and found nothing for. A
+    #: Titles already searched this run. A
     #: ``Resolver`` lives for one run, and ``sync --owned-apps`` resolves every
     #: title twice in it (ahead of the plan, then in the art phase), so a miss
     #: costs one search per run, not two.

@@ -549,8 +549,8 @@ counts as an exact match, so a title pinned to a game you own becomes a
 after the Steam game, the art is fetched again from the new match, and the
 usual one restart shows the result. Pinning anything else, or *No match*,
 keeps the title a shortcut with art from the new match. Pins survive
-**Re-fetch all art**; an `[overrides]` entry in
-`config.toml` still wins over a pin (the modal says so when one applies).
+**Re-fetch all art**; an `[overrides]` entry in `config.toml` still wins over
+a pin (the modal says so when one applies).
 
 **Titles reading "no match", or the wrong game.** Every **Sync now** looks
 again for a title with no match and for any image still missing, so setting

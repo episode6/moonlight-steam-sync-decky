@@ -200,8 +200,8 @@ class Selector:
     #: lookup failed*, rather than because no source has that image. Callers
     #: use it to tell the two apart in ``--explain``.
     #: :meth:`candidates` also raises it when a store asset lookup it needed
-    #: had failed (``--dry-run`` lists candidates without filling, and
-    #: caches no miss, so there it is only ever read by a test).
+    #: had failed (``--dry-run`` lists candidates without filling, so there
+    #: it is only ever read by a test).
     last_attempt_failed: bool = field(default=False, repr=False)
     #: ``GetItems`` answers by Steam appid, for the run: the assets, ``None``
     #: for an app the store has nothing for, :data:`_LOOKUP_FAILED` when the
