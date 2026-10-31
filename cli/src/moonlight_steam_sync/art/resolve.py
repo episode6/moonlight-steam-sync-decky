@@ -7,14 +7,16 @@ Also home to the match cache, which is the resumability contract's record of
   name;
 * written with an atomic ``os.replace`` **immediately after each title is
   resolved**, never batched to the end of the run;
-* negative results (no match, and per-slot "nothing found") are cached with a
-  timestamp and are not re-queried for 7 days, so a re-run does not re-search
-  200 unmatched titles. ``--retry-missing`` opts back in for this run;
-  ``art --force`` ignores the cache outright -- except for **pins**.
+* a title with no match is recorded, but only a title that *has* a match
+  stops the next run from looking: a sync is a manual act, so every run
+  searches again for what the last one did not find (the user's decision of
+  2026-10-31; through 0.13.2 a miss was not re-queried for 7 days). One run
+  searches a title once (``Resolver._searched``). ``art --force`` ignores
+  the cache outright -- except for **pins**.
 
 A *pin* (``how == "pinned"``, written by the ``match`` subcommand, decky
 spec 3.4.4) is the tool's own record of "the user chose this match". It is
-the one cache entry ``art --force`` and ``--retry-missing`` never overwrite;
+the one cache entry ``art --force`` never overwrites;
 only ``match --unpin`` (or a later ``match``) removes it.
 
 ``stale_art`` is a fact about the grid files on disk ("they belong to an
@@ -41,16 +43,13 @@ import os
 import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from moonlight_steam_sync.art.http import HardStop, HttpError
 from moonlight_steam_sync.art.sgdb import SgdbClient, steam_appid_from_game
 from moonlight_steam_sync.art.steamstore import SteamStoreClient
-
-#: How long a negative result stays cached (spec 6.10).
-NEGATIVE_TTL = timedelta(days=7)
 
 CACHE_VERSION = 1
 
@@ -114,18 +113,6 @@ def _iso(moment: datetime) -> str:
     return moment.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
-def _parse_iso(value: Any) -> datetime | None:
-    if not isinstance(value, str) or not value:
-        return None
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
-    return parsed
-
-
 @dataclass
 class Match:
     """What we know about one Moonlight title.
@@ -145,8 +132,6 @@ class Match:
     matched_name: str | None = None
     how: str = "none"
     when: str = field(default_factory=lambda: _iso(_now()))
-    #: slot key -> ISO timestamp of the last time that slot found nothing.
-    missing_slots: dict[str, str] = field(default_factory=dict)
     #: ``match --defer-art`` (decky spec 3.4.4): the grid files on disk
     #: belong to an earlier match and the next ``sync`` should re-fetch
     #: them. Persisted only when true, so a cache with no such entry is
@@ -157,7 +142,7 @@ class Match:
     explain: list[str] = field(default_factory=list, compare=False)
     #: True when the search failed for a transient reason (a 5xx, a timeout,
     #: a 429 that exhausted its retries). Never persisted and never cached:
-    #: a transient failure must not poison the 7-day negative window.
+    #: a failed lookup is not an answer, so it must not read as one.
     transient: bool = field(default=False, compare=False)
 
     @property
@@ -184,7 +169,6 @@ class Match:
             "matched_name": self.matched_name,
             "how": self.how,
             "when": self.when,
-            "missing_slots": dict(self.missing_slots),
         }
         if self.stale_art:
             # Only when set: an entry without the flag serialises exactly as
@@ -194,7 +178,6 @@ class Match:
 
     @classmethod
     def from_json(cls, name: str, data: Mapping[str, Any]) -> Match:
-        missing = data.get("missing_slots") or {}
         return cls(
             name=name,
             steam_appid=_as_int(data.get("steam_appid")),
@@ -202,9 +185,6 @@ class Match:
             matched_name=data.get("matched_name"),
             how=str(data.get("how") or "none"),
             when=str(data.get("when") or ""),
-            missing_slots={str(k): str(v) for k, v in missing.items()}
-            if isinstance(missing, Mapping)
-            else {},
             stale_art=data.get("stale_art") is True,
         )
 
@@ -277,26 +257,11 @@ class MatchCache:
         self._dirty = True
         self.flush()
 
-    def record_missing_slot(self, name: str, slot: str, when: datetime | None = None) -> None:
-        """Remember that ``slot`` found nothing, subject to the same 7-day rule.
-
-        A title with no entry yet is a title whose own lookup never
-        succeeded, and a failed lookup is never cached (spec 6.10): creating
-        an entry here would start a 7-day negative window off the back of a
-        SteamGridDB 5xx or a timeout. So this is a no-op until
-        :meth:`put` has recorded a resolution for ``name``.
-        """
-        entry = self._entries.get(name)
-        if entry is None:
-            return
-        entry.missing_slots[slot] = _iso(when or _now())
-        self._dirty = True
-
     def pin(self, match: Match) -> Match:
         """Record ``match`` as the user's choice for its title (decky spec 3.4.4).
 
-        Replaces whatever entry the title had -- its ids, its cached slot
-        misses and any ``stale_art`` flag belong to the old match -- with a
+        Replaces whatever entry the title had -- its ids and any
+        ``stale_art`` flag belong to the old match -- with a
         ``how == "pinned"`` entry, and writes the file straight away.
         """
         pinned = Match(
@@ -355,17 +320,6 @@ class MatchCache:
             self._dirty = True
             self.flush()
 
-    def clear_missing_slot(self, name: str, slot: str) -> None:
-        entry = self._entries.get(name)
-        if entry is not None and entry.missing_slots.pop(slot, None) is not None:
-            self._dirty = True
-
-    def slot_is_known_missing(self, name: str, slot: str, now: datetime | None = None) -> bool:
-        entry = self._entries.get(name)
-        if entry is None:
-            return False
-        return is_fresh(entry.missing_slots.get(slot), now)
-
     def flush(self) -> None:
         """Atomic whole-file replace; a no-op when nothing changed."""
         if not self._dirty:
@@ -379,14 +333,6 @@ class MatchCache:
         tmp.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         os.replace(tmp, self.path)
         self._dirty = False
-
-
-def is_fresh(timestamp: Any, now: datetime | None = None) -> bool:
-    """True when a negative result is still inside its 7-day window."""
-    moment = _parse_iso(timestamp)
-    if moment is None:
-        return False
-    return (now or _now()) - moment < NEGATIVE_TTL
 
 
 def pick(
@@ -430,15 +376,17 @@ class Resolver:
     #: ``art --force``: ignore the cache entirely and re-resolve -- except
     #: a pin, which is the user's own choice (decky spec 3.4.4).
     force: bool = False
-    #: ``--retry-missing``: re-query titles and slots whose miss is cached.
-    #: Never re-queries a pinned title, not even a ``--none`` pin.
-    retry_missing: bool = False
     #: ``sync --owned-apps``: the account's games, Steam appid -> display
     #: name (decky spec 3.4.1). A title that *is* one of those names, to
     #: the letter after :func:`normalise_strict`, is that game
     #: (``how == "owned:exact"``) before any search is made; ``None`` (an
     #: ``art`` run, a plain ``sync``) turns the step off.
     owned: Mapping[int, str] | None = None
+    #: Titles this run has already searched and found nothing for. A
+    #: ``Resolver`` lives for one run, and ``sync --owned-apps`` resolves every
+    #: title twice in it (ahead of the plan, then in the art phase), so a miss
+    #: costs one search per run, not two.
+    _searched: set[str] = field(default_factory=set, init=False, repr=False, compare=False)
     _owned_index: Mapping[str, tuple[int, ...]] = field(
         default_factory=dict, init=False, repr=False, compare=False
     )
@@ -451,9 +399,10 @@ class Resolver:
 
         Order: a ``[overrides]`` entry in ``config.toml`` (config beats
         cache, so it also beats a pin), then a pinned cache entry --
-        checked *before* ``force`` and ``retry_missing``, so neither ever
-        overwrites a pin -- then the owned-name match (below), then the
-        ordinary cache, then the searches. An ``unpinned`` placeholder
+        checked *before* ``force``, so it never overwrites a pin -- then the
+        owned-name match (below), then the ordinary cache (an entry with no
+        match only counts within the run that searched for it), then the
+        searches. An ``unpinned`` placeholder
         (``match --unpin --defer-art``) is a cache miss: it only exists to
         carry ``stale_art`` onto the resolution that :meth:`MatchCache.put`
         writes over it.
@@ -507,7 +456,7 @@ class Resolver:
             return cached
         if self.force or (cached is not None and cached.unpinned):
             cached = None
-        if cached is not None and (cached.found or self._negative_still_valid(cached)):
+        if cached is not None and (cached.found or name in self._searched):
             if not (cached.steam_appid is None or cached.how.endswith(":fuzzy")):
                 cached.explain = [f"cache: how={cached.how} when={cached.when}"]
                 return cached
@@ -533,6 +482,7 @@ class Resolver:
             # Do not write a negative result we are not sure about.
             return match
         self.cache.put(match)
+        self._searched.add(name)
         return match
 
     # -- internals -------------------------------------------------------
@@ -617,11 +567,6 @@ class Resolver:
         if cached is None or cached.how != "override" or cached.sgdb_id != sgdb_id:
             return None
         return cached.steam_appid
-
-    def _negative_still_valid(self, cached: Match) -> bool:
-        if self.retry_missing:
-            return False
-        return is_fresh(cached.when)
 
     def _sgdb_usable(self) -> bool:
         return self.sgdb is not None and self.sgdb.enabled

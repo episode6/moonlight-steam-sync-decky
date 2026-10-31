@@ -862,7 +862,7 @@ Stream shortcuts* **off** (so there are visible shortcuts and a
 - [ ] **Busy.** Start a sync, open the panel while it runs: the progress
       view has no toggle; when it ends the toggle is live again.
 
-## 13. Reset match cache (Advanced)
+## 13. Retrying misses, and Reset match cache (Advanced)
 
 Off-device the backend (`test_backend.py`, the `reset_match_cache` block)
 and the controller (`controller.test.ts`, "Advanced → Reset match cache")
@@ -870,6 +870,11 @@ are covered; what a real cache and a real CLI do with the reset is what
 these check. Start synced, with at least one pin (Titles → Change match)
 and one title reading "no match".
 
+- [ ] **Every sync retries a miss.** With one title reading "no match",
+      Sync now twice: `~/homebrew/logs/Moonlight Sync/moonlight-sync.log`
+      or the progress shows the title looked up on both runs, once each,
+      and a title whose art is complete makes no call. There is no *Retry
+      missing art* toggle on the Artwork page.
 - [ ] **The file goes, and the toast counts it.** Note
       `~/.cache/moonlight-steam-sync/matches.json` (over SSH: the `titles`
       count and how many are `"how": "pinned"`). Settings → Advanced →

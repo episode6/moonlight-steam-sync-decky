@@ -48,7 +48,6 @@ const baseSettings = (): Settings => ({
   hosts: ["MY-GAMING-PC", "OFFICE-PC"],
   copy_layouts: true,
   restart_countdown_s: 5,
-  retry_missing: false,
   default_layout: null,
 });
 

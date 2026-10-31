@@ -1677,3 +1677,18 @@ def test_list_with_owned_apps_reports_kinds_without_resolving(world, tmp_path, m
     assert apps["Desktop"]["kind"] == "ignored"
     assert all(a["duplicate_of"] is None for a in apps.values())
     assert "Hades II™" not in world.cache_titles()
+
+
+def test_a_title_with_no_match_is_searched_once_by_each_owned_apps_sync(
+    world, tmp_path, monkeypatch
+):
+    """Every title is resolved twice in such a run, ahead of the plan and in the
+    art phase; a miss costs one search per run, and every run makes it."""
+    host_publishes(tmp_path, monkeypatch, ["Totally Unknown Title"])
+    owned = owned_file(tmp_path, {ELDEN_STEAM: ELDEN_OWNED})
+
+    for _ in range(2):
+        result = world.run(["sync", "--owned-apps", owned])
+        assert result.code == 0, result.err
+        searches = [call for call in result.calls if "Totally" in call and AUTOCOMPLETE in call]
+        assert searches == [f"{AUTOCOMPLETE}Totally%20Unknown%20Title"]

@@ -182,7 +182,7 @@ export function AdvancedPage() {
       <ButtonItem
         layout="below"
         label="Reset match cache"
-        description="Forget how every title was matched to a Steam game, pins included, so the next sync looks each one up again. For titles stuck on 'no match' after a sync run before the SteamGridDB key was set: the CLI does not retry a miss for seven days"
+        description="Forget how every title was matched to a Steam game, pins included, so the next sync looks each one up again. For titles matched to the wrong game: a title with no match is looked up again by every sync anyway"
         disabled={!settings || !!state.run?.running}
         onClick={resetMatchCache}
       >

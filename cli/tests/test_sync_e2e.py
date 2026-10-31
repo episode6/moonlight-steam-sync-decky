@@ -216,9 +216,10 @@ def expected_grid_files(appid: int, *, logo_png: bool = True) -> list[str]:
 
 
 def test_a_sync_twice_second_run_is_a_no_op(world, tmp_path, monkeypatch):
-    """Spec PR-5 (a): the second run makes zero HTTP calls and no vdf write,
-    the backup exists, the file round-trips through the vdf oracle, and the
-    grid files have the right names."""
+    """Spec PR-5 (a): the second run makes no vdf write and no HTTP call but
+    the search for the title with no match (2026-10-31), the backup exists,
+    the file round-trips through the vdf oracle, and the grid files have the
+    right names."""
     host_publishes(tmp_path, monkeypatch, [*MANIFEST_TITLES, "Desktop", "Steam Big Picture"])
     before = oracle.binary_loads(world.shortcuts_path.read_bytes())
 
@@ -269,7 +270,9 @@ def test_a_sync_twice_second_run_is_a_no_op(world, tmp_path, monkeypatch):
 
     second = world.run(["sync"])
     assert second.code == 0, second.err
-    assert second.calls == []
+    # The one title still without a match is searched again, and nothing else.
+    assert second.calls
+    assert all("Totally" in call for call in second.calls)
     assert world.shortcuts_path.read_bytes() == data
     assert len(world.backups()) == 1
     assert second.runner.shutdowns == 0 and second.runner.relaunches == 0
@@ -612,9 +615,13 @@ def test_e_unmatched_titles_exit_zero_and_are_named_in_the_summary(
     unknown = world.appid_for("Totally Unknown Title")
     assert not any(n.startswith(str(unknown)) for n in world.grid_files())
 
-    # And it is remembered: the next run does not search for it again.
+    # A sync is a manual act, so the next one searches for it again, once,
+    # and a search that still finds nothing changes nothing in Steam.
     result = world.run(["sync"])
-    assert result.calls == []
+    assert result.code == 0, result.err
+    assert len([call for call in result.calls if "autocomplete" in call]) == 1
+    assert all("Totally" in call for call in result.calls)
+    assert result.runner.shutdowns == 0 and result.runner.relaunches == 0
 
 
 # ---------------------------------------------------------------------------

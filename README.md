@@ -549,16 +549,15 @@ counts as an exact match, so a title pinned to a game you own becomes a
 after the Steam game, the art is fetched again from the new match, and the
 usual one restart shows the result. Pinning anything else, or *No match*,
 keeps the title a shortcut with art from the new match. Pins survive
-**Re-fetch all art** and **Retry missing art**; an `[overrides]` entry in
+**Re-fetch all art**; an `[overrides]` entry in
 `config.toml` still wins over a pin (the modal says so when one applies).
 
-**Titles stuck on "no match".** The CLI remembers a title it found nothing
-for and does not look it up again for seven days, and the Titles page
-never looks a title up itself. So a first sync run before the SteamGridDB
-key was set (Steam's store search alone finds fewer titles) leaves those
-titles reading "no match" until the week passes, *Retry missing art* is on
-for the next sync, or the cache is reset. Settings → **Advanced** →
-**Reset match cache** deletes the CLI's whole match cache
+**Titles reading "no match", or the wrong game.** Every **Sync now** looks
+again for a title with no match and for any image still missing, so setting
+the SteamGridDB key after a first sync (Steam's store search alone finds
+fewer titles) only takes another sync. The Titles page never looks a title
+up itself. A title that has a match keeps it until you change it; to throw
+every match away, Settings → **Advanced** → **Reset match cache** deletes the CLI's whole match cache
 (`~/.cache/moonlight-steam-sync/matches.json`), pins included, after a
 confirmation; the next **Sync now** matches every title afresh. Nothing
 changes in Steam until that sync, a title that already has artwork keeps
@@ -719,8 +718,7 @@ file and nowhere else: not to the plugin's UI, its events or its log. If
 SteamGridDB's pages change shape the plugin says so and the typed field
 is the way in.
 
-The same page has **Retry missing art** (look
-again for images that were missing last time) and **Re-fetch all art**,
+The same page has **Re-fetch all art**,
 which needs a CLI whose `art` command accepts `--commit` and says "needs a
 newer CLI" otherwise.
 
@@ -729,7 +727,7 @@ Settings → **Advanced** has *Default controller layout* with its
 layouts"), *Hide Stream shortcuts*, *Streaming
 tab*, the restart countdown (0-30 s), **Reset match cache** (the CLI's
 `matches.json`, pins included, so the next sync matches every title
-afresh; see "Titles stuck on 'no match'" above) and **Remove everything
+afresh; see "Titles reading 'no match', or the wrong game" above) and **Remove everything
 this plugin created** (every shortcut, hidden entry and image the tool made;
 pins and ignored titles are kept; Steam restarts once; the layout records
 go with the entries).

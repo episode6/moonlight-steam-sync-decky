@@ -94,7 +94,7 @@ def test_startup_creates_settings_and_ignore(backend) -> None:
     assert settings["enabled"] is True
     assert settings["restart_countdown_s"] == 5
     assert settings["copy_layouts"] is True
-    assert settings["retry_missing"] is False
+    assert "retry_missing" not in settings
     assert settings["layout_strategy"] == "copy"
     assert settings["hide_stream_shortcuts"] is True
     assert settings["streaming_collection"] is True
@@ -251,15 +251,10 @@ def test_argv_of_the_long_runs(make_backend) -> None:
     owned(backend)
     backend.harness.clear()
     run(start_and_wait(backend, backend.start_sync()))
-    run(start_and_wait(backend, backend.start_sync({"retry_missing": True})))
-    run(backend.set_settings({"retry_missing": True}))
-    run(start_and_wait(backend, backend.start_sync()))
     run(start_and_wait(backend, backend.start_art_refetch()))
     run(start_and_wait(backend, backend.start_remove_all()))
     assert backend.harness.argv() == [
         sync_argv(backend),
-        sync_argv(backend, "--retry-missing"),
-        sync_argv(backend, "--retry-missing"),
         ["--json", "art", "--force", "--commit", "await-exit"],
         ["--json", "remove", "--all", "--client", "--commit", "await-exit"],
     ]
@@ -629,7 +624,7 @@ def test_sync_state_during_and_after_a_run(make_backend, steam_gone) -> None:
     during = run(scenario())
     assert during["running"] is True
     assert during["kind"] == "sync"
-    assert during["opts"] == {"retry_missing": False, "immediate_restart": True}
+    assert during["opts"] == {"immediate_restart": True}
     assert during["started"]
     assert during["events"][0]["event"] == "start"
     after = run(backend.sync_state())
@@ -705,7 +700,7 @@ def test_start_sync_needs_owned_apps(backend) -> None:
 
 def test_start_sync_rejects_bad_opts(backend) -> None:
     owned(backend)
-    assert run(backend.start_sync({"retry_missing": "yes"}))["error"] == "bad-request"
+    assert run(backend.start_sync({"immediate_restart": "yes"}))["error"] == "bad-request"
     assert run(backend.start_sync("fast"))["error"] == "bad-request"
 
 

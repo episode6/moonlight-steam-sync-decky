@@ -44,7 +44,6 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "enabled": True,
     "copy_layouts": True,
     "restart_countdown_s": 5,
-    "retry_missing": False,
     "layout_strategy": "copy",
     "hide_stream_shortcuts": True,
     # the *Streaming* group (spec 3.17): the library tab, or the fallback
@@ -65,10 +64,12 @@ DEFAULT_SETTINGS: dict[str, Any] = {
 }
 
 #: Keys an older settings.json may carry that nothing reads any more; they
-#: are left in the file (a downgrade keeps them) and never reported. So far
+#: are left in the file (a downgrade keeps them) and never reported.
 #: ``wake_macs``, the Host page's entered Wake-on-LAN MACs until 2026-09-26:
 #: Moonlight's own host list is the one MAC source now (spec 3.18.1).
-RETIRED_SETTINGS = ("wake_macs",)
+#: ``retry_missing``, Artwork's *Retry missing art* until 2026-10-31: every
+#: sync retries what it did not find now.
+RETIRED_SETTINGS = ("wake_macs", "retry_missing")
 
 #: The countdown can never outlast the CLI's own await-exit wait (60 s),
 #: which would race it, so the slider and the file both stop at 30
@@ -84,7 +85,6 @@ BRANCH_CHANNEL_PREFIX = "branch:"
 BOOL_SETTINGS = (
     "enabled",
     "copy_layouts",
-    "retry_missing",
     "hide_stream_shortcuts",
     "streaming_collection",
     "update_check",

@@ -787,7 +787,8 @@ def resolve_titles(
 
     Cache-first; each miss makes the same lookups the art phase would, and
     the cache is flushed per title, so an interrupted run resumes. The art
-    phase then finds every title cached and makes no lookup of its own. A
+    phase then finds every title answered, a title with no match included
+    (``Resolver._searched``), and makes no lookup of its own. A
     title that cost a lookup gets one progress line on ``out``.
     :class:`~moonlight_steam_sync.art.http.HardStop` and
     ``KeyboardInterrupt`` propagate with everything so far on disk.
@@ -1248,7 +1249,6 @@ class SyncOptions:
     dry_run: bool = False
     no_art: bool = False
     limit: int | None = None
-    retry_missing: bool = False
     #: ``--park-unpublished`` (decky spec 3.12).
     park_unpublished: bool = False
     #: ``--client-shortcut`` (decky spec 3.4.5).
@@ -1264,7 +1264,6 @@ class SyncOptions:
             dry_run=bool(getattr(args, "dry_run", False)),
             no_art=bool(getattr(args, "no_art", False)),
             limit=getattr(args, "limit", None),
-            retry_missing=bool(getattr(args, "retry_missing", False)),
             park_unpublished=bool(getattr(args, "park_unpublished", False)),
             client_shortcut=bool(getattr(args, "client_shortcut", False)),
             hide_host_apps=bool(getattr(args, "hide_host_apps", False)),
@@ -1466,11 +1465,8 @@ def cmd_sync(
     # only, cache-first and flushed per title, even under --no-art.
     services: ArtServices | None = None
     if not options.no_art or owned is not None:
-        services = deps.services or build_services(
-            config, cache_path=deps.cache_path, retry_missing=options.retry_missing
-        )
+        services = deps.services or build_services(config, cache_path=deps.cache_path)
         services.resolver.force = False
-        services.resolver.retry_missing = options.retry_missing
         # The owned-name match (resolve.py): a title that is an owned game's
         # name is that game before any search; off without --owned-apps.
         services.resolver.owned = owned
