@@ -30,6 +30,7 @@ import pytest
 from moonlight_steam_sync import config as config_module
 from moonlight_steam_sync import sync, vdf
 from moonlight_steam_sync.__main__ import build_parser, main
+from moonlight_steam_sync.art import steamstore
 from moonlight_steam_sync.art.cli import build_services
 from moonlight_steam_sync.art.select import SLOTS, existing_slot_file
 from moonlight_steam_sync.config import Config
@@ -40,6 +41,7 @@ from tests.art_fixtures import (
     FakeTransport,
     SimulatedCrash,
     make_fetcher,
+    store_url,
 )
 from tests.fakes import (
     STEAMID3,
@@ -315,8 +317,8 @@ def test_an_adopted_entry_the_host_no_longer_publishes_is_still_dressed(
 
 def remaining_calls(world: World, transport: BulkTransport, names: list[str]) -> list[str]:
     """The calls a re-run must make, derived from what is on disk (spec 3.9.1):
-    a title in ``matches.json`` costs no lookups, a slot with a file costs no
-    download, and the icon slot costs its hash lookup plus the download."""
+    a title in ``matches.json`` costs no lookups, a title with every slot
+    filled costs no ``GetItems``, and a slot with a file costs no download."""
     cached = set(world.cache_titles())
     calls: list[str] = []
     for name in names:
@@ -324,11 +326,14 @@ def remaining_calls(world: World, transport: BulkTransport, names: list[str]) ->
         appid = world.appid_for(name)
         if name not in cached:
             calls.extend(urls[:2])
-        for slot, url in zip(SLOTS[:4], urls[2:6], strict=True):
-            if existing_slot_file(world.grid_dir, appid, slot) is None:
-                calls.append(url)
-        if existing_slot_file(world.grid_dir, appid, SLOTS[4]) is None:
-            calls.extend(urls[6:8])
+        missing = [
+            url
+            for slot, url in zip(SLOTS, urls[3:8], strict=True)
+            if existing_slot_file(world.grid_dir, appid, slot) is None
+        ]
+        if missing:
+            calls.append(urls[2])
+            calls.extend(missing)
     return calls
 
 
@@ -337,7 +342,7 @@ def durable_state_after(n_calls: int) -> tuple[int, int]:
     answered calls into a fresh all-official library."""
     done, r = divmod(n_calls, CALLS_PER_TITLE)
     cache_entries = done + (1 if r >= 2 else 0)
-    grid_files = 5 * done + (0 if r < 3 else min(r - 2, 4))
+    grid_files = 5 * done + (0 if r < 4 else r - 3)  # calls 4-8 of a title are downloads
     return cache_entries, grid_files
 
 
@@ -391,7 +396,7 @@ def test_b_a_crash_after_n_calls_costs_nothing_already_done(
     assert_library_complete(world, names, result)
 
 
-@pytest.mark.parametrize("truncate_call", [3, 8, 3995])
+@pytest.mark.parametrize("truncate_call", [4, 8, 3996])
 def test_b_a_download_that_dies_mid_body_leaves_only_a_part_file(
     fresh_world, large_host, truncate_call
 ):
@@ -545,7 +550,8 @@ def test_new_art_alone_restarts_steam_once_but_an_unchanged_library_does_not(
     result = world.run(["sync"])
     assert result.code == 0
     assert result.calls == [
-        "https://cdn.cloudflare.steamstatic.com/steam/apps/1245620/library_hero.jpg"
+        steamstore.get_items_url(1245620),
+        store_url(1245620, "library_hero.jpg"),
     ]
     assert world.shortcuts_path.read_bytes() == data  # nothing to write...
     assert result.runner.shutdowns == 1 and result.runner.relaunches == 1  # ...but a restart
@@ -627,9 +633,7 @@ def test_dry_run_prints_the_plan_with_per_slot_urls_and_writes_nothing_under_ste
     assert "adopted  Elden Ring" in result.out
     assert "adopted  Hollow Knight" in result.out
     assert "ignored  Desktop" in result.out
-    assert "portrait: official: https://cdn.cloudflare.steamstatic.com/steam/apps/1145350/" in (
-        result.out
-    )
+    assert f"portrait: official: {store_url(1145350, 'library_600x900_2x.jpg')}" in result.out
     assert "dry run: nothing written" in result.out
     assert world.shortcuts_path.read_bytes() == before
     assert world.grid_files() == []

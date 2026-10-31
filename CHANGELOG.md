@@ -6,6 +6,24 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A newly released game gets its official art again.** Steam serves a
+  game published since mid-2025 only from hashed paths, one hash per
+  image, so the CLI's guessed `steam/apps/<appid>/header.jpg` URLs were
+  404s for it: a sync on 2026-10-31 matched *Phantom Blade Zero* to its
+  owned appid and still wrote no landscape or hero (SteamGridDB had
+  neither) and only community art for the rest. The CLI now asks the
+  store which image files it has (one `GetItems` call per title, which
+  also carries the icon hash, so it replaces the `GetApps` call and a
+  title costs the same eight requests) and downloads those, trying the
+  old plain paths only when the store lists nothing, as for a delisted
+  game. The logo is the one image the store does not list, so a newer
+  game's logo still comes from SteamGridDB. Already-filled slots are
+  never touched, so a game that was synced with missing landscape or
+  hero gets them on the next sync after the seven-day miss window, or
+  at once after *Reset match cache* or a *Change match*.
+
 ### Changed
 
 - **Builds of `main` say they are snapshots.** Between releases

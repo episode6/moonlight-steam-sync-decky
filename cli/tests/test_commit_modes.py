@@ -22,10 +22,11 @@ import pytest
 
 from moonlight_steam_sync import sync
 from moonlight_steam_sync.__main__ import build_parser, main
+from moonlight_steam_sync.art import steamstore
 from moonlight_steam_sync.art.cli import build_services, cmd_art
 from moonlight_steam_sync.shortcuts import ShortcutsFile
 from moonlight_steam_sync.steam import SteamRunningError
-from tests.art_fixtures import FakeTransport, make_fetcher
+from tests.art_fixtures import FakeTransport, make_fetcher, store_url
 from tests.fakes import FakeRunner
 from tests.test_match import (  # noqa: F401 - pytest fixtures
     HOLLOW_STEAM,
@@ -379,7 +380,8 @@ def test_an_art_only_run_emits_commit_written_false_and_does_not_wait(world, tmp
         "relaunch_error": "",
     }
     assert result.calls == [
-        "https://cdn.cloudflare.steamstatic.com/steam/apps/1245620/library_hero.jpg"
+        steamstore.get_items_url(1245620),
+        store_url(1245620, "library_hero.jpg"),
     ]
     assert one(result, "note")["message"] == "restart Steam to see the new artwork"
     assert world.shortcuts_path.read_bytes() == data
@@ -529,7 +531,8 @@ def test_art_await_exit_waits_only_for_an_icon_patch_that_changes_the_file(world
     assert "awaiting-steam-exit" not in event_names(again)
     assert one(again, "commit")["written"] is False
     assert again.calls == [
-        "https://cdn.cloudflare.steamstatic.com/steam/apps/1245620/library_hero.jpg"
+        steamstore.get_items_url(1245620),
+        store_url(1245620, "library_hero.jpg"),
     ]
     assert one(again, "note")["message"] == "restart Steam to see the new artwork"
     assert world.shortcuts_path.read_bytes() == data

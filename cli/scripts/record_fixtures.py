@@ -18,7 +18,9 @@ What it records, per title, is exactly the call chain
 * ``/search/autocomplete/{title}``
 * ``/games/id/{id}?platformdata=steam`` for the chosen game
 * every community query for every slot (grids/heroes/logos/icons)
-* every Steam CDN URL for the slots, plus ``storesearch`` and ``GetApps``
+* ``GetItems`` (the store's asset list) and the URLs it gives for the slots,
+  every unhashed Steam CDN URL for the slots, plus ``storesearch`` and
+  ``GetApps``
 
 JSON bodies are written verbatim to ``responses/``. **Image bodies are not
 kept**: the manifest points at the tiny 1x1 stand-ins in ``images/``, because
@@ -152,6 +154,15 @@ def record_title(title: str, recorder: Recorder, sgdb: SgdbClient, store: SteamS
             print(f"   storesearch -> {how} appid={steam_appid}")
 
     if steam_appid is not None:
+        listed = steamstore.parse_store_assets(
+            recorder.json(steamstore.get_items_url(steam_appid)), steam_appid
+        )
+        if listed is not None:
+            for slot in SLOTS:
+                for url in listed.urls(slot.key):
+                    recorder.image(url)
+            if listed.icon_hash:
+                recorder.image(steamstore.icon_url(steam_appid, listed.icon_hash))
         for builder in (
             steamstore.portrait_urls,
             steamstore.landscape_urls,

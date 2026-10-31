@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from moonlight_steam_sync.art import steamstore
 from moonlight_steam_sync.art.http import NetworkError
 from moonlight_steam_sync.art.resolve import Match
 from moonlight_steam_sync.art.select import (
@@ -20,11 +21,17 @@ from moonlight_steam_sync.art.select import (
 )
 from moonlight_steam_sync.art.sgdb import SgdbClient, asset_query
 from moonlight_steam_sync.art.steamstore import SteamStoreClient
-from tests.art_fixtures import FIXTURE_DIR, FakeTransport, load_manifest, make_fetcher
+from tests.art_fixtures import (
+    FIXTURE_DIR,
+    FakeTransport,
+    load_manifest,
+    make_fetcher,
+    store_url,
+)
 
 APPID = 2864321987
 
-PORTRAIT_2X = "https://cdn.cloudflare.steamstatic.com/steam/apps/1245620/library_600x900_2x.jpg"
+PORTRAIT_2X = store_url(1245620, "library_600x900_2x.jpg")
 
 
 def make_selector(transport: FakeTransport | None = None, **kwargs):
@@ -77,7 +84,9 @@ def test_official_sources_are_tried_in_cdn_order(tmp_path) -> None:
     match = Match(name="Elden Ring", steam_appid=1245620, sgdb_id=5297)
     fill = selector.fill(PORTRAIT, match, appid=APPID, grid_dir=tmp_path)
     assert fill.source == "official"
-    assert fill.url.endswith("library_600x900_2x.jpg")
+    # The store is asked which files it has, then its 2x capsule is taken.
+    assert fill.url == PORTRAIT_2X
+    assert transport.calls == [steamstore.get_items_url(1245620), PORTRAIT_2X]
     assert fill.path.name == f"{APPID}p.jpg"
 
 
@@ -85,11 +94,84 @@ def test_a_404_on_the_2x_portrait_falls_through_to_the_1x(tmp_path) -> None:
     selector, transport = make_selector()
     match = Match(name="Hades II", steam_appid=1145350, sgdb_id=5468)
     fill = selector.fill(PORTRAIT, match, appid=APPID, grid_dir=tmp_path)
-    assert fill.url.endswith("library_600x900.jpg")
+    assert fill.url.endswith("library_600x900.jpg?t=1700000000")
     assert [c for c in transport.calls if "library_600x900" in c] == [
-        "https://cdn.cloudflare.steamstatic.com/steam/apps/1145350/library_600x900_2x.jpg",
-        "https://cdn.cloudflare.steamstatic.com/steam/apps/1145350/library_600x900.jpg",
+        store_url(1145350, "library_600x900_2x.jpg"),
+        store_url(1145350, "library_600x900.jpg"),
     ]
+
+
+BRAND_NEW = Match(name="Brand New Sequel", steam_appid=610200, how="steamstore:exact")
+HASHED_HERO = store_url(610200, "cccc000000000000000000000000000000000003/library_hero.jpg")
+
+
+def test_a_new_apps_art_is_fetched_from_the_hashed_paths_the_store_lists(tmp_path) -> None:
+    """Steam serves an app published since mid-2025 only from paths with a
+    hash per asset (measured 2026-10-31): the unhashed CDN URL is a 404 for
+    it, so the store's own file list has to be asked and used."""
+    selector, transport = make_selector()
+    fill = selector.fill(HERO, BRAND_NEW, appid=APPID, grid_dir=tmp_path)
+    assert fill.source == "official"
+    assert fill.url == HASHED_HERO
+    assert transport.calls == [steamstore.get_items_url(610200), HASHED_HERO]
+    assert (tmp_path / f"{APPID}_hero.jpg").is_file()
+
+
+def test_the_store_is_asked_once_per_title_and_its_icon_hash_is_used(tmp_path) -> None:
+    selector, transport = make_selector()
+    for slot in SLOTS:
+        selector.fill(slot, BRAND_NEW, appid=APPID, grid_dir=tmp_path)
+    get_items = [c for c in transport.calls if "GetItems" in c]
+    assert get_items == [steamstore.get_items_url(610200)]
+    assert not any("GetApps" in c for c in transport.calls)
+    assert steamstore.icon_url(610200, "5a5a5a5a5a5a") in transport.calls
+    # The logo is the one slot the store does not list: unhashed CDN (a 404
+    # for a new app), and this title has no SteamGridDB id, so it stays open.
+    assert sorted(p.name for p in tmp_path.iterdir()) == [
+        f"{APPID}.jpg", f"{APPID}_hero.jpg", f"{APPID}_icon.jpg", f"{APPID}p.jpg",
+    ]
+
+
+def test_the_unhashed_cdn_and_getapps_serve_an_app_the_store_no_longer_lists(tmp_path) -> None:
+    """``Delisted Relic``: GetItems answers ``success: 15``, a definite "not in
+    the store", so the unhashed paths and the GetApps hash are tried next --
+    and nothing is marked a failed lookup."""
+    selector, transport = make_selector()
+    match = Match(name="Delisted Relic", steam_appid=700700, sgdb_id=8600)
+    fill = selector.fill(PORTRAIT, match, appid=APPID, grid_dir=tmp_path)
+    assert fill.url == steamstore.portrait_urls(700700)[0]
+    assert selector.last_attempt_failed is False
+    icon = selector.fill(ICON, match, appid=APPID, grid_dir=tmp_path)
+    assert icon.url == steamstore.icon_url(700700, "6b6b6b6b")
+    assert [c for c in transport.calls if "GetItems" in c or "GetApps" in c] == [
+        steamstore.get_items_url(700700),
+        steamstore.get_apps_url(700700),
+    ]
+
+
+def test_a_failed_store_lookup_marks_every_slot_failed_and_is_not_retried(tmp_path) -> None:
+    """A store outage must not turn into cached misses: each slot that would
+    have asked the store is told the lookup failed, the unhashed paths are
+    still tried, and the store is asked once for the run, not once per slot."""
+    get_items = steamstore.get_items_url(610200)
+    selector, transport = make_selector(FakeTransport(fail_with={get_items: NetworkError("down")}))
+    assert selector.fill(HERO, BRAND_NEW, appid=APPID, grid_dir=tmp_path) is None
+    assert selector.last_attempt_failed is True
+    # The fetcher retries a network failure; the one lookup is those retries.
+    asked = transport.calls.count(get_items)
+    assert asked >= 1
+    assert [c for c in transport.calls if c != get_items] == [steamstore.hero_urls(610200)[0]]
+    assert selector.fill(LANDSCAPE, BRAND_NEW, appid=APPID, grid_dir=tmp_path) is None
+    assert selector.last_attempt_failed is True
+    assert transport.calls.count(get_items) == asked
+
+
+def test_a_store_lookup_failure_does_not_stop_a_slot_the_unhashed_cdn_still_has(tmp_path) -> None:
+    get_items = steamstore.get_items_url(700700)
+    selector, _ = make_selector(FakeTransport(fail_with={get_items: NetworkError("down")}))
+    match = Match(name="Delisted Relic", steam_appid=700700, sgdb_id=8600)
+    fill = selector.fill(HERO, match, appid=APPID, grid_dir=tmp_path)
+    assert fill is not None and fill.url == steamstore.hero_urls(700700)[0]
 
 
 def test_community_assets_are_sorted_by_score_before_the_first_is_taken(tmp_path) -> None:
@@ -247,13 +329,15 @@ def test_a_stale_part_is_overwritten_by_the_next_run(tmp_path) -> None:
     assert sorted(p.name for p in tmp_path.iterdir()) == [f"{APPID}p.jpg"]
 
 
-def test_the_icon_slot_needs_the_getapps_hash(tmp_path) -> None:
+def test_the_icon_slot_needs_the_icon_hash(tmp_path) -> None:
     selector, transport = make_selector()
     match = Match(name="Elden Ring", steam_appid=1245620)
     fill = selector.fill(ICON, match, appid=APPID, grid_dir=tmp_path)
     assert fill.source == "official"
     assert fill.url.endswith("/1c1c1c1c1c1c1c1c1c1c.jpg")
-    assert any("GetApps" in call for call in transport.calls)
+    # The hash comes with the store's asset list, so GetApps is not called.
+    assert any("GetItems" in call for call in transport.calls)
+    assert not any("GetApps" in call for call in transport.calls)
 
 
 def test_landscape_falls_from_920x430_to_460x215(tmp_path) -> None:

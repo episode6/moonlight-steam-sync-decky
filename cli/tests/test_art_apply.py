@@ -25,7 +25,7 @@ from moonlight_steam_sync.art.resolve import MatchCache, Resolver
 from moonlight_steam_sync.art.select import Selector
 from moonlight_steam_sync.art.sgdb import SgdbClient
 from moonlight_steam_sync.art.steamstore import SteamStoreClient
-from tests.art_fixtures import FakeTransport, make_fetcher
+from tests.art_fixtures import FakeTransport, make_fetcher, store_url
 
 # Shortcut appids: arbitrary here, but in a real run they are
 # crc32(Exe + AppName) | 0x80000000 (spec 2.1) and come from the shortcut
@@ -268,7 +268,7 @@ def test_a_cached_slot_miss_is_not_requeried_but_retry_missing_reopens_it(
 
 
 def test_an_interrupted_download_leaves_a_part_and_the_rerun_completes(tmp_path, grid_dir):
-    url = "https://cdn.cloudflare.steamstatic.com/steam/apps/1245620/library_600x900_2x.jpg"
+    url = store_url(1245620, "library_600x900_2x.jpg")
     appid = APPIDS["Elden Ring"]
     resolver, selector, _, cache = build(tmp_path, FakeTransport(truncate_after={url: 1}))
     entry = targets(grid_dir, names=["Elden Ring"])[0]
@@ -322,7 +322,7 @@ def test_a_transient_title_lookup_failure_is_never_cached_as_a_miss(tmp_path, gr
 
 def test_a_transient_slot_failure_leaves_the_slot_open_for_the_next_run(tmp_path, grid_dir):
     """The same rule one level down: the title resolved, a *slot* lookup did not."""
-    url = "https://cdn.cloudflare.steamstatic.com/steam/apps/1245620/library_600x900_2x.jpg"
+    url = store_url(1245620, "library_600x900_2x.jpg")
     resolver, selector, _, cache = build(
         tmp_path, FakeTransport(fail_with={url: NetworkError("down")})
     )
