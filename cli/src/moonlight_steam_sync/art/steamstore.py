@@ -24,8 +24,8 @@ public endpoint verified live on 2026-09-16 and again on 2026-10-31 (spec
   ask the store which files it has. Served from
   ``https://shared.akamai.steamstatic.com/store_item_assets/``, which also
   serves the old unhashed files, hashes or not. The answer carries the
-  ``community_icon`` hash too, so a title whose assets were listed costs no
-  ``GetApps`` call;
+  ``community_icon`` hash too, so a title whose listing has one costs no
+  ``GetApps`` call (a listing without it still falls back to ``GetApps``);
 * ``https://api.steampowered.com/ICommunityService/GetApps/v1/?appids[0]=<id>``
   -> the app's ``icon`` hash, the fallback for the icon when ``GetItems``
   has nothing for the app (delisted from the store, say);
@@ -57,9 +57,12 @@ CDN_BASE = "https://cdn.cloudflare.steamstatic.com"
 #: itself links its images here).
 STORE_ASSETS_BASE = "https://shared.akamai.steamstatic.com/store_item_assets"
 
-#: The ``GetItems`` asset keys that fill a slot, in the order to try them
-#: (2x first, like the unhashed builders below). No logo: ``GetItems`` has
-#: no logo asset, and no icon here -- that is :attr:`StoreAssets.icon_hash`.
+#: The ``GetItems`` asset keys that fill a slot, in the order to try them.
+#: The same sizes as the unhashed builders below: the portrait 2x first,
+#: the hero at ``library_hero`` only (its ``_2x`` is 3840x1240, the size the
+#: community hero query also tries last; spec 3.5 asks for 1920x620). No
+#: logo: ``GetItems`` has no logo asset, and no icon here -- that is
+#: :attr:`StoreAssets.icon_hash`.
 STORE_ASSET_KEYS: dict[str, tuple[str, ...]] = {
     "portrait": ("library_capsule_2x", "library_capsule"),
     "landscape": ("header",),
@@ -99,8 +102,12 @@ class StoreAssets:
 
 
 def store_asset_url(url_format: str, filename: str) -> str:
-    """``url_format`` with ``${FILENAME}`` filled in, under :data:`STORE_ASSETS_BASE`."""
-    return f"{STORE_ASSETS_BASE}/{url_format.replace('${FILENAME}', filename)}"
+    """``url_format`` with ``${FILENAME}`` filled in, under :data:`STORE_ASSETS_BASE`.
+
+    A leading ``/`` on the format is dropped so the join never doubles it.
+    """
+    path = url_format.replace("${FILENAME}", filename).lstrip("/")
+    return f"{STORE_ASSETS_BASE}/{path}"
 
 
 def portrait_urls(appid: int) -> list[str]:
@@ -154,9 +161,10 @@ def parse_store_assets(payload: Any, appid: int) -> StoreAssets | None:
     """The :class:`StoreAssets` in a ``GetItems`` response, or ``None``.
 
     ``None`` is "the store has nothing for this app" (not listed, ``success``
-    other than 1 -- an unknown appid answers 200 with ``success: 15`` -- or
-    no ``assets``): a definite answer, not a failure, so the caller falls
-    back to the unhashed CDN paths and, for the icon, ``GetApps``.
+    other than 1 -- an unknown appid answers 200 with ``success: 15`` -- no
+    ``assets``, or an ``asset_url_format`` in a shape this module does not
+    know): a definite answer, not a failure, so the caller falls back to the
+    unhashed CDN paths and, for the icon, ``GetApps``.
     """
     if not isinstance(payload, Mapping):
         return None
@@ -173,6 +181,10 @@ def parse_store_assets(payload: Any, appid: int) -> StoreAssets | None:
             return None
         url_format = assets.get("asset_url_format")
         if not isinstance(url_format, str) or "${FILENAME}" not in url_format:
+            return None
+        if "://" in url_format:
+            # An absolute URL is not a shape we know how to serve; refuse it
+            # rather than build a URL under the wrong host.
             return None
         files = {
             key: value

@@ -113,3 +113,13 @@ def test_an_app_the_store_does_not_list_is_none() -> None:
 def test_a_format_without_the_filename_placeholder_is_refused() -> None:
     no_placeholder = {"asset_url_format": "steam/apps/1/", "header": "h"}
     assert parse_store_assets(item(1, no_placeholder), 1) is None
+
+
+def test_an_absolute_url_format_is_refused() -> None:
+    absolute = {"asset_url_format": "https://elsewhere.example/${FILENAME}", "header": "h.jpg"}
+    assert parse_store_assets(item(1, absolute), 1) is None
+
+
+def test_a_leading_slash_on_the_format_is_not_doubled() -> None:
+    url = steamstore.store_asset_url("/steam/apps/1/${FILENAME}?t=5", "x/header.jpg")
+    assert url == f"{steamstore.STORE_ASSETS_BASE}/steam/apps/1/x/header.jpg?t=5"

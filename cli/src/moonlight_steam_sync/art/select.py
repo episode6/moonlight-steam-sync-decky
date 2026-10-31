@@ -122,8 +122,12 @@ _OFFICIAL_URLS = {
 
 _SNIFF_BYTES = 16
 
+class _LookupFailed:
+    """The type of :data:`_LOOKUP_FAILED`, so :attr:`Selector._assets` has a precise union."""
+
+
 #: :attr:`Selector._assets`' marker for a ``GetItems`` call that failed.
-_LOOKUP_FAILED = object()
+_LOOKUP_FAILED = _LookupFailed()
 
 
 @dataclass(frozen=True)
@@ -195,11 +199,14 @@ class Selector:
     #: Set by :meth:`fill`: True when the slot came up empty *because a
     #: lookup failed*, rather than because no source has that image. Callers
     #: use it to avoid caching a negative result they are not sure about.
+    #: :meth:`candidates` also raises it when a store asset lookup it needed
+    #: had failed (``--dry-run`` lists candidates without filling, and
+    #: caches no miss, so there it is only ever read by a test).
     last_attempt_failed: bool = field(default=False, repr=False)
     #: ``GetItems`` answers by Steam appid, for the run: the assets, ``None``
     #: for an app the store has nothing for, :data:`_LOOKUP_FAILED` when the
     #: call failed (each slot that consults it then counts as a failed lookup).
-    _assets: dict[int, StoreAssets | None | object] = field(
+    _assets: dict[int, StoreAssets | None | _LookupFailed] = field(
         default_factory=dict, repr=False
     )
 
@@ -263,10 +270,10 @@ class Selector:
             except HttpError:
                 self._assets[appid] = _LOOKUP_FAILED
         answer = self._assets[appid]
-        if answer is _LOOKUP_FAILED:
+        if isinstance(answer, _LookupFailed):
             self.last_attempt_failed = True
             return None
-        return answer  # type: ignore[return-value]
+        return answer
 
     def _community(self, slot: Slot, match: Match) -> Iterator[Candidate]:
         if not self.community_fallback:

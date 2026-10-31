@@ -226,8 +226,10 @@ PRs can land in parallel.
   `sync.patch_icons_from_disk()` applies the same rule with `--no-art`.
 - **`--dry-run` resolves titles.** The only way to print a CDN URL per slot
   is to know the Steam appid, so a dry run does make the lookup calls and
-  writes `matches.json` (the real run then reuses every resolution). It
-  downloads nothing and touches nothing under the Steam directory.
+  writes `matches.json` (the real run then reuses every resolution), and
+  it asks the store for its asset list (`GetItems`, once per title with
+  an unfilled slot) to print the URL that would be tried. It downloads
+  nothing and touches nothing under the Steam directory.
 
 ### Owned apps, hidden entries and parking (decky spec 3.2, 3.3, 3.4.2, 3.11, 3.12)
 
