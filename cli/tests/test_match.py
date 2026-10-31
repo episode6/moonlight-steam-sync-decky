@@ -136,7 +136,6 @@ def test_an_entry_without_the_new_fields_serialises_exactly_as_before(tmp_path):
         "matched_name": "Elden Ring",
         "how": "sgdb:exact-verified",
         "when": "2026-09-01T00:00:00Z",
-        "missing_slots": {"logo": "2026-09-01T00:00:00Z"},
     }
     match = Match.from_json("Elden Ring", old)
     assert match.stale_art is False
@@ -146,7 +145,7 @@ def test_an_entry_without_the_new_fields_serialises_exactly_as_before(tmp_path):
 def test_pin_replaces_the_entry_and_is_on_disk_at_once(tmp_path):
     path = tmp_path / "matches.json"
     cache = MatchCache(path)
-    cache.put(Match(name="Hades II", steam_appid=1, how="sgdb:fuzzy", missing_slots={"logo": "x"}))
+    cache.put(Match(name="Hades II", steam_appid=1, how="sgdb:fuzzy"))
     cache.mark_stale_art("Hades II")
 
     cache.pin(Match(name="Hades II", steam_appid=HADES_STEAM, sgdb_id=HADES_SGDB,
@@ -157,7 +156,6 @@ def test_pin_replaces_the_entry_and_is_on_disk_at_once(tmp_path):
     entry = on_disk["titles"]["Hades II"]
     assert entry["how"] == "pinned"
     assert (entry["steam_appid"], entry["sgdb_id"]) == (HADES_STEAM, HADES_SGDB)
-    assert entry["missing_slots"] == {}  # the old match's misses are gone
     assert "stale_art" not in entry  # so is the old flag
     assert MatchCache(path).get("Hades II").pinned
 
@@ -234,7 +232,7 @@ def test_unpin_with_stale_art_leaves_a_placeholder_that_only_carries_the_flag(tm
 
 
 # ---------------------------------------------------------------------------
-# the resolver: a pin comes before force and retry_missing; config beats it
+# the resolver: a pin comes before force; config beats it
 # ---------------------------------------------------------------------------
 
 
@@ -248,9 +246,8 @@ def resolver_for(tmp_path, transport, **kwargs) -> Resolver:
     )
 
 
-@pytest.mark.parametrize("flags", [{}, {"force": True}, {"retry_missing": True},
-                                   {"force": True, "retry_missing": True}])
-def test_a_pin_is_returned_without_a_lookup_even_under_force_and_retry_missing(tmp_path, flags):
+@pytest.mark.parametrize("flags", [{}, {"force": True}])
+def test_a_pin_is_returned_without_a_lookup_even_under_force(tmp_path, flags):
     transport = FakeTransport()
     resolver = resolver_for(tmp_path, transport, **flags)
     resolver.cache.pin(Match(name="Elden Ring", steam_appid=HOLLOW_STEAM))
@@ -262,9 +259,9 @@ def test_a_pin_is_returned_without_a_lookup_even_under_force_and_retry_missing(t
     assert match.explain and match.explain[0].startswith("pinned:")
 
 
-def test_a_none_pin_is_never_re_searched_even_with_retry_missing(tmp_path):
+def test_a_none_pin_is_never_re_searched_though_a_miss_would_be(tmp_path):
     transport = FakeTransport()
-    resolver = resolver_for(tmp_path, transport, retry_missing=True)
+    resolver = resolver_for(tmp_path, transport)
     resolver.cache.pin(Match(name="Elden Ring"))
     match = resolver.resolve("Elden Ring")
     assert transport.calls == []
@@ -273,7 +270,7 @@ def test_a_none_pin_is_never_re_searched_even_with_retry_missing(tmp_path):
 
 def test_an_unpinned_placeholder_is_a_cache_miss_whose_flag_survives_the_search(tmp_path):
     """The placeholder ``match --unpin --defer-art`` leaves is re-searched
-    like a missing entry (no 7-day negative window, whatever its ``when``),
+    like a missing entry, whatever its ``when``,
     and the resolution written over it keeps ``stale_art`` for ``sync``."""
     transport = FakeTransport()
     resolver = resolver_for(tmp_path, transport)
@@ -367,7 +364,9 @@ def test_art_force_takes_a_pinned_titles_lookups_from_the_pin_not_the_search(
     assert (entry["steam_appid"], entry["sgdb_id"]) == (HOLLOW_STEAM, HOLLOW_SGDB)
 
 
-def test_a_pin_survives_sync_retry_missing(world, tmp_path, monkeypatch):
+def test_the_retired_retry_missing_flag_is_accepted_and_a_pin_survives_it(
+    world, tmp_path, monkeypatch
+):
     synced(world, tmp_path, monkeypatch, ["Elden Ring"])
     assert run_match(world, ["match", "Elden Ring", "--none"]).code == 0
 
@@ -409,7 +408,6 @@ def test_match_steam_refinds_the_sgdb_id_whose_steam_release_is_that_appid(
         "matched_name": "Hades II",
         "how": "pinned",
         "when": entry["when"],
-        "missing_slots": {},
     }
 
 
@@ -1058,8 +1056,7 @@ def test_matches_json_written_by_a_plain_sync_has_no_new_keys(world, tmp_path, m
     titles = json.loads(world.cache_path.read_text())["titles"]
     assert titles
     for entry in titles.values():
-        assert set(entry) == {"steam_appid", "sgdb_id", "matched_name", "how", "when",
-                              "missing_slots"}
+        assert set(entry) == {"steam_appid", "sgdb_id", "matched_name", "how", "when"}
         assert entry["how"] != "pinned"
 
 

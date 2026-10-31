@@ -47,7 +47,7 @@ all.
 | `Hades II™` | a title carrying a trademark glyph (normalisation), and a 2x capsule the store lists but does not serve (404), so the 1x official portrait URL is used. |
 | `Fan Made Adventure` | a **non-Steam** game (an exact SteamGridDB match with no Steam release, so the resolver asks the store too and gets an empty answer): community art only, score sorting (the fixture lists the low-score asset first), a second-choice query (`920x430` empty -> `460x215`), and an asset whose bytes are WebP behind a `.png` URL, which must be rejected. |
 | `Old Console Classic` | a Steam game with **no `logo.png` on the CDN**, so the logo slot falls through to community art while the rest stay official. |
-| `Totally Unknown Title` | **zero results** anywhere: no match, a negative cache entry, every slot missing. |
+| `Totally Unknown Title` | **zero results** anywhere: no match, a `how: "none"` cache entry the next run searches past, every slot missing. |
 | `Rate Limited Game` | SteamGridDB and the store both answer **429** forever, so the run hits the five-consecutive-429 hard stop and exits 4 with everything so far kept. |
 | `Hollow Knight` | the adoptable SteamTinkerLaunch-era entry in `../shortcuts_synthetic.vdf`, so the `sync` end-to-end tests can adopt an existing shortcut and dress it (every slot official, like Elden Ring). |
 | `Custom Logo Quest` | a Steam game with **no `logo.png` on the CDN**, an `official` SteamGridDB logo whose bytes are WebP and no `white` one, so the `custom` query beats a higher-scored `black` logo; a test that empties `custom` checks the any-style query skips the failed `official` logo it lists first. Only its logo chain is recorded. |

@@ -328,7 +328,6 @@ export interface Settings {
   /** @deprecated spec 3.16 / Decision 47: replaced by `default_layout`; read by nothing. */
   copy_layouts: boolean;
   restart_countdown_s: number;
-  retry_missing: boolean;
   layout_strategy?: LayoutStrategy;
   /** Hide Stream-button shortcuts in the client (spec 3.15); absent reads as on. */
   hide_stream_shortcuts?: boolean;
@@ -369,7 +368,6 @@ export type SettingsPatch = Partial<
     | "enabled"
     | "copy_layouts"
     | "restart_countdown_s"
-    | "retry_missing"
     | "layout_strategy"
     | "hide_stream_shortcuts"
     | "streaming_collection"
@@ -496,7 +494,6 @@ export interface Pending {
 }
 
 export interface RunOpts {
-  retry_missing?: boolean;
   immediate_restart?: boolean;
 }
 

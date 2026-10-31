@@ -128,6 +128,16 @@ def _add_commit_flag(
         )
 
 
+def _add_retired_retry_missing_flag(parser: argparse.ArgumentParser) -> None:
+    """``--retry-missing``: accepted and ignored, hidden from ``--help``.
+
+    Every run retries what it did not find now (2026-10-31), so the flag has
+    nothing left to do; the contract is additive-only, and a script or an
+    older plugin may still pass it.
+    """
+    parser.add_argument("--retry-missing", action="store_true", help=argparse.SUPPRESS)
+
+
 def _add_ignore_file_flag(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--ignore-file",
@@ -175,11 +185,7 @@ def build_parser() -> argparse.ArgumentParser:
             "never split, IsHidden flips not counted); the rest wait"
         ),
     )
-    sync_p.add_argument(
-        "--retry-missing",
-        action="store_true",
-        help="re-query titles and slots whose 'nothing found' result is cached",
-    )
+    _add_retired_retry_missing_flag(sync_p)
     _add_commit_flag(sync_p, with_no_restart=True)
     _add_ignore_file_flag(sync_p)
     _add_owned_apps_flag(sync_p)
@@ -212,11 +218,7 @@ def build_parser() -> argparse.ArgumentParser:
             "exactly one file)"
         ),
     )
-    art_p.add_argument(
-        "--retry-missing",
-        action="store_true",
-        help="re-query titles and slots whose 'nothing found' result is cached",
-    )
+    _add_retired_retry_missing_flag(art_p)
     art_p.add_argument(
         "--only", metavar="NAME", help="dress just this Moonlight app name"
     )
@@ -258,8 +260,8 @@ def build_parser() -> argparse.ArgumentParser:
         "match",
         help="pin what a Moonlight title is matched to (or unpin it); see `match --help`",
         description=(
-            "Pin a title's match in the match cache (matches.json): `art --force` and "
-            "--retry-missing never overwrite a pin, while an [overrides] entry in "
+            "Pin a title's match in the match cache (matches.json): `art --force` "
+            "never overwrites a pin, while an [overrides] entry in "
             "config.toml still wins over it. Prints the equivalent [overrides] line, "
             "which you can paste into config.toml to make the pin permanent (this tool "
             "never writes it). When the title has a shortcut, its grid files are deleted "

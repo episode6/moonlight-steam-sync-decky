@@ -925,8 +925,9 @@ export class Controller {
   /**
    * Advanced → *Reset match cache*: the backend deletes the CLI's
    * `matches.json` whole, pins included (the user's decision of
-   * 2026-09-23), so the next sync re-resolves every title instead of
-   * waiting out the CLI's seven-day window on a miss. Refused while the
+   * 2026-09-23), so the next sync re-resolves every title, the ones with
+   * a match included (a title with none is retried by every sync anyway).
+   * Refused while the
    * plugin is off (spec 3.19) and while a run is going (the button is
    * disabled then too; the backend's busy guard is the real gate, in both
    * directions). A toast either way. On success `titlesEpoch` is bumped so

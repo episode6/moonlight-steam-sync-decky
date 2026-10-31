@@ -59,8 +59,7 @@ from moonlight_steam_sync.shortcuts import (
 #: Slot outcomes, as they appear in the progress lines.
 SOURCE_KEPT = "kept"  # a file was already there (spec 6.9)
 SOURCE_MISSING = "missing"  # nothing found; the user can fill it in by hand
-SOURCE_SKIPPED = "skipped"  # [overrides] art = false, or a cached slot miss
-SOURCE_CACHED_MISS = "cached-miss"
+SOURCE_SKIPPED = "skipped"  # [overrides] art = false
 
 
 @dataclass(frozen=True)
@@ -293,7 +292,7 @@ class SlotOutcome:
 
     @property
     def filled(self) -> bool:
-        return self.source not in (SOURCE_MISSING, SOURCE_SKIPPED, SOURCE_CACHED_MISS)
+        return self.source not in (SOURCE_MISSING, SOURCE_SKIPPED)
 
 
 @dataclass
@@ -400,15 +399,6 @@ def apply_title(
             chain.append(f"{slot.key}: kept {existing.name} (already on disk)")
             continue
 
-        if (
-            not force
-            and not resolver.retry_missing
-            and cache.slot_is_known_missing(target.name, slot.key)
-        ):
-            result.slots[slot.key] = SlotOutcome(slot.key, SOURCE_CACHED_MISS)
-            chain.append(f"{slot.key}: cached miss, not re-queried (--retry-missing to retry)")
-            continue
-
         fill = selector.fill(
             slot,
             match,
@@ -418,23 +408,17 @@ def apply_title(
         )
         if fill is None:
             result.slots[slot.key] = SlotOutcome(slot.key, SOURCE_MISSING)
+            # Either way the next run tries this slot again. ``match.transient``
+            # is a failed *title* search: the slot loop then has nothing to
+            # try, so no source reports a failure of its own.
             if match.transient or selector.last_attempt_failed:
-                # A lookup failed rather than "no source has this image": do
-                # not start a 7-day negative window on a transient error.
-                # ``match.transient`` covers the case where it was the *title*
-                # search that failed -- the slot loop then finds nothing to
-                # try, so no source reports a failure of its own, and the
-                # cache must still be left alone (spec 6.10).
-                chain.append(f"{slot.key}: lookup failed, not cached as missing")
-            else:
-                cache.record_missing_slot(target.name, slot.key)
-                if not explain:
-                    chain.append(f"{slot.key}: nothing found")
+                chain.append(f"{slot.key}: lookup failed")
+            elif not explain:
+                chain.append(f"{slot.key}: nothing found")
         else:
             result.slots[slot.key] = SlotOutcome(
                 slot.key, fill.source, path=fill.path, url=fill.url
             )
-            cache.clear_missing_slot(target.name, slot.key)
 
     # Spec 3.9 item 2: the cache is on disk before the next title starts.
     cache.flush()

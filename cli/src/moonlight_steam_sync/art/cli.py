@@ -81,7 +81,6 @@ def build_services(
     cache_path: Path | None = None,
     fetcher: Fetcher | None = None,
     force: bool = False,
-    retry_missing: bool = False,
 ) -> ArtServices:
     """Wire the clients, cache, resolver and selector together."""
     fetcher = fetcher or Fetcher(interval_ms=config.request_interval_ms)
@@ -94,7 +93,6 @@ def build_services(
         store=store,
         overrides=config.overrides,
         force=force,
-        retry_missing=retry_missing,
     )
     selector = Selector(
         fetcher=fetcher,
@@ -201,14 +199,10 @@ def cmd_art(
             return EXIT_USAGE_OR_CONFIG
 
     force = bool(getattr(args, "force", False))
-    retry_missing = bool(getattr(args, "retry_missing", False))
     explain = bool(getattr(args, "explain", False))
 
-    services = services or build_services(
-        config, cache_path=cache_path, force=force, retry_missing=retry_missing
-    )
+    services = services or build_services(config, cache_path=cache_path, force=force)
     services.resolver.force = force
-    services.resolver.retry_missing = retry_missing
 
     if not config.sgdb_api_key:
         reporter.note("no SteamGridDB API key configured; using Steam's store search and CDN only")
@@ -767,7 +761,7 @@ def cmd_match(
 
     Cache surgery on ``matches.json`` (decky spec 3.4.4): writes a
     ``how == "pinned"`` entry for the title -- the one cache entry ``art
-    --force`` and ``--retry-missing`` never overwrite -- or, with
+    --force`` never overwrites -- or, with
     ``--unpin``, deletes the title's entry so the next run re-resolves it.
     A ``[overrides]`` entry in ``config.toml`` still wins over a pin, and
     the equivalent override line is printed so a CLI user can make the pin

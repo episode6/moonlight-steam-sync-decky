@@ -21,11 +21,18 @@ project uses [semantic versioning](https://semver.org/).
   game. The logo is the one image the store does not list, so a newer
   game's logo still comes from SteamGridDB. Already-filled slots are
   never touched, so a game that was synced with missing landscape or
-  hero gets them on the next sync after the seven-day miss window, or
-  at once after *Reset match cache* or a *Change match*.
+  hero gets them on the next sync.
 
 ### Changed
 
+- **Every sync retries what the last one did not find.** The CLI used to
+  remember a title with no match or an image it could not find and leave
+  it alone for seven days. A sync is something you ask for, so now each
+  one looks again; a title that has a match and an image already on disk
+  still cost nothing, so a finished library makes no calls, while one with
+  gaps makes those lookups every run. *Retry missing art* is gone from
+  Settings → Artwork, and the CLI's `--retry-missing` is accepted and
+  ignored. `matches.json` entries no longer carry `missing_slots`.
 - **Builds of `main` say they are snapshots.** Between releases
   `package.json` carries the next release's version with `-SNAPSHOT`
   after it (`0.13.3-SNAPSHOT` now), so Settings → About, Decky's install

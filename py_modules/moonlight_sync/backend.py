@@ -2019,8 +2019,8 @@ class Backend:
         plugin touches: it is deleted, never edited, and only under the busy
         guard in both directions, since a run or a ``match`` child could be
         writing it. The CLI has no reset of its own (only ``match --unpin``
-        per title, and a miss is not asked again for seven days), which is
-        why the plugin does it. ``removed`` says whether there was a file;
+        per title: a miss is retried by every sync, but a match stands), which
+        is why the plugin does it. ``removed`` says whether there was a file;
         ``titles`` / ``pins`` are what it held, for the toast. ``hosts/``
         beside it is left alone: the list cache holds no match.
         """
@@ -2107,7 +2107,6 @@ class Backend:
     @guarded
     async def start_sync(self, opts: Any = None) -> Result:
         opts = self._opts(opts)
-        retry = self._bool_opt(opts, "retry_missing", bool(self.store.settings()["retry_missing"]))
         immediate = self._bool_opt(opts, "immediate_restart", False)
         gate = self._cli_gate() or self._busy()
         if gate is not None:
@@ -2123,11 +2122,7 @@ class Backend:
             "--commit",
             "await-exit",
         ]
-        if retry:
-            args.append("--retry-missing")
-        return self._start_run(
-            "sync", "sync", args, {"retry_missing": retry, "immediate_restart": immediate}
-        )
+        return self._start_run("sync", "sync", args, {"immediate_restart": immediate})
 
     @guarded
     async def start_art_refetch(self, opts: Any = None) -> Result:

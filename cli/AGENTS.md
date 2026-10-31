@@ -215,8 +215,9 @@ PRs can land in parallel.
 - **One restart per run, and none when nothing changed.** `commit_shortcuts`
   does nothing at all when the serialised file is unchanged and no art was
   newly written this run (`RunSummary.written`, which excludes `kept`
-  slots). A second `sync` over a finished library makes zero HTTP calls, no
-  write and no restart. New art alone restarts Steam in `restart` mode
+  slots). A second `sync` over a finished library (every title matched, every
+  slot filled; what is still empty is looked up again) makes zero HTTP calls,
+  no write and no restart. New art alone restarts Steam in `restart` mode
   only; `await-exit` returns `commit` `written: false` at once and leaves
   that restart to the plugin (decky spec 3.5 step 7).
 - **The `icon` field follows the file on disk.** `art.apply.patch_icon()`
@@ -239,10 +240,12 @@ PRs can land in parallel.
   new subcommand, no `active-host` state file and no `pinned`/`stale_art` entry in
   `matches.json`, every command produces the same stdout, stderr, exit
   code and the same bytes under the Steam root and in `matches.json` as
-  v0.2.0 (`1488a96`). Exactly three things differ and nothing else: the
+  v0.2.0 (`1488a96`). Exactly four things differ and nothing else: the
   three extra `doctor` lines; the per-host list cache `sync`, `list` and
-  `ignore --all` write beside `matches.json`; and `list`'s `same-game-as`
-  line, which needs a second host's cache file to exist at all. The
+  `ignore --all` write beside `matches.json`; `list`'s `same-game-as`
+  line, which needs a second host's cache file to exist at all; and no
+  negative window (contract item 2): a miss is retried every run, and
+  `matches.json` has no `missing_slots`. The
   frozen `tests/test_sync_e2e.py` is the proof. Concretely: no title is
   resolved ahead of the plan unless `--owned-apps` is passed, but
   `build_plan` always gets `matches` -- a plain `sync` and `list
@@ -399,9 +402,13 @@ the ones that mention resumability by name -- must keep these invariants:
    Re-running after any failure (network drop, `Ctrl-C`, a 429 storm, the
    device sleeping) does only the remaining work.
 2. **The match cache is flushed after every title**, not batched to the end.
-   Negative results are cached with a timestamp and are not re-queried for 7
-   days unless `--retry-missing` (or `art --force`, which ignores the cache
-   outright -- except for pins, below).
+   Only a match or a file on disk is "done": a title with no match and a slot
+   with no file are looked up again by every run (the user's decision of
+   2026-10-31: a sync is a manual act, so it should try again; through 0.13.2
+   they were held back for 7 days, and `--retry-missing`, which reopened them,
+   is now accepted and ignored). One run searches a title once
+   (`Resolver._searched`), though `sync --owned-apps` resolves it twice. `art
+   --force` ignores the cache outright -- except for pins, below.
 3. **Downloads are atomic**: write to `<file>.part`, validate magic bytes,
    then rename into place. A killed run never leaves a truncated image that
    would count as "done".
@@ -430,7 +437,7 @@ N-worth of cache entries and grid files exist, and the rerun's call list
 equals the list *derived from what is on disk* -- no lookups for a cached
 title, no download for a filled slot. Any module that touches disk state
 should have its own idempotency test as well. `art/` carries its share: a
-second pass over the same titles makes zero HTTP calls, an existing slot
+second pass over titles with nothing left to find makes zero HTTP calls, an existing slot
 file is never re-downloaded, a connection that dies mid-download leaves only
 a `.part` and costs just that slot, and `matches.json` is on disk after
 every title (`tests/test_art_apply.py`).
@@ -475,7 +482,7 @@ every title (`tests/test_art_apply.py`).
   ``community_icon`` is the icon hash, so ``GetApps`` is only called when
   ``GetItems`` had nothing. A failed ``GetItems`` is remembered as failed
   for the run: every slot that would have used it counts as a failed
-  lookup (no cached miss) and the store is not asked again. One
+  lookup and the store is not asked again. One
   ``GetItems`` replaces one ``GetApps``, so a fully official title still
   costs eight calls (`tests/art_fixtures.CALLS_PER_TITLE`), in the order
   lookups, ``GetItems``, five downloads.
@@ -489,12 +496,9 @@ every title (`tests/test_art_apply.py`).
   extension: two files for one slot would leave Steam's choice undefined and
   let the next run report the stale one as "kept".
 - **A transient failure is never cached as a miss.** A 5xx, a timeout, a
-  dropped connection or a 429 that exhausted its retries leaves no negative
-  entry; only "the source genuinely has no image for this slot" starts the
-  7-day window. That holds for a failed *title* lookup too:
-  `MatchCache.record_missing_slot` refuses to invent an entry for a title
-  that never resolved, so the slot loop cannot cache a miss through the back
-  door.
+  dropped connection or a 429 that exhausted its retries writes no entry for
+  a title (`Match.transient`), so it cannot replace what the cache knows. A
+  slot records nothing either way: the next run tries every empty slot.
 - **A weak SteamGridDB answer does not end the search.** A fuzzy
   autocomplete pick, or an exact one for a game SteamGridDB has no Steam
   release for, is what a game released since SteamGridDB last caught
@@ -544,9 +548,9 @@ every title (`tests/test_art_apply.py`).
   (`join.ts`'s `howText`: "by its name in your Steam library").
 - **Pins are the one cache state `--force` keeps.** `match` writes a
   `how: "pinned"` entry into `matches.json`, and `Resolver.resolve()`
-  returns it *before* it looks at `force` or `retry_missing`, so neither
-  `art --force` nor `--retry-missing` ever re-searches or overwrites a
-  pinned title -- not even a `--none` pin (which makes no lookups at all).
+  returns it *before* it looks at `force`, so `art --force` never
+  re-searches or overwrites a pinned title -- not even a `--none` pin
+  (which makes no lookups at all, though a miss is retried every run).
   Only `match --unpin` or another `match` changes one. An `[overrides]`
   entry in `config.toml` still wins over a pin (config beats cache), and
   `CACHE_VERSION` stays 1: `stale_art` is written only while true, so a

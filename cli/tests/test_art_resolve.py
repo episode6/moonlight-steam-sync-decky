@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from moonlight_steam_sync.art.http import NetworkError
 from moonlight_steam_sync.art.resolve import (
-    NEGATIVE_TTL,
     Match,
     MatchCache,
     Resolver,
@@ -415,29 +413,42 @@ def test_force_ignores_the_cache(tmp_path) -> None:
     assert len(transport.calls) > before
 
 
-def test_a_negative_result_is_not_requeried_for_seven_days(tmp_path) -> None:
-    resolver, transport, cache = build(tmp_path)
-    resolver.resolve("Totally Unknown Title")
-    before = len(transport.calls)
-    resolver.resolve("Totally Unknown Title")
-    assert len(transport.calls) == before
-
-    # Age it past the window and it is searched again.
-    stale = datetime.now(UTC) - NEGATIVE_TTL - timedelta(hours=1)
-    entry = cache.get("Totally Unknown Title")
-    entry.when = stale.isoformat().replace("+00:00", "Z")
-    cache.put(entry)
-    resolver.resolve("Totally Unknown Title")
-    assert len(transport.calls) > before
-
-
-def test_retry_missing_reopens_a_fresh_negative(tmp_path) -> None:
+def test_one_run_searches_a_title_with_no_match_once(tmp_path) -> None:
+    # `sync --owned-apps` resolves every title ahead of the plan and again in
+    # the art phase: a miss must not cost two searches.
     resolver, transport, _ = build(tmp_path)
     resolver.resolve("Totally Unknown Title")
     before = len(transport.calls)
-    resolver.retry_missing = True
-    resolver.resolve("Totally Unknown Title")
-    assert len(transport.calls) > before
+    assert before
+    again = resolver.resolve("Totally Unknown Title")
+    assert not again.found
+    assert len(transport.calls) == before
+
+
+def test_the_next_run_searches_again_for_a_title_with_no_match(tmp_path) -> None:
+    first, _, cache = build(tmp_path)
+    first.resolve("Totally Unknown Title")
+    assert cache.get("Totally Unknown Title").how == "none"
+
+    # A new run (a new Resolver) over the entry written a moment ago.
+    second, transport, _ = build(tmp_path)
+    second.resolve("Totally Unknown Title")
+    assert any("autocomplete" in call for call in transport.calls)
+
+
+def test_a_title_with_a_match_is_not_searched_again_by_the_next_run(tmp_path) -> None:
+    first, _, _ = build(tmp_path)
+    first.resolve("Elden Ring")
+    second, transport, _ = build(tmp_path)
+    assert second.resolve("Elden Ring").found
+    assert transport.calls == []
+
+
+def test_a_title_with_no_match_heals_when_a_source_learns_of_it(tmp_path) -> None:
+    cache = MatchCache(tmp_path / "matches.json")
+    cache.put(Match(name="Elden Ring", how="none"))
+    resolver, _, _ = build(tmp_path)
+    assert resolver.resolve("Elden Ring").steam_appid == 1245620
 
 
 def test_the_cache_file_is_replaced_atomically_and_survives_a_reload(tmp_path) -> None:
@@ -447,12 +458,35 @@ def test_the_cache_file_is_replaced_atomically_and_survives_a_reload(tmp_path) -
     assert path.is_file()
     assert not (tmp_path / "matches.json.tmp").exists()
 
-    cache.record_missing_slot("A", "logo")
-    cache.flush()
     reloaded = MatchCache(path)
     assert reloaded.get("A").steam_appid == 1
-    assert reloaded.slot_is_known_missing("A", "logo") is True
-    assert reloaded.slot_is_known_missing("A", "hero") is False
+
+
+def test_an_older_cache_entrys_slot_misses_are_read_and_dropped(tmp_path) -> None:
+    # Through 0.13.2 an entry carried `missing_slots`, timestamps that held a
+    # slot back for 7 days. They mean nothing now and go with the next write.
+    path = tmp_path / "matches.json"
+    path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "titles": {
+                    "A": {
+                        "steam_appid": 1,
+                        "sgdb_id": 2,
+                        "matched_name": "A",
+                        "how": "sgdb:exact",
+                        "when": "2026-09-01T00:00:00Z",
+                        "missing_slots": {"logo": "2026-09-01T00:00:00Z"},
+                    }
+                },
+            }
+        )
+    )
+    cache = MatchCache(path)
+    assert cache.get("A").steam_appid == 1
+    cache.mark_stale_art("A")
+    assert "missing_slots" not in json.loads(path.read_text())["titles"]["A"]
 
 
 def test_a_corrupt_cache_is_a_miss_not_a_crash(tmp_path) -> None:
@@ -460,25 +494,6 @@ def test_a_corrupt_cache_is_a_miss_not_a_crash(tmp_path) -> None:
     path.write_text("{ this is not json")
     cache = MatchCache(path)
     assert len(cache) == 0
-
-
-def test_a_stale_slot_miss_is_retried(tmp_path) -> None:
-    cache = MatchCache(tmp_path / "matches.json")
-    cache.put(Match(name="A", steam_appid=1, how="sgdb:exact"))
-    old = datetime.now(UTC) - NEGATIVE_TTL - timedelta(minutes=1)
-    cache.record_missing_slot("A", "logo", when=old)
-    assert cache.slot_is_known_missing("A", "logo") is False
-
-
-def test_a_slot_miss_for_an_unresolved_title_is_not_recorded(tmp_path) -> None:
-    # The back door onto the negative cache: a title whose own lookup failed
-    # has no entry, and inventing one here would start a 7-day window off a
-    # SteamGridDB 5xx or a timeout (spec 6.10).
-    cache = MatchCache(tmp_path / "matches.json")
-    cache.record_missing_slot("Never Resolved", "logo")
-    cache.flush()
-    assert "Never Resolved" not in cache
-    assert not (tmp_path / "matches.json").exists()
 
 
 def test_a_transient_lookup_failure_is_never_cached_as_a_miss(tmp_path) -> None:

@@ -24,7 +24,7 @@ paths (``<hash>/header.jpg``), one hash per asset, so the unhashed URLs the
 CDN builders make are 404s for it and the store has to be asked which files
 it has. :class:`Selector` asks once per Steam appid and remembers the answer
 for the run -- a failed answer too, as a failure, so a store outage marks
-every slot it would have served as a failed lookup rather than a cached miss
+every slot it would have served as a failed lookup rather than as nothing found
 -- and the unhashed URLs stay behind the store's as the fallback for an app
 the store has nothing for (delisted, say).
 
@@ -198,10 +198,10 @@ class Selector:
     attempted: list[str] = field(default_factory=list, repr=False)
     #: Set by :meth:`fill`: True when the slot came up empty *because a
     #: lookup failed*, rather than because no source has that image. Callers
-    #: use it to avoid caching a negative result they are not sure about.
+    #: use it to tell the two apart in ``--explain``.
     #: :meth:`candidates` also raises it when a store asset lookup it needed
-    #: had failed (``--dry-run`` lists candidates without filling, and
-    #: caches no miss, so there it is only ever read by a test).
+    #: had failed (``--dry-run`` lists candidates without filling, so there
+    #: it is only ever read by a test).
     last_attempt_failed: bool = field(default=False, repr=False)
     #: ``GetItems`` answers by Steam appid, for the run: the assets, ``None``
     #: for an app the store has nothing for, :data:`_LOOKUP_FAILED` when the

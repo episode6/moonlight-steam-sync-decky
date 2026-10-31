@@ -1,4 +1,4 @@
-import { ButtonItem, ConfirmModal, Field, TextField, ToggleField, showModal } from "@decky/ui";
+import { ButtonItem, ConfirmModal, Field, TextField, showModal } from "@decky/ui";
 import { toaster } from "@decky/api";
 import { useEffect, useState, type ReactNode } from "react";
 
@@ -174,7 +174,7 @@ function KeyField() {
   );
 }
 
-/** Settings → Artwork: the key, *Retry missing art*, *Re-fetch all art*. */
+/** Settings → Artwork: the key, *Re-fetch all art*. */
 export function ArtworkPage() {
   const state = useStore(controller.store);
   const artCommit = !!state.cliVersion?.capabilities.art_commit;
@@ -200,13 +200,6 @@ export function ArtworkPage() {
   return (
     <div>
       <KeyField />
-      <ToggleField
-        label="Retry missing art"
-        description="Look again for images that were missing last time, on the next sync"
-        checked={!!state.settings?.retry_missing}
-        disabled={!state.settings}
-        onChange={(checked) => void controller.setSettings({ retry_missing: checked })}
-      />
       <ButtonItem
         layout="below"
         label="Re-fetch all art"
