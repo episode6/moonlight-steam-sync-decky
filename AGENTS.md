@@ -53,8 +53,8 @@ Breaking any of these is a blocker, not a judgement call.
    pins included, through `reset_match_cache` and only under the busy
    guard (a run or a `match` child writes that file). It is deleted, never
    edited; `hosts/` beside it and everything else of the CLI's stays the
-   CLI's. The CLI has no reset of its own (only `match --unpin` per title,
-   and a miss is not re-queried for seven days), which is why.
+   CLI's. The CLI has no reset of its own (only `match --unpin` per title:
+   a miss is retried by every sync, but a match stands), which is why.
 2. **No `_root`.** `plugin.json` `flags` stays `[]`: the backend must run as
    the deck user so `HOME` and the CLI's paths resolve.
 3. **No MoonDeck code.** MoonDeck is GPLv3, this repo is MIT. Do not open,

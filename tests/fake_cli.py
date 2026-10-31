@@ -97,14 +97,13 @@ NEW_FLAGS = (
 FLAGS_0_4_0 = ("--hide-host-apps",)
 NEW_SUBCOMMANDS = ("host", "search", "match", "client")
 
-ART_HELP_BASE = """usage: moonlight-steam-sync art [-h] [--force] [--retry-missing] [--limit N]
+ART_HELP_BASE = """usage: moonlight-steam-sync art [-h] [--force] [--limit N]
 
 Fetch artwork for every owned shortcut.
 
 options:
   -h, --help       show this help message and exit
   --force          re-resolve and re-download every slot
-  --retry-missing  retry slots that were missing last time
 """
 ART_HELP_COMMIT = (
     "  --commit {restart,await-exit,refuse}\n                   how to write shortcuts.vdf\n"

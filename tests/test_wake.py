@@ -350,5 +350,5 @@ def test_a_retired_wake_macs_key_is_ignored(backend, fake_socket: type[FakeSocke
     refused = run(backend.set_settings({"wake_macs": {"OFFICE-PC": MAC}}))
     assert refused["error"] == "bad-request"
     assert refused["message"] == "wake_macs is no longer a setting"
-    run(backend.set_settings({"retry_missing": True}))
+    run(backend.set_settings({"copy_layouts": False}))
     assert json.loads(path.read_text())["wake_macs"] == raw["wake_macs"]

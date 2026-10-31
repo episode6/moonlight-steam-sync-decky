@@ -199,10 +199,10 @@ landscape art that shares its name.
 ## Usage
 
 ```
-moonlight-steam-sync [--json] sync      [--host H] [--dry-run] [--no-art] [--limit N] [--retry-missing]
+moonlight-steam-sync [--json] sync      [--host H] [--dry-run] [--no-art] [--limit N]
                                         [--commit MODE | --no-restart-steam] [--ignore-file PATH] [--owned-apps PATH]
                                         [--client-shortcut] [--park-unpublished] [--hide-host-apps]
-moonlight-steam-sync [--json] art       [--force] [--retry-missing] [--only "Name"] [--explain] [--commit MODE]
+moonlight-steam-sync [--json] art       [--force] [--only "Name"] [--explain] [--commit MODE]
 moonlight-steam-sync [--json] list      [--host H] [--cached] [--ignore-file PATH] [--owned-apps PATH]
                                         [--hide-host-apps]
 moonlight-steam-sync [--json] status    [--host H] [--owned-apps PATH] [--hide-host-apps]
@@ -452,8 +452,9 @@ Rules worth knowing:
   so a slot never ends up holding both a `.png` and a `.jpg`.
 - **A title or a slot with no art is not an error.** It is listed in the
   summary; fill it in from the Steam UI and the rule above keeps it.
-- Unmatched titles and empty slots are remembered for 7 days so a re-run does
-  not search for them again; `--retry-missing` asks anyway.
+- Unmatched titles and empty slots are looked up again by every run, so a
+  library with gaps makes those calls each time; a finished one makes none.
+  (`--retry-missing`, which used to ask for this, is accepted and ignored.)
 - `art --explain` prints the whole match chain for each title: what was
   searched, what matched, and which URL each slot came from.
 - Pin a title that matches badly with `match` (below) or `[overrides]` in
@@ -475,8 +476,7 @@ moonlight-steam-sync match "Hades II" --unpin           # forget it; the next ru
 ```
 
 A pin lives in the match cache (`matches.json`, `"how": "pinned"`) and is
-the one entry there that `art --force` and `--retry-missing` never
-overwrite. `match` prints the equivalent `[overrides]` line (`"Hades II" =
+the one entry there that `art --force` never overwrites. `match` prints the equivalent `[overrides]` line (`"Hades II" =
 { steam = 1145350 }`, or `"Launcher Tool" = {}` for `--none`); paste it into
 `config.toml` to make the pin permanent -- an `[overrides]` entry always
 wins over a pin, and the tool never writes the config itself.
@@ -547,8 +547,8 @@ and so on).
 
 `title`/`app`/`entry` all carry a `match` object shaped
 `{steam_appid, sgdb_id, matched_name, how}` (or `null`), and a `slots`
-mapping whose values are `steam`, `sgdb`, `kept`, `missing`, `skipped` or
-`cached-miss` -- the JSON names for what the human progress line prints as
+mapping whose values are `steam`, `sgdb`, `kept`, `missing` or `skipped`
+(a CLI through 0.13.2 could also say `cached-miss`) -- the JSON names for what the human progress line prints as
 `official`/`community`/etc. `title.kind` and `app.kind` are the title's
 kind (`stream`, `shortcut`, `ignored`, `parked`, `duplicate`, and
 `host-app` under `--hide-host-apps` only; an `app`

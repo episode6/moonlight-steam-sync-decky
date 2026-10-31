@@ -148,8 +148,7 @@ def test_an_unmatched_title_records_every_slot_as_missing(tmp_path, grid_dir):
         "icon": "missing",
     }
     stored = json.loads((tmp_path / "matches.json").read_text())
-    missing = stored["titles"]["Totally Unknown Title"]["missing_slots"]
-    assert sorted(missing) == ["hero", "icon", "landscape", "logo", "portrait"]
+    assert stored["titles"]["Totally Unknown Title"]["how"] == "none"
 
 
 def test_repeated_429s_stop_the_run_with_everything_so_far_kept(tmp_path, grid_dir):
@@ -200,17 +199,18 @@ def test_the_cache_is_on_disk_after_every_title(tmp_path, grid_dir):
     ]
 
 
-def test_a_second_pass_over_the_same_titles_makes_zero_http_calls(tmp_path, grid_dir):
-    entries = targets(grid_dir, names=list(APPIDS)[:5])
+def test_a_second_pass_over_a_finished_library_makes_zero_http_calls(tmp_path, grid_dir):
+    entries = targets(grid_dir, names=["Elden Ring", "Hades II™", "Fan Made Adventure"])
     resolver, selector, first_transport, _ = build(tmp_path)
-    run_art(entries, resolver, selector)
+    first = run_art(entries, resolver, selector)
     assert first_transport.calls
+    assert first.missing == 0
 
     second_transport = FakeTransport()
     resolver2, selector2, _, _ = build(tmp_path, second_transport)
     summary = run_art(entries, resolver2, selector2)
     assert second_transport.calls == []
-    assert summary.missing == 5  # the unmatched title's five empty slots
+    assert summary.missing == 0
     kept = [
         outcome.source
         for result in summary.results
@@ -218,6 +218,20 @@ def test_a_second_pass_over_the_same_titles_makes_zero_http_calls(tmp_path, grid
         if outcome.filled
     ]
     assert set(kept) == {"kept"}
+
+
+def test_a_second_pass_looks_again_only_for_what_is_still_missing(tmp_path, grid_dir):
+    entries = targets(grid_dir, names=["Elden Ring", "Totally Unknown Title"])
+    resolver, selector, _, _ = build(tmp_path)
+    run_art(entries, resolver, selector)
+
+    second_transport = FakeTransport()
+    resolver2, selector2, _, _ = build(tmp_path, second_transport)
+    summary = run_art(entries, resolver2, selector2)
+    assert summary.missing == 5  # the unmatched title's five empty slots
+    assert second_transport.calls
+    assert all("Elden" not in call and "1245620" not in call for call in second_transport.calls)
+    assert any("Totally%20Unknown%20Title" in call for call in second_transport.calls)
 
 
 def test_an_existing_slot_file_is_never_redownloaded(tmp_path, grid_dir):
@@ -251,20 +265,29 @@ def test_force_redownloads_and_replaces_an_existing_slot(tmp_path, grid_dir):
     assert again.slots["portrait"].path == grid_dir / f"{appid}p.jpg"
 
 
-def test_a_cached_slot_miss_is_not_requeried_but_retry_missing_reopens_it(
+def test_a_slot_that_found_nothing_is_filled_by_the_run_after_a_source_gains_it(
     tmp_path, grid_dir
 ):
-    entry = targets(grid_dir, names=["Totally Unknown Title"])[0]
-    resolver, selector, transport, _ = build(tmp_path)
-    apply_title(entry, resolver, selector)
-    first = len(transport.calls)
+    appid = APPIDS["Elden Ring"]
+    entry = targets(grid_dir, names=["Elden Ring"])[0]
 
-    apply_title(entry, resolver, selector)
-    assert len(transport.calls) == first
+    # Every source answers a clean "no such image" for the portrait.
+    manifest = FakeTransport().responses
+    empty = FakeTransport(
+        responses={
+            known: spec
+            for known, spec in manifest.items()
+            if "library_600x900" not in known and "/grids/" not in known
+        }
+    )
+    resolver, selector, _, _ = build(tmp_path, empty)
+    assert apply_title(entry, resolver, selector).slots["portrait"].source == "missing"
 
-    resolver.retry_missing = True
-    apply_title(entry, resolver, selector)
-    assert len(transport.calls) > first
+    # The very next run asks again, and the image is there now.
+    resolver2, selector2, transport2, _ = build(tmp_path)
+    assert apply_title(entry, resolver2, selector2).slots["portrait"].source == "official"
+    assert any("library_600x900" in call for call in transport2.calls)
+    assert f"{appid}p.jpg" in names_on_disk(grid_dir)
 
 
 def test_an_interrupted_download_leaves_a_part_and_the_rerun_completes(tmp_path, grid_dir):
@@ -275,12 +298,10 @@ def test_an_interrupted_download_leaves_a_part_and_the_rerun_completes(tmp_path,
     result = apply_title(entry, resolver, selector)
 
     # The dropped connection costs that one slot and nothing else: no crash,
-    # the half-written bytes stay in the .part, and because the failure was
-    # transient the slot is not cached as a miss.
+    # the half-written bytes stay in the .part, and the next run tries again.
     assert result.slots["portrait"].source == "missing"
     assert f"{appid}p.part" in names_on_disk(grid_dir)
     assert f"{appid}p.jpg" not in names_on_disk(grid_dir)
-    assert cache.slot_is_known_missing("Elden Ring", "portrait") is False
     assert result.slots["hero"].source == "official"
 
     resolver2, selector2, _, _ = build(tmp_path)
@@ -291,12 +312,11 @@ def test_an_interrupted_download_leaves_a_part_and_the_rerun_completes(tmp_path,
 
 
 def test_a_transient_title_lookup_failure_is_never_cached_as_a_miss(tmp_path, grid_dir):
-    """Spec 6.10: the 7-day negative window is for a genuine no-match only.
+    """Spec 6.10: only a genuine no-match is recorded as one.
 
-    The resolver refuses to cache a transient failure, and the slot loop must
-    not put the entry back through the side door: every slot comes up empty
-    because there was nothing to try, which is not the same as "no source has
-    this image".
+    The resolver refuses to cache a transient failure: every slot comes up
+    empty because there was nothing to try, which is not the same as "no
+    source has this image".
     """
     url = "https://www.steamgriddb.com/api/v2/search/autocomplete/Elden%20Ring"
     transport = FakeTransport(fail_with={url: NetworkError("down")})
@@ -312,8 +332,7 @@ def test_a_transient_title_lookup_failure_is_never_cached_as_a_miss(tmp_path, gr
     assert "Elden Ring" not in cache
     assert not (tmp_path / "matches.json").exists()
 
-    # The next healthy run searches again instead of trusting a negative it
-    # never should have written.
+    # The next healthy run searches again.
     resolver2, selector2, transport2, _ = build(tmp_path)
     result = apply_title(entry, resolver2, selector2)
     assert set(sources(result).values()) == {"official"}
@@ -329,7 +348,6 @@ def test_a_transient_slot_failure_leaves_the_slot_open_for_the_next_run(tmp_path
     entry = targets(grid_dir, names=["Elden Ring"])[0]
     result = apply_title(entry, resolver, selector)
     assert result.slots["portrait"].source == "missing"
-    assert cache.slot_is_known_missing("Elden Ring", "portrait") is False
 
     resolver2, selector2, transport2, _ = build(tmp_path)
     result = apply_title(entry, resolver2, selector2)
