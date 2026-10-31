@@ -21,8 +21,7 @@ project uses [semantic versioning](https://semver.org/).
   game. The logo is the one image the store does not list, so a newer
   game's logo still comes from SteamGridDB. Already-filled slots are
   never touched, so a game that was synced with missing landscape or
-  hero gets them on the next sync after the seven-day miss window, or
-  at once after *Reset match cache* or a *Change match*.
+  hero gets them on the next sync.
 
 ### Changed
 

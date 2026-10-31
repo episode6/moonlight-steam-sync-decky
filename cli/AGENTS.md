@@ -482,7 +482,7 @@ every title (`tests/test_art_apply.py`).
   ``community_icon`` is the icon hash, so ``GetApps`` is only called when
   ``GetItems`` had nothing. A failed ``GetItems`` is remembered as failed
   for the run: every slot that would have used it counts as a failed
-  lookup (no cached miss) and the store is not asked again. One
+  lookup and the store is not asked again. One
   ``GetItems`` replaces one ``GetApps``, so a fully official title still
   costs eight calls (`tests/art_fixtures.CALLS_PER_TITLE`), in the order
   lookups, ``GetItems``, five downloads.

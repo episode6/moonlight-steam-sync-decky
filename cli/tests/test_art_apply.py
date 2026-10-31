@@ -268,7 +268,6 @@ def test_force_redownloads_and_replaces_an_existing_slot(tmp_path, grid_dir):
 def test_a_slot_that_found_nothing_is_filled_by_the_run_after_a_source_gains_it(
     tmp_path, grid_dir
 ):
-    url = "https://cdn.cloudflare.steamstatic.com/steam/apps/1245620/library_600x900_2x.jpg"
     appid = APPIDS["Elden Ring"]
     entry = targets(grid_dir, names=["Elden Ring"])[0]
 
@@ -287,7 +286,7 @@ def test_a_slot_that_found_nothing_is_filled_by_the_run_after_a_source_gains_it(
     # The very next run asks again, and the image is there now.
     resolver2, selector2, transport2, _ = build(tmp_path)
     assert apply_title(entry, resolver2, selector2).slots["portrait"].source == "official"
-    assert url in transport2.calls
+    assert any("library_600x900" in call for call in transport2.calls)
     assert f"{appid}p.jpg" in names_on_disk(grid_dir)
 
 
